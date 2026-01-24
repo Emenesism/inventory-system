@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import QSortFilterProxyModel, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -13,7 +14,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.utils.table_models import DataFrameTableModel
-from PySide6.QtCore import QSortFilterProxyModel
 
 
 class InventoryPage(QWidget):
@@ -60,6 +60,7 @@ class InventoryPage(QWidget):
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         card_layout.addWidget(self.table)
 
         layout.addWidget(card)
@@ -67,7 +68,7 @@ class InventoryPage(QWidget):
     def set_inventory(self, dataframe) -> None:  # noqa: ANN001
         if dataframe is None:
             return
-        self._model = DataFrameTableModel(dataframe, editable_columns=["quantity"])
+        self._model = DataFrameTableModel(dataframe)
         self._proxy = QSortFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self._proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)

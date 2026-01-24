@@ -11,7 +11,9 @@ class DataFrameTableModel(QAbstractTableModel):
     ) -> None:
         super().__init__()
         self._dataframe = dataframe.copy()
-        self._editable_columns = set(editable_columns or [])
+        self._editable_columns = (
+            set(editable_columns) if editable_columns else None
+        )
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
         return len(self._dataframe.index)
@@ -58,7 +60,10 @@ class DataFrameTableModel(QAbstractTableModel):
             return Qt.ItemIsEnabled
         column_name = self._dataframe.columns[index.column()]
         flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
-        if column_name in self._editable_columns:
+        if (
+            self._editable_columns is None
+            or column_name in self._editable_columns
+        ):
             flags |= Qt.ItemIsEditable
         return flags
 
@@ -66,7 +71,10 @@ class DataFrameTableModel(QAbstractTableModel):
         if role != Qt.EditRole or not index.isValid():
             return False
         column_name = self._dataframe.columns[index.column()]
-        if column_name not in self._editable_columns:
+        if (
+            self._editable_columns is not None
+            and column_name not in self._editable_columns
+        ):
             return False
 
         if column_name == "quantity":
