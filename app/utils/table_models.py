@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
@@ -27,6 +28,10 @@ class DataFrameTableModel(QAbstractTableModel):
         if role in (Qt.DisplayRole, Qt.EditRole):
             if pd.isna(value):
                 return "-" if column_name in {"منبع", "source"} else ""
+            if isinstance(value, np.integer):
+                value = int(value)
+            elif isinstance(value, np.floating):
+                value = float(value)
             if column_name in {"quantity", "avg_buy_price"} and value == 0:
                 return ""
             return value
