@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
 
 class DataFrameTableModel(QAbstractTableModel):
-    def __init__(self, dataframe: pd.DataFrame, editable_columns: list[str] | None = None) -> None:
+    def __init__(
+        self, dataframe: pd.DataFrame, editable_columns: list[str] | None = None
+    ) -> None:
         super().__init__()
         self._dataframe = dataframe.copy()
         self._editable_columns = set(editable_columns or [])
@@ -20,18 +22,30 @@ class DataFrameTableModel(QAbstractTableModel):
         if not index.isValid():
             return None
 
+        column_name = self._dataframe.columns[index.column()]
         value = self._dataframe.iat[index.row(), index.column()]
         if role in (Qt.DisplayRole, Qt.EditRole):
+            if pd.isna(value):
+                return "-" if column_name in {"منبع", "source"} else ""
+            if column_name in {"quantity", "avg_buy_price"} and value == 0:
+                return ""
             return value
         if role == Qt.TextAlignmentRole:
             return Qt.AlignVCenter | Qt.AlignLeft
         return None
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):  # noqa: N802, ANN001
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.DisplayRole,
+    ):  # noqa: N802, ANN001
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal:
-            return str(self._dataframe.columns[section]).replace("_", " ").title()
+            return (
+                str(self._dataframe.columns[section]).replace("_", " ").title()
+            )
         return str(section + 1)
 
     def flags(self, index: QModelIndex):  # noqa: ANN001
