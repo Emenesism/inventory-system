@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
+from app.utils.numeric import normalize_numeric_text
+
 
 class DataFrameTableModel(QAbstractTableModel):
     def __init__(
@@ -79,7 +81,17 @@ class DataFrameTableModel(QAbstractTableModel):
 
         if column_name == "quantity":
             try:
-                numeric = int(value)
+                text_value = normalize_numeric_text(str(value))
+                numeric = int(text_value)
+                if numeric < 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+            self._dataframe.iat[index.row(), index.column()] = numeric
+        elif column_name == "avg_buy_price":
+            try:
+                text_value = normalize_numeric_text(str(value))
+                numeric = float(text_value)
                 if numeric < 0:
                     return False
             except (TypeError, ValueError):

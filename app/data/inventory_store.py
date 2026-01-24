@@ -22,6 +22,7 @@ class InventoryStore:
         "قیمت خرید": "avg_buy_price",
         "قيمت خريد": "avg_buy_price",
         "میانگین قیمت خرید": "avg_buy_price",
+        "منبع": "source",
     }
 
     def set_path(self, path: str | Path | None) -> None:
