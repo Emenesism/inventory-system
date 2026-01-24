@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSortFilterProxyModel, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.utils.search import NormalizedFilterProxyModel
 from app.utils.table_models import DataFrameTableModel
 
 
@@ -23,7 +24,7 @@ class InventoryPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._model: DataFrameTableModel | None = None
-        self._proxy: QSortFilterProxyModel | None = None
+        self._proxy: NormalizedFilterProxyModel | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -69,10 +70,8 @@ class InventoryPage(QWidget):
         if dataframe is None:
             return
         self._model = DataFrameTableModel(dataframe)
-        self._proxy = QSortFilterProxyModel(self)
+        self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
-        self._proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self._proxy.setFilterKeyColumn(-1)
         self.table.setModel(self._proxy)
         self.table.resizeColumnsToContents()
 
@@ -89,4 +88,4 @@ class InventoryPage(QWidget):
 
     def _apply_filter(self, text: str) -> None:
         if self._proxy:
-            self._proxy.setFilterFixedString(text)
+            self._proxy.set_filter_text(text)
