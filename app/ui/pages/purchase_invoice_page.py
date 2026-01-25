@@ -106,7 +106,7 @@ class PurchaseInvoicePage(QWidget):
         price_input = QDoubleSpinBox()
         price_input.setRange(0.01, 1_000_000)
         price_input.setDecimals(2)
-        price_input.setSingleStep(1.0)
+        price_input.setSingleStep(100.0)
         price_input.setValue(1.0)
 
         quantity_input = QSpinBox()
