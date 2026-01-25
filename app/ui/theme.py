@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 LIGHT_THEME = """
 * {
     font-family: "Poppins", "Manrope", "Segoe UI";
@@ -24,6 +23,11 @@ QLabel#AppTitle {
 }
 QLabel#StatusLabel {
     color: #6B7280;
+}
+QLabel#SidebarHint {
+    color: #9CA3AF;
+    font-size: 11px;
+    padding-left: 36px;
 }
 QToolButton#ThemeButton {
     background: #EEF2FF;
@@ -49,6 +53,7 @@ QToolButton#SidebarButton {
     padding: 10px 12px;
     border-radius: 12px;
     text-align: left;
+    font-size: 13px;
 }
 QToolButton#SidebarButton:hover {
     background: #1F2937;
@@ -137,6 +142,11 @@ QLabel#AppTitle {
 QLabel#StatusLabel {
     color: #9CA3AF;
 }
+QLabel#SidebarHint {
+    color: #94A3B8;
+    font-size: 11px;
+    padding-left: 36px;
+}
 QToolButton#ThemeButton {
     background: #1F2937;
     color: #F8FAFC;
@@ -161,6 +171,7 @@ QToolButton#SidebarButton {
     padding: 10px 12px;
     border-radius: 12px;
     text-align: left;
+    font-size: 13px;
 }
 QToolButton#SidebarButton:hover {
     background: #1F2937;

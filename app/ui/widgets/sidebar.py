@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QLabel,
     QStyle,
@@ -19,21 +20,31 @@ class Sidebar(QFrame):
         self.setObjectName("Sidebar")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        self.setMinimumWidth(220)
 
-        brand = QLabel("Reza Inventory")
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        brand = QLabel("Armkala")
         brand.setStyleSheet(
-            "color: #FFFFFF; font-weight: 600; font-size: 16px;"
+            "color: #FFFFFF; font-weight: 700; font-size: 18px;"
         )
         layout.addWidget(brand)
 
+        self.button_group = QButtonGroup(self)
+        self.button_group.setExclusive(True)
         self.buttons: dict[str, QToolButton] = {}
         icon_map = {
             "Inventory": QStyle.SP_DriveHDIcon,
             "Sales Import": QStyle.SP_DialogOpenButton,
             "Purchase Invoice": QStyle.SP_FileDialogNewFolder,
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
+        }
+        hint_map = {
+            "Inventory": "View and edit stock",
+            "Sales Import": "Apply sales from Excel",
+            "Purchase Invoice": "Add new purchases",
+            "Reports/Logs": "View activity history",
         }
 
         for name in [
@@ -42,6 +53,11 @@ class Sidebar(QFrame):
             "Purchase Invoice",
             "Reports/Logs",
         ]:
+            item = QWidget()
+            item_layout = QVBoxLayout(item)
+            item_layout.setContentsMargins(0, 0, 0, 0)
+            item_layout.setSpacing(6)
+
             button = QToolButton()
             button.setObjectName("SidebarButton")
             button.setText(name)
@@ -50,12 +66,20 @@ class Sidebar(QFrame):
                     icon_map.get(name, QStyle.SP_FileIcon)
                 )
             )
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            button.setIconSize(QSize(18, 18))
             button.setCheckable(True)
-            button.setAutoExclusive(True)
             button.clicked.connect(
                 lambda checked, key=name: self.page_selected.emit(key)
             )
-            layout.addWidget(button)
+            self.button_group.addButton(button)
+            item_layout.addWidget(button)
+
+            hint = QLabel(hint_map.get(name, ""))
+            hint.setObjectName("SidebarHint")
+            item_layout.addWidget(hint)
+
+            layout.addWidget(item)
             self.buttons[name] = button
 
         layout.addStretch(1)

@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self.inventory_service = inventory_service
         self.config = config
         self._logger = logging.getLogger(self.__class__.__name__)
-        self.setWindowTitle("Reza Inventory Suite")
+        self.setWindowTitle("Armkala Inventory Suite")
         self.resize(1280, 800)
 
         self.toast = ToastManager(self)
