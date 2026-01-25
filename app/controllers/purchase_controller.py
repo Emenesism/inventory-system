@@ -63,19 +63,18 @@ class PurchaseInvoiceController(QObject):
             if self.inventory_service.find_index(line.product_name) is None
         ]
 
-        allow_create = True
         if missing:
-            allow_create = dialogs.ask_yes_no(
+            dialogs.show_error(
                 self.page,
-                "Create Products",
-                "The following products are new:\n\n"
-                + "\n".join(sorted(set(missing)))
-                + "\n\nCreate them?",
+                "Purchase Invoice",
+                "Product(s) not found:\n\n" + "\n".join(sorted(set(missing))),
             )
+            self.toast.show("Product(s) not found", "error")
+            return
 
         try:
             updated_df, summary, errors = self.purchase_service.apply_purchases(
-                valid_lines, inventory_df, allow_create=allow_create
+                valid_lines, inventory_df, allow_create=False
             )
             self.inventory_service.save(updated_df)
             self.on_inventory_updated()
