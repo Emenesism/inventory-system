@@ -44,7 +44,7 @@ class Sidebar(QFrame):
             "Inventory": "View and edit stock",
             "Sales Import": "Apply sales from Excel",
             "Purchase Invoice": "Add new purchases",
-            "Reports/Logs": "View activity history",
+            "Reports/Logs": "App log",
         }
 
         for name in [
