@@ -90,3 +90,4 @@ class PurchaseInvoiceController(QObject):
         if errors:
             message += f" Skipped {len(errors)} new items (not created)."
         self.toast.show(message, "success")
+        self.page.reset_after_submit()

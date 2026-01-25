@@ -155,6 +155,10 @@ class PurchaseInvoicePage(QWidget):
         self.submit_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
 
+    def reset_after_submit(self) -> None:
+        self.table.setRowCount(0)
+        self.add_row()
+
     def _emit_submit(self) -> None:
         self.submit_requested.emit(self.collect_lines())
 
