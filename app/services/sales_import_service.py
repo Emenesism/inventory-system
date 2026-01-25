@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from app.models.errors import InventoryFileError
+from app.utils.text import normalize_text
 
 
 @dataclass
@@ -80,7 +81,7 @@ class SalesImportService:
         inventory_lookup = {}
         cost_lookup = {}
         for _, row in inventory_df.iterrows():
-            key = str(row.get("product_name", "")).strip().lower()
+            key = normalize_text(row.get("product_name", ""))
             if key:
                 inventory_lookup[key] = int(row.get("quantity", 0))
                 cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
@@ -116,7 +117,7 @@ class SalesImportService:
                 continue
 
             quantity = int(quantity)
-            key = product_name.strip().lower()
+            key = normalize_text(product_name)
             cost_price = cost_lookup.get(key, 0.0)
             sell_price = row.get("sell_price", None)
             if pd.isna(sell_price) or sell_price is None or sell_price <= 0:

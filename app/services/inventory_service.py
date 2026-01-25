@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+
 import pandas as pd
 
 from app.core.config import AppConfig
 from app.data.inventory_store import InventoryStore
 from app.models.errors import InventoryFileError
+from app.utils.text import normalize_text
 
 
 class InventoryService:
@@ -53,9 +55,10 @@ class InventoryService:
 
     def _rebuild_index(self, df: pd.DataFrame) -> None:
         self._name_index = {
-            self._normalize_name(name): idx for idx, name in df["product_name"].items()
+            self._normalize_name(name): idx
+            for idx, name in df["product_name"].items()
         }
 
     @staticmethod
     def _normalize_name(name: str) -> str:
-        return str(name).strip().lower()
+        return normalize_text(name)

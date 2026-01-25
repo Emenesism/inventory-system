@@ -1,4 +1,5 @@
 {
   "inventory_file": "/home/em/Desktop/reza_management/stock.xlsx",
-  "theme": "light"
+  "theme": "light",
+  "low_stock_threshold": 3
 }

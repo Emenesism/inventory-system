@@ -2,7 +2,7 @@ from __future__ import annotations
 
 LIGHT_THEME = """
 * {
-    font-family: "Poppins", "Manrope", "Segoe UI";
+    font-family: "Vazirmatn", "Manrope", "Segoe UI";
     font-size: 12px;
 }
 QMainWindow {
@@ -119,7 +119,7 @@ QFrame#Toast[toastType="error"] {
 
 DARK_THEME = """
 * {
-    font-family: "Poppins", "Manrope", "Segoe UI";
+    font-family: "Vazirmatn", "Manrope", "Segoe UI";
     font-size: 12px;
 }
 QMainWindow {

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSortFilterProxyModel, Qt
 
-from app.utils.numeric import normalize_numeric_text
+from app.utils.text import normalize_text
 
 
 def normalize_search_text(value: str) -> str:
-    text = normalize_numeric_text(value)
-    return text.casefold()
+    return normalize_text(value)
 
 
 class NormalizedFilterProxyModel(QSortFilterProxyModel):
