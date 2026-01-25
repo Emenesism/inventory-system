@@ -201,14 +201,30 @@ QTableView {
     border: 1px solid #1F2937;
     border-radius: 12px;
     gridline-color: #1F2937;
+    color: #E5E7EB;
     selection-background-color: #1D4ED8;
     selection-color: #F8FAFC;
+    alternate-background-color: #0F1B2D;
+}
+QTableView::item {
+    background: #0B1220;
+    color: #E5E7EB;
+    padding: 4px;
+}
+QTableView::item:alternate {
+    background: #0F1B2D;
+    color: #E5E7EB;
+}
+QTableView::item:selected {
+    background: #1D4ED8;
+    color: #F8FAFC;
 }
 QHeaderView::section {
     background: #111827;
     border: none;
     padding: 8px;
     font-weight: 600;
+    color: #F8FAFC;
 }
 QFrame#Toast {
     background: rgba(15, 23, 42, 0.95);
