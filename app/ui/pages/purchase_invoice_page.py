@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -39,6 +40,13 @@ class PurchaseInvoicePage(QWidget):
         header.addStretch(1)
         layout.addLayout(header)
 
+        info = QLabel(
+            "Add purchased items. Start typing a product to see similar names "
+            "from inventory."
+        )
+        info.setStyleSheet("color: #9CA3AF;")
+        layout.addWidget(info)
+
         table_card = QFrame()
         table_card.setObjectName("Card")
         table_layout = QVBoxLayout(table_card)
@@ -49,9 +57,14 @@ class PurchaseInvoicePage(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["Product", "Buy Price", "Quantity"]
         )
+        header_view = self.table.horizontalHeader()
+        header_view.setSectionResizeMode(0, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         table_layout.addWidget(self.table)
 
         button_row = QHBoxLayout()
@@ -82,8 +95,9 @@ class PurchaseInvoicePage(QWidget):
         self.table.insertRow(row)
 
         product_input = QLineEdit()
-        product_input.setPlaceholderText("Start typing...")
-        product_input.textEdited.connect(
+        product_input.setPlaceholderText("Type product name...")
+        product_input.setClearButtonEnabled(True)
+        product_input.textChanged.connect(
             lambda text, widget=product_input: self._update_completer(
                 text, widget
             )
@@ -92,6 +106,7 @@ class PurchaseInvoicePage(QWidget):
         price_input = QDoubleSpinBox()
         price_input.setRange(0.01, 1_000_000)
         price_input.setDecimals(2)
+        price_input.setSingleStep(1.0)
         price_input.setValue(1.0)
 
         quantity_input = QSpinBox()
@@ -132,11 +147,6 @@ class PurchaseInvoicePage(QWidget):
                     product_name=product_name, price=price, quantity=quantity
                 )
             )
-            lines.append(
-                PurchaseLine(
-                    product_name=product_name, price=price, quantity=quantity
-                )
-            )
         return lines
 
     def set_enabled_state(self, enabled: bool) -> None:
@@ -151,16 +161,28 @@ class PurchaseInvoicePage(QWidget):
     def _update_completer(self, text: str, widget: QLineEdit) -> None:
         if not self.product_provider:
             return
-        matches = get_fuzzy_matches(text, self.product_provider())
-        if not matches:
-            widget.setCompleter(None)
-            return
         from PySide6.QtCore import QStringListModel, Qt
         from PySide6.QtWidgets import QCompleter
 
-        model = QStringListModel(matches)
-        completer = QCompleter(model, widget)
-        completer.setCompletionMode(QCompleter.PopupCompletion)
-        completer.setCaseSensitivity(Qt.CaseInsensitive)
-        widget.setCompleter(completer)
+        matches = get_fuzzy_matches(text, self.product_provider())
+        completer = widget.completer()
+
+        if not matches:
+            if completer:
+                completer.popup().hide()
+            return
+
+        if completer is None:
+            model = QStringListModel(matches)
+            completer = QCompleter(model, widget)
+            completer.setCompletionMode(QCompleter.PopupCompletion)
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchContains)
+            widget.setCompleter(completer)
+        else:
+            model = completer.model()
+            if isinstance(model, QStringListModel):
+                model.setStringList(matches)
+            else:
+                completer.setModel(QStringListModel(matches))
         completer.complete()
