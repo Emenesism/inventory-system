@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QPlainTextEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -47,6 +48,8 @@ class ReportsPage(QWidget):
 
     def load_logs(self) -> None:
         if self.log_path.exists():
-            self.log_view.setPlainText(self.log_path.read_text(encoding="utf-8"))
+            self.log_view.setPlainText(
+                self.log_path.read_text(encoding="utf-8")
+            )
         else:
             self.log_view.setPlainText("Log file not found yet.")

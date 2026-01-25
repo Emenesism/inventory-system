@@ -66,7 +66,8 @@ class SalesImportPage(QWidget):
         layout.addWidget(file_card)
 
         helper = QLabel(
-            "Expected columns: Product Name, Quantity (or Quantity Sold)."
+            "Expected columns: Product Name, Quantity (or Quantity Sold). "
+            "Optional: Sell Price for profit analytics."
         )
         helper.setStyleSheet("color: #9CA3AF;")
         layout.addWidget(helper)

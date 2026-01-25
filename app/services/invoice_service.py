@@ -24,6 +24,15 @@ class InvoiceLine:
     price: float
     quantity: int
     line_total: float
+    cost_price: float = 0.0
+
+
+@dataclass
+class SalesLine:
+    product_name: str
+    price: float
+    quantity: int
+    cost_price: float
 
 
 class InvoiceService:
@@ -62,12 +71,24 @@ class InvoiceService:
                     price REAL NOT NULL,
                     quantity INTEGER NOT NULL,
                     line_total REAL NOT NULL,
+                    cost_price REAL NOT NULL DEFAULT 0,
                     FOREIGN KEY (invoice_id)
                         REFERENCES invoices(id)
                         ON DELETE CASCADE
                 )
                 """
             )
+            columns = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(invoice_lines)"
+                ).fetchall()
+            }
+            if "cost_price" not in columns:
+                conn.execute(
+                    "ALTER TABLE invoice_lines "
+                    "ADD COLUMN cost_price REAL NOT NULL DEFAULT 0"
+                )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id "
                 "ON invoice_lines(invoice_id)"
@@ -104,6 +125,7 @@ class InvoiceService:
                     float(line.price),
                     int(line.quantity),
                     float(line.price * line.quantity),
+                    float(line.price),
                 )
                 for line in lines
             ]
@@ -114,8 +136,55 @@ class InvoiceService:
                     product_name,
                     price,
                     quantity,
-                    line_total
+                    line_total,
+                    cost_price
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                line_rows,
+            )
+            return invoice_id
+
+    def create_sales_invoice(self, lines: list[SalesLine]) -> int:
+        total_qty = sum(line.quantity for line in lines)
+        total_amount = sum(line.price * line.quantity for line in lines)
+        created_at = datetime.now().isoformat(timespec="seconds")
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO invoices (
+                    invoice_type,
+                    created_at,
+                    total_lines,
+                    total_qty,
+                    total_amount
                 ) VALUES (?, ?, ?, ?, ?)
+                """,
+                ("sales", created_at, len(lines), total_qty, total_amount),
+            )
+            invoice_id = int(cursor.lastrowid)
+
+            line_rows = [
+                (
+                    invoice_id,
+                    line.product_name,
+                    float(line.price),
+                    int(line.quantity),
+                    float(line.price * line.quantity),
+                    float(line.cost_price),
+                )
+                for line in lines
+            ]
+            conn.executemany(
+                """
+                INSERT INTO invoice_lines (
+                    invoice_id,
+                    product_name,
+                    price,
+                    quantity,
+                    line_total,
+                    cost_price
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 line_rows,
             )
@@ -154,7 +223,7 @@ class InvoiceService:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT product_name, price, quantity, line_total
+                SELECT product_name, price, quantity, line_total, cost_price
                 FROM invoice_lines
                 WHERE invoice_id = ?
                 ORDER BY id ASC
@@ -167,6 +236,47 @@ class InvoiceService:
                 price=row["price"],
                 quantity=row["quantity"],
                 line_total=row["line_total"],
+                cost_price=row["cost_price"],
             )
             for row in rows
         ]
+
+    def get_monthly_summary(self, limit: int = 12) -> list[dict[str, float]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                WITH invoice_months AS (
+                    SELECT
+                        substr(created_at, 1, 7) AS month,
+                        SUM(CASE WHEN invoice_type = 'purchase'
+                            THEN total_amount ELSE 0 END) AS purchase_total,
+                        SUM(CASE WHEN invoice_type = 'sales'
+                            THEN total_amount ELSE 0 END) AS sales_total,
+                        COUNT(*) AS invoice_count
+                    FROM invoices
+                    GROUP BY month
+                ),
+                sales_profit AS (
+                    SELECT
+                        substr(i.created_at, 1, 7) AS month,
+                        SUM(il.line_total - il.cost_price * il.quantity)
+                            AS profit
+                    FROM invoices i
+                    JOIN invoice_lines il ON i.id = il.invoice_id
+                    WHERE i.invoice_type = 'sales'
+                    GROUP BY month
+                )
+                SELECT
+                    im.month,
+                    im.purchase_total,
+                    im.sales_total,
+                    COALESCE(sp.profit, 0) AS profit,
+                    im.invoice_count
+                FROM invoice_months im
+                LEFT JOIN sales_profit sp ON sp.month = im.month
+                ORDER BY im.month DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]

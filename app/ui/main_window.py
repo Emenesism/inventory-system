@@ -22,6 +22,7 @@ from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
+from app.ui.pages.analytics_page import AnalyticsPage
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.pages.invoices_page import InvoicesPage
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
@@ -76,12 +77,14 @@ class MainWindow(QMainWindow):
         self.purchase_page = PurchaseInvoicePage()
         self.invoice_service = InvoiceService()
         self.invoices_page = InvoicesPage(self.invoice_service)
+        self.analytics_page = AnalyticsPage(self.invoice_service)
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
 
         self.pages.addWidget(self.inventory_page)
         self.pages.addWidget(self.sales_page)
         self.pages.addWidget(self.purchase_page)
         self.pages.addWidget(self.invoices_page)
+        self.pages.addWidget(self.analytics_page)
         self.pages.addWidget(self.reports_page)
 
         self.sidebar.set_active("Inventory")
@@ -94,8 +97,10 @@ class MainWindow(QMainWindow):
             self.sales_page,
             self.inventory_service,
             SalesImportService(),
+            self.invoice_service,
             self.toast,
             self.refresh_inventory_views,
+            self.refresh_history_views,
             self,
         )
         self.purchase_controller = PurchaseInvoiceController(
@@ -105,7 +110,7 @@ class MainWindow(QMainWindow):
             self.invoice_service,
             self.toast,
             self.refresh_inventory_views,
-            self.invoices_page.refresh,
+            self.refresh_history_views,
             self,
         )
 
@@ -210,6 +215,7 @@ class MainWindow(QMainWindow):
             "Sales Import": self.sales_page,
             "Purchase Invoice": self.purchase_page,
             "Invoices": self.invoices_page,
+            "Analytics": self.analytics_page,
             "Reports/Logs": self.reports_page,
         }
         page = pages.get(name)
@@ -221,6 +227,10 @@ class MainWindow(QMainWindow):
         self.config.theme = "dark" if self.config.theme == "light" else "light"
         self.config.save()
         self.apply_theme(self.config.theme)
+
+    def refresh_history_views(self) -> None:
+        self.invoices_page.refresh()
+        self.analytics_page.load_analytics()
 
     def apply_theme(self, theme: str) -> None:
         from PySide6.QtWidgets import QApplication

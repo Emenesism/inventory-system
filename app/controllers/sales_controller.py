@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject
 
 from app.models.errors import InventoryFileError
 from app.services.inventory_service import InventoryService
+from app.services.invoice_service import InvoiceService, SalesLine
 from app.services.sales_import_service import SalesImportService
 from app.ui.pages.sales_import_page import SalesImportPage
 from app.ui.widgets.toast import ToastManager
@@ -18,16 +19,20 @@ class SalesImportController(QObject):
         page: SalesImportPage,
         inventory_service: InventoryService,
         sales_service: SalesImportService,
+        invoice_service: InvoiceService,
         toast: ToastManager,
         on_inventory_updated,
+        on_invoices_updated,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.page = page
         self.inventory_service = inventory_service
         self.sales_service = sales_service
+        self.invoice_service = invoice_service
         self.toast = toast
         self.on_inventory_updated = on_inventory_updated
+        self.on_invoices_updated = on_invoices_updated
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self.page.preview_requested.connect(self.preview)
@@ -100,6 +105,23 @@ class SalesImportController(QObject):
             self.toast.show("Sales import failed", "error")
             self._logger.exception("Failed to apply sales import")
             return
+
+        try:
+            sales_lines = [
+                SalesLine(
+                    product_name=row.product_name,
+                    price=row.sell_price,
+                    quantity=row.quantity_sold,
+                    cost_price=row.cost_price,
+                )
+                for row in self.page.preview_rows
+                if row.status == "OK"
+            ]
+            if sales_lines:
+                self.invoice_service.create_sales_invoice(sales_lines)
+                self.on_invoices_updated()
+        except Exception:  # noqa: BLE001
+            self._logger.exception("Failed to store sales invoice history")
 
         self.page.reset_after_apply()
         self.toast.show("Sales import applied", "success")

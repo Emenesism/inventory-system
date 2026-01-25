@@ -11,6 +11,8 @@ from app.models.errors import InventoryFileError
 class SalesPreviewRow:
     product_name: str
     quantity_sold: int
+    sell_price: float
+    cost_price: float
     status: str
     message: str
 
@@ -31,6 +33,10 @@ class SalesImportService:
         "qty": "quantity_sold",
         "quantity sold": "quantity_sold",
         "total quantity": "quantity_sold",
+        "sell price": "sell_price",
+        "sales price": "sell_price",
+        "unit price": "sell_price",
+        "price": "sell_price",
     }
 
     def load_sales_file(self, path: str) -> pd.DataFrame:
@@ -62,6 +68,8 @@ class SalesImportService:
                 "Sales file missing required columns: "
                 "product_name, quantity_sold (aliases: Product Name, Quantity)"
             )
+        if "sell_price" in df.columns:
+            df["sell_price"] = pd.to_numeric(df["sell_price"], errors="coerce")
         return df
 
     def preview(
@@ -70,10 +78,12 @@ class SalesImportService:
         preview_rows: list[SalesPreviewRow] = []
 
         inventory_lookup = {}
+        cost_lookup = {}
         for _, row in inventory_df.iterrows():
             key = str(row.get("product_name", "")).strip().lower()
             if key:
                 inventory_lookup[key] = int(row.get("quantity", 0))
+                cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
         available = inventory_lookup.copy()
 
         total = 0
@@ -88,7 +98,9 @@ class SalesImportService:
 
             if not product_name:
                 preview_rows.append(
-                    SalesPreviewRow("", 0, "Error", "Missing product name")
+                    SalesPreviewRow(
+                        "", 0, 0.0, 0.0, "Error", "Missing product name"
+                    )
                 )
                 errors += 1
                 continue
@@ -97,7 +109,7 @@ class SalesImportService:
             if pd.isna(quantity) or quantity <= 0 or float(quantity) % 1 != 0:
                 preview_rows.append(
                     SalesPreviewRow(
-                        product_name, 0, "Error", "Invalid quantity"
+                        product_name, 0, 0.0, 0.0, "Error", "Invalid quantity"
                     )
                 )
                 errors += 1
@@ -105,10 +117,22 @@ class SalesImportService:
 
             quantity = int(quantity)
             key = product_name.strip().lower()
+            cost_price = cost_lookup.get(key, 0.0)
+            sell_price = row.get("sell_price", None)
+            if pd.isna(sell_price) or sell_price is None or sell_price <= 0:
+                sell_price = cost_price
+            else:
+                sell_price = float(sell_price)
+
             if key not in available:
                 preview_rows.append(
                     SalesPreviewRow(
-                        product_name, quantity, "Error", "Product not found"
+                        product_name,
+                        quantity,
+                        sell_price,
+                        cost_price,
+                        "Error",
+                        "Product not found",
                     )
                 )
                 errors += 1
@@ -117,7 +141,12 @@ class SalesImportService:
             available[key] -= quantity
             preview_rows.append(
                 SalesPreviewRow(
-                    product_name, quantity, "OK", "Will update stock"
+                    product_name,
+                    quantity,
+                    sell_price,
+                    cost_price,
+                    "OK",
+                    "Will update stock",
                 )
             )
             success += 1

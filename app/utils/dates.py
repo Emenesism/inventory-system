@@ -51,3 +51,15 @@ def to_jalali_datetime(value: str) -> str:
 
     jy, jm, jd = _gregorian_to_jalali(dt.year, dt.month, dt.day)
     return f"{jy:04d}/{jm:02d}/{jd:02d} {dt:%H:%M}"
+
+
+def to_jalali_month(value: str) -> str:
+    try:
+        year_str, month_str = value.split("-")
+        gy = int(year_str)
+        gm = int(month_str)
+    except ValueError:
+        return value
+
+    jy, jm, _ = _gregorian_to_jalali(gy, gm, 1)
+    return f"{jy:04d}/{jm:02d}"
