@@ -5,6 +5,7 @@ import logging
 from PySide6.QtCore import QObject
 
 from app.services.inventory_service import InventoryService
+from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
 from app.ui.widgets.toast import ToastManager
@@ -17,16 +18,20 @@ class PurchaseInvoiceController(QObject):
         page: PurchaseInvoicePage,
         inventory_service: InventoryService,
         purchase_service: PurchaseService,
+        invoice_service: InvoiceService,
         toast: ToastManager,
         on_inventory_updated,
+        on_invoices_updated,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.page = page
         self.inventory_service = inventory_service
         self.purchase_service = purchase_service
+        self.invoice_service = invoice_service
         self.toast = toast
         self.on_inventory_updated = on_inventory_updated
+        self.on_invoices_updated = on_invoices_updated
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self.page.submit_requested.connect(self.submit)
@@ -83,6 +88,13 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("Purchase invoice failed", "error")
             self._logger.exception("Failed to apply purchase invoice")
             return
+
+        try:
+            self.invoice_service.create_purchase_invoice(valid_lines)
+            self.on_invoices_updated()
+        except Exception as exc:  # noqa: BLE001
+            self.toast.show("Invoice saved, history not updated", "error")
+            self._logger.exception("Failed to store invoice history")
 
         message = f"Updated {summary.updated} items, created {summary.created} new items."
         if invalid:

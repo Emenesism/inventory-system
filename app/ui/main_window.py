@@ -19,9 +19,11 @@ from app.core.config import AppConfig
 from app.core.logging_setup import LOG_DIR
 from app.models.errors import InventoryFileError
 from app.services.inventory_service import InventoryService
+from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
 from app.ui.pages.inventory_page import InventoryPage
+from app.ui.pages.invoices_page import InvoicesPage
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
 from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.sales_import_page import SalesImportPage
@@ -72,11 +74,14 @@ class MainWindow(QMainWindow):
         self.inventory_page = InventoryPage()
         self.sales_page = SalesImportPage()
         self.purchase_page = PurchaseInvoicePage()
+        self.invoice_service = InvoiceService()
+        self.invoices_page = InvoicesPage(self.invoice_service)
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
 
         self.pages.addWidget(self.inventory_page)
         self.pages.addWidget(self.sales_page)
         self.pages.addWidget(self.purchase_page)
+        self.pages.addWidget(self.invoices_page)
         self.pages.addWidget(self.reports_page)
 
         self.sidebar.set_active("Inventory")
@@ -97,8 +102,10 @@ class MainWindow(QMainWindow):
             self.purchase_page,
             self.inventory_service,
             PurchaseService(),
+            self.invoice_service,
             self.toast,
             self.refresh_inventory_views,
+            self.invoices_page.refresh,
             self,
         )
 
@@ -202,6 +209,7 @@ class MainWindow(QMainWindow):
             "Inventory": self.inventory_page,
             "Sales Import": self.sales_page,
             "Purchase Invoice": self.purchase_page,
+            "Invoices": self.invoices_page,
             "Reports/Logs": self.reports_page,
         }
         page = pages.get(name)
