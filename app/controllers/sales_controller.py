@@ -101,4 +101,5 @@ class SalesImportController(QObject):
             self._logger.exception("Failed to apply sales import")
             return
 
+        self.page.reset_after_apply()
         self.toast.show("Sales import applied", "success")

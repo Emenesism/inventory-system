@@ -46,7 +46,9 @@ class SalesImportPage(QWidget):
         file_layout.setSpacing(12)
 
         self.file_input = QLineEdit()
-        self.file_input.setPlaceholderText("Select sales Excel/CSV file...")
+        self.file_input.setPlaceholderText(
+            "Select sales Excel/CSV file (Product Name, Quantity)..."
+        )
         file_layout.addWidget(self.file_input, 1)
 
         self.browse_button = QPushButton("Browse")
@@ -62,6 +64,12 @@ class SalesImportPage(QWidget):
         file_layout.addWidget(self.apply_button)
 
         layout.addWidget(file_card)
+
+        helper = QLabel(
+            "Expected columns: Product Name, Quantity (or Quantity Sold)."
+        )
+        helper.setStyleSheet("color: #9CA3AF;")
+        layout.addWidget(helper)
 
         summary_card = QFrame()
         summary_card.setObjectName("Card")
@@ -104,6 +112,8 @@ class SalesImportPage(QWidget):
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
 
+        was_sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
         for row_idx, row in enumerate(rows):
             self.table.setItem(row_idx, 0, QTableWidgetItem(row.product_name))
@@ -112,6 +122,7 @@ class SalesImportPage(QWidget):
             )
             self.table.setItem(row_idx, 2, QTableWidgetItem(row.status))
             self.table.setItem(row_idx, 3, QTableWidgetItem(row.message))
+        self.table.setSortingEnabled(was_sorting)
         self.table.resizeColumnsToContents()
 
     def set_enabled_state(self, enabled: bool) -> None:
@@ -120,6 +131,14 @@ class SalesImportPage(QWidget):
         self.preview_button.setEnabled(enabled)
         self.apply_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
+
+    def reset_after_apply(self) -> None:
+        self.preview_rows = []
+        self.file_input.clear()
+        self.total_label.setText("Total: 0")
+        self.success_label.setText("Success: 0")
+        self.errors_label.setText("Errors: 0")
+        self.table.setRowCount(0)
 
     def _emit_preview(self) -> None:
         path = self.file_input.text().strip()

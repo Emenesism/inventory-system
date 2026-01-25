@@ -24,6 +24,14 @@ class SalesPreviewSummary:
 
 class SalesImportService:
     REQUIRED_COLUMNS = ["product_name", "quantity_sold"]
+    COLUMN_ALIASES = {
+        "product name": "product_name",
+        "product": "product_name",
+        "quantity": "quantity_sold",
+        "qty": "quantity_sold",
+        "quantity sold": "quantity_sold",
+        "total quantity": "quantity_sold",
+    }
 
     def load_sales_file(self, path: str) -> pd.DataFrame:
         suffix = str(path).lower()
@@ -36,17 +44,24 @@ class SalesImportService:
 
         df.columns = [str(col).strip() for col in df.columns]
         lower_map = {str(col).strip().lower(): col for col in df.columns}
-        missing = [col for col in self.REQUIRED_COLUMNS if col not in lower_map]
+
+        rename_map: dict[str, str] = {}
+        for required in self.REQUIRED_COLUMNS:
+            if required in lower_map:
+                rename_map[lower_map[required]] = required
+        for alias, target in self.COLUMN_ALIASES.items():
+            if alias in lower_map and target not in rename_map.values():
+                rename_map[lower_map[alias]] = target
+
+        df = df.rename(columns=rename_map)
+        missing = [
+            col for col in self.REQUIRED_COLUMNS if col not in df.columns
+        ]
         if missing:
             raise InventoryFileError(
-                f"Sales file missing required columns: {', '.join(missing)}"
+                "Sales file missing required columns: "
+                "product_name, quantity_sold (aliases: Product Name, Quantity)"
             )
-        df = df.rename(
-            columns={
-                lower_map["product_name"]: "product_name",
-                lower_map["quantity_sold"]: "quantity_sold",
-            }
-        )
         return df
 
     def preview(
@@ -94,18 +109,6 @@ class SalesImportService:
                 preview_rows.append(
                     SalesPreviewRow(
                         product_name, quantity, "Error", "Product not found"
-                    )
-                )
-                errors += 1
-                continue
-
-            if quantity > available[key]:
-                preview_rows.append(
-                    SalesPreviewRow(
-                        product_name,
-                        quantity,
-                        "Error",
-                        f"Insufficient stock (available {available[key]})",
                     )
                 )
                 errors += 1
