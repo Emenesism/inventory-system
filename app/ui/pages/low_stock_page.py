@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.core.config import AppConfig
+from app.services.inventory_service import InventoryService
+
+
+class LowStockPage(QWidget):
+    def __init__(
+        self,
+        inventory_service: InventoryService,
+        config: AppConfig,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.inventory_service = inventory_service
+        self.config = config
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        header = QHBoxLayout()
+        title = QLabel("Low Stock Alerts")
+        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        header.addWidget(title)
+        header.addStretch(1)
+
+        threshold_label = QLabel("Min stock:")
+        header.addWidget(threshold_label)
+
+        self.threshold_input = QSpinBox()
+        self.threshold_input.setRange(0, 1_000_000)
+        self.threshold_input.setValue(self.config.low_stock_threshold)
+        self.threshold_input.valueChanged.connect(self._on_threshold_changed)
+        header.addWidget(self.threshold_input)
+
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self.refresh)
+        header.addWidget(refresh_button)
+        layout.addLayout(header)
+
+        summary_card = QFrame()
+        summary_card.setObjectName("Card")
+        summary_layout = QHBoxLayout(summary_card)
+        summary_layout.setContentsMargins(16, 16, 16, 16)
+        summary_layout.setSpacing(24)
+
+        self.items_label = QLabel("Items below minimum: 0")
+        self.total_needed_label = QLabel("Total needed: 0")
+        summary_layout.addWidget(self.items_label)
+        summary_layout.addWidget(self.total_needed_label)
+        summary_layout.addStretch(1)
+        layout.addWidget(summary_card)
+
+        table_card = QFrame()
+        table_card.setObjectName("Card")
+        table_layout = QVBoxLayout(table_card)
+        table_layout.setContentsMargins(16, 16, 16, 16)
+
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Product", "Quantity", "Min", "Needed", "Avg Buy", "Source"]
+        )
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setDefaultSectionSize(32)
+        table_layout.addWidget(self.table)
+        layout.addWidget(table_card)
+
+    def set_enabled_state(self, enabled: bool) -> None:
+        self.threshold_input.setEnabled(enabled)
+        self.table.setEnabled(enabled)
+
+    def refresh(self) -> None:
+        if not self.inventory_service.is_loaded():
+            self.table.setRowCount(0)
+            self.items_label.setText("Items below minimum: 0")
+            self.total_needed_label.setText("Total needed: 0")
+            return
+
+        threshold = self.config.low_stock_threshold
+        df = self.inventory_service.get_dataframe()
+
+        rows = []
+        for _, row in df.iterrows():
+            qty = int(row.get("quantity", 0))
+            if qty >= threshold:
+                continue
+            needed = threshold - qty
+            source_value = row.get("source", "")
+            source_text = "" if source_value is None else str(source_value)
+            if source_text.lower() == "nan":
+                source_text = ""
+            rows.append(
+                {
+                    "product": str(row.get("product_name", "")).strip(),
+                    "quantity": qty,
+                    "min": threshold,
+                    "needed": needed,
+                    "avg_buy": float(row.get("avg_buy_price", 0.0)),
+                    "source": source_text.strip(),
+                }
+            )
+
+        self.items_label.setText(f"Items below minimum: {len(rows)}")
+        self.total_needed_label.setText(
+            f"Total needed: {sum(item['needed'] for item in rows)}"
+        )
+
+        self.table.setRowCount(len(rows))
+        for row_idx, item in enumerate(rows):
+            self.table.setItem(row_idx, 0, QTableWidgetItem(item["product"]))
+
+            qty_item = QTableWidgetItem(str(item["quantity"]))
+            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row_idx, 1, qty_item)
+
+            min_item = QTableWidgetItem(str(item["min"]))
+            min_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row_idx, 2, min_item)
+
+            needed_item = QTableWidgetItem(str(item["needed"]))
+            needed_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row_idx, 3, needed_item)
+
+            avg_item = QTableWidgetItem(self._format_amount(item["avg_buy"]))
+            avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row_idx, 4, avg_item)
+
+            self.table.setItem(row_idx, 5, QTableWidgetItem(item["source"]))
+
+    def _on_threshold_changed(self, value: int) -> None:
+        self.config.low_stock_threshold = value
+        self.config.save()
+        self.refresh()
+
+    @staticmethod
+    def _format_amount(value: float) -> str:
+        return f"{value:,.0f}"

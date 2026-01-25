@@ -25,6 +25,7 @@ from app.services.sales_import_service import SalesImportService
 from app.ui.pages.analytics_page import AnalyticsPage
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.pages.invoices_page import InvoicesPage
+from app.ui.pages.low_stock_page import LowStockPage
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
 from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.sales_import_page import SalesImportPage
@@ -78,6 +79,7 @@ class MainWindow(QMainWindow):
         self.invoice_service = InvoiceService()
         self.invoices_page = InvoicesPage(self.invoice_service)
         self.analytics_page = AnalyticsPage(self.invoice_service)
+        self.low_stock_page = LowStockPage(self.inventory_service, self.config)
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
 
         self.pages.addWidget(self.inventory_page)
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.purchase_page)
         self.pages.addWidget(self.invoices_page)
         self.pages.addWidget(self.analytics_page)
+        self.pages.addWidget(self.low_stock_page)
         self.pages.addWidget(self.reports_page)
 
         self.sidebar.set_active("Inventory")
@@ -184,12 +187,15 @@ class MainWindow(QMainWindow):
         self.sales_page.set_enabled_state(True)
         self.purchase_page.set_enabled_state(True)
         self.inventory_page.set_enabled_state(True)
+        self.low_stock_page.set_enabled_state(True)
+        self.low_stock_page.refresh()
         self._update_status()
 
     def disable_inventory_features(self, status: str) -> None:
         self.sales_page.set_enabled_state(False)
         self.purchase_page.set_enabled_state(False)
         self.inventory_page.set_enabled_state(False)
+        self.low_stock_page.set_enabled_state(False)
         self.header.set_status(status)
 
     def _update_status(self) -> None:
@@ -216,6 +222,7 @@ class MainWindow(QMainWindow):
             "Purchase Invoice": self.purchase_page,
             "Invoices": self.invoices_page,
             "Analytics": self.analytics_page,
+            "Low Stock": self.low_stock_page,
             "Reports/Logs": self.reports_page,
         }
         page = pages.get(name)

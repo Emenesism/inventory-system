@@ -40,6 +40,7 @@ class Sidebar(QFrame):
             "Purchase Invoice": QStyle.SP_FileDialogNewFolder,
             "Invoices": QStyle.SP_FileDialogInfoView,
             "Analytics": QStyle.SP_ComputerIcon,
+            "Low Stock": QStyle.SP_MessageBoxWarning,
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
         }
         hint_map = {
@@ -48,6 +49,7 @@ class Sidebar(QFrame):
             "Purchase Invoice": "Add new purchases",
             "Invoices": "Browse saved invoices",
             "Analytics": "Profit and trends",
+            "Low Stock": "Reorder list",
             "Reports/Logs": "App log",
         }
 
@@ -57,6 +59,7 @@ class Sidebar(QFrame):
             "Purchase Invoice",
             "Invoices",
             "Analytics",
+            "Low Stock",
             "Reports/Logs",
         ]:
             item = QWidget()
