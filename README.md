@@ -1,41 +1,48 @@
 # Armkala Inventory Suite
+Website: `armkala.ir`
 
-A desktop accounting + inventory management app built with PySide6 for fast
-daily operations. Branding and website: `armkala.ir`.
+## Professional Summary
+Armala Inventory Suite is a production-grade desktop application for
+inventory, purchasing, sales import, and operational analytics. It is built
+in Python with a PySide6 UI layer, emphasizes data integrity, and favors
+transparent workflows (preview before apply, explicit exports, auditable logs).
 
-## Highlights
-- Inventory management with search, sorting, and inline edits
-- Sales import from Excel/CSV with preview and validation
-- Purchase invoice entry with weighted average cost updates
-- Analytics and low‑stock views with export
-- Basalam orders fetch + export (filtered by status)
-- Persistent settings and rotating logs
+## Core Competencies
+- Inventory lifecycle management with inline edits and validation
+- Sales ingestion from Excel/CSV with preview and safe apply
+- Purchase invoice workflow with weighted average cost updates
+- Low-stock intelligence with export-ready reporting
+- Basalam order retrieval and targeted filtering
+- Centralized logging and diagnostics
 
-## Requirements
-- Python 3.10+
+## Technical Stack
+- UI: PySide6 (Qt)
+- Data: pandas + openpyxl
+- Fuzzy matching: rapidfuzz
+- HTTP: requests
+- Storage: local Excel/CSV + JSON config + log files
 
-## Quick start (Windows)
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-python -m app.main
-```
+## Architecture Highlights
+- Layered structure: UI pages, controllers, services, and utilities
+- Stateless services where possible; state centralized in UI and config
+- Defensive input handling (preview, validation, error dialogs)
+- Rotating log files for traceability
 
-## Inventory file format
-Supported: `.xlsx`, `.xlsm`, `.csv`
-
-Required columns:
-- `product_name`
-- `quantity`
-- `avg_buy_price`
-
-Optional columns (kept as‑is):
-- `sku` or `product_code`
-- `last_updated`
+## Key Modules (Selected)
+- Inventory: load/save, inline edits, and safe backups
+- Sales Import: preview, validate, and apply with summary feedback
+- Purchase Invoice: invoice entry and stock cost recalculation
+- Analytics: trends and profitability views
+- Low Stock: thresholds and export-ready list
+- Basalam Orders:
+  - Vendor ID is fixed to 563284
+  - Paginates with limit=30 until completion
+  - Uses tab=COMPLECTED (API enum spelling)
+  - Filters to status: "وضعیت سفارش = رضایت مشتری"
+  - Displays only Customer Name, Product Name, Quantity
 
 ## Configuration
-Settings are stored in `config.json`:
+`config.json` fields:
 - `inventory_file` (path)
 - `theme` (`light` or `dark`)
 - `low_stock_threshold` (int)
@@ -43,17 +50,19 @@ Settings are stored in `config.json`:
 - `passcode` (string)
 - `access_token` (Basalam API token)
 
-## Basalam orders
-The Basalam page:
-- Uses vendor ID `563284` (hardcoded)
-- Fetches all pages with `limit=30`
-- Requests `tab=COMPLECTED` (Basalam’s enum spelling)
-- Filters results to **وضعیت سفارش = رضایت مشتری**
-- Shows/export only: Customer Name, Product Name, Quantity
+## Observability
+- Logs at `logs/app.log`
+- UI exposes logs under Reports/Logs
 
-## Logs
-Logs are stored at `logs/app.log` and visible in the Reports/Logs page.
+## Runbook (Windows)
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m app.main
+```
 
-## Troubleshooting
-- If Basalam fetch fails, check `access_token` in `config.json`.
-- If inventory doesn’t load, verify required columns and file path.
+## Operating Notes
+- Inventory file must include: `product_name`, `quantity`, `avg_buy_price`.
+- Backups are created before updates.
+- Basalam fetch requires `access_token` in `config.json`.
