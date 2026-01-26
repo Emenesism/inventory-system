@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -47,6 +48,14 @@ class InvoiceService:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def _backup_db(self) -> None:
+        if not self.db_path.exists():
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"invoices_backup_{timestamp}{self.db_path.suffix}"
+        backup_path = self.db_path.with_name(backup_name)
+        shutil.copy2(self.db_path, backup_path)
 
     def _init_db(self) -> None:
         with self._connect() as conn:
@@ -103,6 +112,7 @@ class InvoiceService:
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now().isoformat(timespec="seconds")
 
+        self._backup_db()
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -149,6 +159,7 @@ class InvoiceService:
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now().isoformat(timespec="seconds")
 
+        self._backup_db()
         with self._connect() as conn:
             cursor = conn.execute(
                 """
