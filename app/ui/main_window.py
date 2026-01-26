@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QFileDialog,
+    QGraphicsBlurEffect,
     QHBoxLayout,
     QMainWindow,
     QStackedWidget,
@@ -34,6 +35,7 @@ from app.ui.pages.sales_import_page import SalesImportPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.theme import get_stylesheet
 from app.ui.widgets.header import HeaderBar
+from app.ui.widgets.lock_dialog import LockDialog
 from app.ui.widgets.sidebar import Sidebar
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         self.toast = ToastManager(self)
+        self._lock_shown = False
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -140,6 +143,22 @@ class MainWindow(QMainWindow):
 
         self.apply_theme(self.config.theme)
         self.initialize_inventory()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not self._lock_shown:
+            self._lock_shown = True
+            self._show_lock()
+
+    def _show_lock(self) -> None:
+        blur = QGraphicsBlurEffect(self)
+        blur.setBlurRadius(12)
+        if self.centralWidget():
+            self.centralWidget().setGraphicsEffect(blur)
+        dialog = LockDialog(self.config.passcode, self)
+        dialog.exec()
+        if self.centralWidget():
+            self.centralWidget().setGraphicsEffect(None)
 
     def initialize_inventory(self) -> None:
         default_path = Path(__file__).resolve().parents[2] / "stock.xlsx"

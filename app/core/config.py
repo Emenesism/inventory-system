@@ -11,6 +11,7 @@ class AppConfig:
     theme: str = "light"
     low_stock_threshold: int = 5
     backup_dir: str | None = None
+    passcode: str = "1111"
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -25,6 +26,7 @@ class AppConfig:
             theme=data.get("theme", "light"),
             low_stock_threshold=data.get("low_stock_threshold", 5),
             backup_dir=data.get("backup_dir"),
+            passcode=str(data.get("passcode", "1111")),
         )
 
     def save(self) -> None:
@@ -33,5 +35,6 @@ class AppConfig:
             "theme": self.theme,
             "low_stock_threshold": self.low_stock_threshold,
             "backup_dir": self.backup_dir,
+            "passcode": self.passcode,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -57,6 +58,26 @@ class SettingsPage(QWidget):
         row.addWidget(clear_button)
 
         card_layout.addLayout(row)
+
+        pass_row = QHBoxLayout()
+        pass_label = QLabel("Passcode:")
+        pass_row.addWidget(pass_label)
+
+        self.passcode_input = QLineEdit()
+        self.passcode_input.setEchoMode(QLineEdit.Password)
+        self.passcode_input.setPlaceholderText("Default: 1111")
+        self.passcode_input.setText(self.config.passcode or "1111")
+        pass_row.addWidget(self.passcode_input, 1)
+
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self._save_passcode)
+        pass_row.addWidget(save_button)
+
+        reset_button = QPushButton("Reset")
+        reset_button.clicked.connect(self._reset_passcode)
+        pass_row.addWidget(reset_button)
+
+        card_layout.addLayout(pass_row)
         layout.addWidget(card)
 
         layout.addStretch(1)
@@ -79,3 +100,14 @@ class SettingsPage(QWidget):
         backup_dir = Path(path) if path else None
         self.invoice_service.set_backup_dir(backup_dir)
         self.path_label.setText(self._current_path_text())
+
+    def _save_passcode(self) -> None:
+        code = self.passcode_input.text().strip() or "1111"
+        self.config.passcode = code
+        self.config.save()
+        self.passcode_input.setText(code)
+
+    def _reset_passcode(self) -> None:
+        self.config.passcode = "1111"
+        self.config.save()
+        self.passcode_input.setText("1111")
