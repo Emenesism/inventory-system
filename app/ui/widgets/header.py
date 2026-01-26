@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 
 class HeaderBar(QFrame):
     inventory_requested = Signal()
-    theme_toggle_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -43,18 +42,8 @@ class HeaderBar(QFrame):
         )
         layout.addWidget(self.select_inventory_button)
 
-        self.theme_button = QToolButton()
-        self.theme_button.setObjectName("ThemeButton")
-        self.theme_button.setText("Toggle Theme")
-        self.theme_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DialogYesButton)
-        )
-        self.theme_button.clicked.connect(self.theme_toggle_requested.emit)
-        layout.addWidget(self.theme_button)
-
     def set_status(self, message: str) -> None:
         self.status_label.setText(message)
 
     def set_theme_label(self, theme: str) -> None:
-        label = "Light" if theme == "light" else "Dark"
-        self.theme_button.setText(f"{label} Mode")
+        pass

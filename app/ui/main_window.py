@@ -71,7 +71,6 @@ class MainWindow(QMainWindow):
 
         self.header = HeaderBar()
         self.header.inventory_requested.connect(self.choose_inventory_file)
-        self.header.theme_toggle_requested.connect(self.toggle_theme)
         main_layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
@@ -91,7 +90,9 @@ class MainWindow(QMainWindow):
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
         self.batch_price_page = BatchPricePage()
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
-        self.settings_page = SettingsPage(self.config, self.invoice_service)
+        self.settings_page = SettingsPage(
+            self.config, self.invoice_service, self.apply_theme
+        )
 
         self.pages.addWidget(self.inventory_page)
         self.pages.addWidget(self.sales_page)
@@ -269,11 +270,6 @@ class MainWindow(QMainWindow):
         if page:
             self.pages.setCurrentWidget(page)
             self.sidebar.set_active(name)
-
-    def toggle_theme(self) -> None:
-        self.config.theme = "dark" if self.config.theme == "light" else "light"
-        self.config.save()
-        self.apply_theme(self.config.theme)
 
     def refresh_history_views(self) -> None:
         self.invoices_page.refresh()

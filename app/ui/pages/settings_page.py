@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -22,11 +23,13 @@ class SettingsPage(QWidget):
         self,
         config: AppConfig,
         invoice_service: InvoiceService,
+        on_theme_changed=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.config = config
         self.invoice_service = invoice_service
+        self.on_theme_changed = on_theme_changed
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -78,6 +81,21 @@ class SettingsPage(QWidget):
         pass_row.addWidget(reset_button)
 
         card_layout.addLayout(pass_row)
+
+        theme_row = QHBoxLayout()
+        theme_label = QLabel("Theme:")
+        theme_row.addWidget(theme_label)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Light", "Dark"])
+        self.theme_combo.setCurrentText(
+            "Dark" if self.config.theme == "dark" else "Light"
+        )
+        self.theme_combo.currentTextChanged.connect(self._apply_theme)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch(1)
+
+        card_layout.addLayout(theme_row)
         layout.addWidget(card)
 
         layout.addStretch(1)
@@ -111,3 +129,9 @@ class SettingsPage(QWidget):
         self.config.passcode = "1111"
         self.config.save()
         self.passcode_input.setText("1111")
+
+    def _apply_theme(self, value: str) -> None:
+        self.config.theme = "dark" if value == "Dark" else "light"
+        self.config.save()
+        if self.on_theme_changed:
+            self.on_theme_changed(self.config.theme)
