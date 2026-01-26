@@ -12,6 +12,7 @@ class AppConfig:
     low_stock_threshold: int = 5
     backup_dir: str | None = None
     passcode: str = "1111"
+    access_token: str | None = None
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -27,6 +28,7 @@ class AppConfig:
             low_stock_threshold=data.get("low_stock_threshold", 5),
             backup_dir=data.get("backup_dir"),
             passcode=str(data.get("passcode", "1111")),
+            access_token=data.get("access_token"),
         )
 
     def save(self) -> None:
@@ -36,5 +38,6 @@ class AppConfig:
             "low_stock_threshold": self.low_stock_threshold,
             "backup_dir": self.backup_dir,
             "passcode": self.passcode,
+            "access_token": self.access_token,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

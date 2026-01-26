@@ -24,6 +24,7 @@ from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
 from app.ui.pages.analytics_page import AnalyticsPage
+from app.ui.pages.basalam_page import BasalamPage
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.pages.invoices_page import InvoicesPage
 from app.ui.pages.low_stock_page import LowStockPage
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         self.invoices_page = InvoicesPage(self.invoice_service)
         self.analytics_page = AnalyticsPage(self.invoice_service)
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
+        self.basalam_page = BasalamPage(self.config)
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
         self.settings_page = SettingsPage(
             self.config, self.invoice_service, self.apply_theme
@@ -97,6 +99,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.invoices_page)
         self.pages.addWidget(self.analytics_page)
         self.pages.addWidget(self.low_stock_page)
+        self.pages.addWidget(self.basalam_page)
         self.pages.addWidget(self.reports_page)
         self.pages.addWidget(self.settings_page)
 
@@ -249,6 +252,7 @@ class MainWindow(QMainWindow):
             "Invoices": self.invoices_page,
             "Analytics": self.analytics_page,
             "Low Stock": self.low_stock_page,
+            "Basalam": self.basalam_page,
             "Reports/Logs": self.reports_page,
             "Settings": self.settings_page,
         }
