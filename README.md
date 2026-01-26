@@ -1,20 +1,20 @@
-# Reza Inventory Suite
+# Armkala Inventory Suite
 
-A modern desktop accounting + inventory management UI built with PySide6.
+A desktop accounting + inventory management app built with PySide6 for fast
+daily operations. Branding and website: `armkala.ir`.
 
-## Features
-- Sidebar navigation with dashboard-style layout
-- Inventory view with search, sorting, and inline quantity edits
-- Sales Excel/CSV import with preview, validation, and safe backups
+## Highlights
+- Inventory management with search, sorting, and inline edits
+- Sales import from Excel/CSV with preview and validation
 - Purchase invoice entry with weighted average cost updates
-- Fuzzy product autocomplete for purchase lines
-- Toast notifications and light/dark theme toggle
-- Logs stored at `logs/app.log`
+- Analytics and low‑stock views with export
+- Basalam orders fetch + export (filtered by status)
+- Persistent settings and rotating logs
 
 ## Requirements
 - Python 3.10+
 
-## Setup (Windows-friendly)
+## Quick start (Windows)
 ```bash
 python -m venv .venv
 .\.venv\Scripts\activate
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
-## Inventory File Format
+## Inventory file format
 Supported: `.xlsx`, `.xlsm`, `.csv`
 
 Required columns:
@@ -30,10 +30,30 @@ Required columns:
 - `quantity`
 - `avg_buy_price`
 
-Optional columns (kept as-is):
+Optional columns (kept as‑is):
 - `sku` or `product_code`
 - `last_updated`
 
-## Notes
-- On first launch, select the inventory file. The chosen path is saved in `config.json`.
-- Before any updates, the app creates a timestamped backup next to the inventory file.
+## Configuration
+Settings are stored in `config.json`:
+- `inventory_file` (path)
+- `theme` (`light` or `dark`)
+- `low_stock_threshold` (int)
+- `backup_dir` (path or null)
+- `passcode` (string)
+- `access_token` (Basalam API token)
+
+## Basalam orders
+The Basalam page:
+- Uses vendor ID `563284` (hardcoded)
+- Fetches all pages with `limit=30`
+- Requests `tab=COMPLECTED` (Basalam’s enum spelling)
+- Filters results to **وضعیت سفارش = رضایت مشتری**
+- Shows/export only: Customer Name, Product Name, Quantity
+
+## Logs
+Logs are stored at `logs/app.log` and visible in the Reports/Logs page.
+
+## Troubleshooting
+- If Basalam fetch fails, check `access_token` in `config.json`.
+- If inventory doesn’t load, verify required columns and file path.
