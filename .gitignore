@@ -13,3 +13,4 @@ invoices.db
 low_stock.xlsx
 app/utils/invoices_backup_20260125_200805.db
 *.db
+basalam_orders.xlsx
