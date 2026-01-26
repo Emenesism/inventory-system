@@ -77,6 +77,15 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("Product(s) not found", "error")
             return
 
+        preview_message = self._build_preview_message(
+            valid_lines, inventory_df, invalid
+        )
+        if not dialogs.ask_yes_no(
+            self.page, "Purchase Invoice Preview", preview_message
+        ):
+            self.toast.show("Purchase invoice canceled", "info")
+            return
+
         try:
             updated_df, summary, errors = self.purchase_service.apply_purchases(
                 valid_lines, inventory_df, allow_create=False
@@ -103,3 +112,59 @@ class PurchaseInvoiceController(QObject):
             message += f" Skipped {len(errors)} new items (not created)."
         self.toast.show(message, "success")
         self.page.reset_after_submit()
+
+    def _build_preview_message(
+        self,
+        valid_lines: list[PurchaseLine],
+        inventory_df,
+        invalid_count: int,
+    ) -> str:
+        lines_out: list[str] = []
+        total_qty = 0
+        total_cost = 0.0
+        aggregated: dict[str, int] = {}
+
+        for idx, line in enumerate(valid_lines, start=1):
+            line_total = line.price * line.quantity
+            total_qty += line.quantity
+            total_cost += line_total
+            aggregated[line.product_name] = (
+                aggregated.get(line.product_name, 0) + line.quantity
+            )
+            lines_out.append(
+                f"{idx}) {line.product_name} | Buy price: {line.price:.2f} | "
+                f"Qty: {line.quantity} | Line total: {line_total:.2f}"
+            )
+
+        totals = [
+            f"Total lines: {len(valid_lines)}",
+            f"Total quantity: {total_qty}",
+            f"Total cost: {total_cost:.2f}",
+        ]
+        if invalid_count:
+            totals.append(f"Skipped invalid lines: {invalid_count}")
+
+        stock_lines: list[str] = []
+        for product_name, add_qty in aggregated.items():
+            index = self.inventory_service.find_index(product_name)
+            current_qty = int(inventory_df.loc[index, "quantity"])
+            new_qty = current_qty + add_qty
+            stock_lines.append(
+                f"{product_name}: current {current_qty} + add {add_qty} = {new_qty}"
+            )
+
+        message_parts = [
+            "Please review the purchase invoice before submitting.",
+            "",
+            "Lines:",
+            *lines_out,
+            "",
+            "Totals:",
+            *totals,
+            "",
+            "Projected stock after submit:",
+            *stock_lines,
+            "",
+            "Submit this invoice?",
+        ]
+        return "\n".join(message_parts)
