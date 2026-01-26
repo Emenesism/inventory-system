@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -25,22 +25,19 @@ class BatchPricePage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        header = QHBoxLayout()
-        title = QLabel("Batch Price Update")
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
-        header.addWidget(title)
-        header.addStretch(1)
-        layout.addLayout(header)
-
-        helper = QLabel("Apply a single change to all products' buy prices.")
-        helper.setStyleSheet("color: #9CA3AF;")
-        layout.addWidget(helper)
-
         card = QFrame()
         card.setObjectName("Card")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(16)
+
+        title = QLabel("Batch Price Update")
+        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        card_layout.addWidget(title)
+
+        helper = QLabel("Apply a single change to all products' buy prices.")
+        helper.setStyleSheet("color: #9CA3AF;")
+        card_layout.addWidget(helper)
 
         mode_row = QHBoxLayout()
         mode_label = QLabel("Mode:")
@@ -84,7 +81,10 @@ class BatchPricePage(QWidget):
         self.apply_button.clicked.connect(self._emit_apply)
         card_layout.addWidget(self.apply_button)
 
-        layout.addWidget(card)
+        layout.addStretch(1)
+        card.setMaximumWidth(720)
+        layout.addWidget(card, 0, Qt.AlignHCenter)
+        layout.addStretch(2)
 
     def set_enabled_state(self, enabled: bool) -> None:
         self.percent_radio.setEnabled(enabled)
