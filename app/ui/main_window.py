@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.controllers.batch_price_controller import BatchPriceController
 from app.controllers.inventory_controller import InventoryController
 from app.controllers.purchase_controller import PurchaseInvoiceController
 from app.controllers.sales_controller import SalesImportController
@@ -23,6 +24,7 @@ from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
 from app.ui.pages.analytics_page import AnalyticsPage
+from app.ui.pages.batch_price_page import BatchPricePage
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.pages.invoices_page import InvoicesPage
 from app.ui.pages.low_stock_page import LowStockPage
@@ -80,6 +82,7 @@ class MainWindow(QMainWindow):
         self.invoices_page = InvoicesPage(self.invoice_service)
         self.analytics_page = AnalyticsPage(self.invoice_service)
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
+        self.batch_price_page = BatchPricePage()
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
 
         self.pages.addWidget(self.inventory_page)
@@ -88,6 +91,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.invoices_page)
         self.pages.addWidget(self.analytics_page)
         self.pages.addWidget(self.low_stock_page)
+        self.pages.addWidget(self.batch_price_page)
         self.pages.addWidget(self.reports_page)
 
         self.sidebar.set_active("Inventory")
@@ -114,6 +118,13 @@ class MainWindow(QMainWindow):
             self.toast,
             self.refresh_inventory_views,
             self.refresh_history_views,
+            self,
+        )
+        self.batch_price_controller = BatchPriceController(
+            self.batch_price_page,
+            self.inventory_service,
+            self.toast,
+            self.refresh_inventory_views,
             self,
         )
 
@@ -188,6 +199,7 @@ class MainWindow(QMainWindow):
         self.purchase_page.set_enabled_state(True)
         self.inventory_page.set_enabled_state(True)
         self.low_stock_page.set_enabled_state(True)
+        self.batch_price_page.set_enabled_state(True)
         self.low_stock_page.refresh()
         self._update_status()
 
@@ -196,6 +208,7 @@ class MainWindow(QMainWindow):
         self.purchase_page.set_enabled_state(False)
         self.inventory_page.set_enabled_state(False)
         self.low_stock_page.set_enabled_state(False)
+        self.batch_price_page.set_enabled_state(False)
         self.header.set_status(status)
 
     def _update_status(self) -> None:
@@ -223,6 +236,7 @@ class MainWindow(QMainWindow):
             "Invoices": self.invoices_page,
             "Analytics": self.analytics_page,
             "Low Stock": self.low_stock_page,
+            "Batch Prices": self.batch_price_page,
             "Reports/Logs": self.reports_page,
         }
         page = pages.get(name)
