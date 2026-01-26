@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from app.ui.main_window import MainWindow
 
 def main() -> int:
     setup_logging()
+    _install_exception_hook()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
@@ -27,6 +29,19 @@ def main() -> int:
     window = MainWindow(inventory_service, config)
     window.show()
     return app.exec()
+
+
+def _install_exception_hook() -> None:
+    logger = logging.getLogger("UnhandledException")
+
+    def handle_exception(exc_type, exc_value, exc_traceback) -> None:
+        logger.exception(
+            "Unhandled exception",
+            exc_info=(exc_type, exc_value, exc_traceback),
+        )
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = handle_exception
 
 
 if __name__ == "__main__":

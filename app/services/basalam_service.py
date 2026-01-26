@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def list_vendor_orders(
@@ -30,6 +33,15 @@ def list_vendor_orders(
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
 
+    logger.info(
+        "Basalam request vendor=%s tab=%s start=%s end=%s limit=%s offset=%s",
+        vendor_id,
+        tab,
+        start_paid_at,
+        end_paid_at,
+        limit,
+        offset,
+    )
     response = requests.get(url, params=params, headers=headers, timeout=30)
     response.raise_for_status()
     return response.json()

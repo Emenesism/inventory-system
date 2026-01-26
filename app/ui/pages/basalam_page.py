@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 
 import requests
@@ -122,6 +123,7 @@ class BasalamPage(QWidget):
         super().__init__(parent)
         self.config = config
         self._dataframe = None
+        self._logger = logging.getLogger(self.__class__.__name__)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -188,6 +190,7 @@ class BasalamPage(QWidget):
     def _fetch(self) -> None:
         access_token = (self.config.access_token or "").strip()
         if not access_token:
+            self._logger.error("Basalam fetch blocked: access_token missing")
             dialogs.show_error(
                 self,
                 "Basalam Token Missing",
@@ -196,6 +199,12 @@ class BasalamPage(QWidget):
             return
 
         vendor_id = "563284"
+        self._logger.info(
+            "Basalam fetch started vendor=%s start=%s end=%s",
+            vendor_id,
+            self.start_paid_input.to_gregorian_str(),
+            self.end_paid_input.to_gregorian_str(),
+        )
 
         start_paid_at = self.start_paid_input.to_gregorian_str()
         end_paid_at = self.end_paid_input.to_gregorian_str()
@@ -215,9 +224,11 @@ class BasalamPage(QWidget):
             message = str(exc)
             if exc.response is not None and exc.response.text:
                 message = f"{message}\n\n{exc.response.text}"
+            self._logger.exception("Basalam HTTP error")
             dialogs.show_error(self, "Basalam Error", message)
             return
         except requests.RequestException as exc:
+            self._logger.exception("Basalam request failed")
             dialogs.show_error(self, "Basalam Error", str(exc))
             return
         finally:
@@ -238,9 +249,15 @@ class BasalamPage(QWidget):
             self.summary_label.setText(
                 f"{len(df)} rows matched {TARGET_STATUS_FA} out of {total_count} fetched."
             )
+        self._logger.info(
+            "Basalam fetch finished fetched=%s matched=%s",
+            total_count,
+            len(df) if df is not None else 0,
+        )
 
     def _export(self) -> None:
         if self._dataframe is None or self._dataframe.empty:
+            self._logger.info("Basalam export skipped: no data")
             return
 
         from PySide6.QtWidgets import QFileDialog
@@ -252,12 +269,18 @@ class BasalamPage(QWidget):
             "Excel Files (*.xlsx);;CSV Files (*.csv)",
         )
         if not file_path:
+            self._logger.info("Basalam export cancelled")
             return
 
         if file_path.lower().endswith(".csv"):
             self._dataframe.to_csv(file_path, index=False)
         else:
             self._dataframe.to_excel(file_path, index=False)
+        self._logger.info(
+            "Basalam export completed path=%s rows=%s",
+            file_path,
+            len(self._dataframe),
+        )
 
     def _fetch_all_records(
         self,
@@ -271,6 +294,9 @@ class BasalamPage(QWidget):
         all_records: list[dict] = []
         seen_ids: set[str] = set()
         while True:
+            self._logger.info(
+                "Basalam paging offset=%s limit=%s", offset, PAGE_LIMIT
+            )
             payload = list_vendor_orders(
                 vendor_id=vendor_id,
                 tab=tab,
@@ -282,6 +308,7 @@ class BasalamPage(QWidget):
             )
             batch = self._extract_records(payload)
             if not batch:
+                self._logger.info("Basalam paging finished: empty batch")
                 break
 
             unique_batch = []
@@ -298,8 +325,12 @@ class BasalamPage(QWidget):
             before_count = len(all_records)
             all_records.extend(unique_batch)
             if len(all_records) == before_count:
+                self._logger.warning(
+                    "Basalam paging stopped: no new unique records"
+                )
                 break
             if len(batch) < PAGE_LIMIT:
+                self._logger.info("Basalam paging finished: last batch")
                 break
             offset += PAGE_LIMIT
 
@@ -307,11 +338,18 @@ class BasalamPage(QWidget):
         return filtered, len(all_records)
 
     def _filter_records(self, records: list[dict]) -> list[dict]:
-        return [
+        filtered = [
             record
             for record in records
             if self._status_matches(record, TARGET_STATUS_FA)
         ]
+        self._logger.info(
+            "Basalam filter status=%s in=%s out=%s",
+            TARGET_STATUS_FA,
+            len(records),
+            len(filtered),
+        )
+        return filtered
 
     def _status_matches(self, record: dict, target: str) -> bool:
         if not isinstance(record, dict):
