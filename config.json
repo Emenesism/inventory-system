@@ -1,5 +1,6 @@
 {
   "inventory_file": "/home/em/Desktop/reza_management/stock.xlsx",
   "theme": "light",
-  "low_stock_threshold": 3
+  "low_stock_threshold": 3,
+  "backup_dir": "/home/em/Desktop/reza_management/app/utils"
 }

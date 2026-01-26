@@ -58,12 +58,13 @@ class InventoryStore:
 
         self.dataframe = df_to_save
 
-    def backup(self) -> Path:
+    def backup(self, backup_dir: Path | None = None) -> Path:
         if not self.path:
             raise InventoryFileError("No inventory file selected.")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         backup_name = f"inventory_backup_{timestamp}{self.path.suffix}"
-        backup_path = self.path.with_name(backup_name)
+        target_dir = backup_dir if backup_dir else self.path.parent
+        backup_path = target_dir / backup_name
         shutil.copy2(self.path, backup_path)
         return backup_path
 

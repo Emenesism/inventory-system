@@ -31,6 +31,7 @@ from app.ui.pages.low_stock_page import LowStockPage
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
 from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.sales_import_page import SalesImportPage
+from app.ui.pages.settings_page import SettingsPage
 from app.ui.theme import get_stylesheet
 from app.ui.widgets.header import HeaderBar
 from app.ui.widgets.sidebar import Sidebar
@@ -78,12 +79,16 @@ class MainWindow(QMainWindow):
         self.inventory_page = InventoryPage()
         self.sales_page = SalesImportPage()
         self.purchase_page = PurchaseInvoicePage()
-        self.invoice_service = InvoiceService()
+        backup_dir = (
+            Path(self.config.backup_dir) if self.config.backup_dir else None
+        )
+        self.invoice_service = InvoiceService(backup_dir=backup_dir)
         self.invoices_page = InvoicesPage(self.invoice_service)
         self.analytics_page = AnalyticsPage(self.invoice_service)
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
         self.batch_price_page = BatchPricePage()
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
+        self.settings_page = SettingsPage(self.config, self.invoice_service)
 
         self.pages.addWidget(self.inventory_page)
         self.pages.addWidget(self.sales_page)
@@ -93,6 +98,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.low_stock_page)
         self.pages.addWidget(self.batch_price_page)
         self.pages.addWidget(self.reports_page)
+        self.pages.addWidget(self.settings_page)
 
         self.sidebar.set_active("Inventory")
         self.pages.setCurrentWidget(self.inventory_page)
@@ -238,6 +244,7 @@ class MainWindow(QMainWindow):
             "Low Stock": self.low_stock_page,
             "Batch Prices": self.batch_price_page,
             "Reports/Logs": self.reports_page,
+            "Settings": self.settings_page,
         }
         page = pages.get(name)
         if page:

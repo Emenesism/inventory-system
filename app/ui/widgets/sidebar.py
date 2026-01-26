@@ -43,6 +43,7 @@ class Sidebar(QFrame):
             "Low Stock": QStyle.SP_MessageBoxWarning,
             "Batch Prices": QStyle.SP_ArrowUp,
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
+            "Settings": QStyle.SP_FileDialogContentsView,
         }
         hint_map = {
             "Inventory": "View and edit stock",
@@ -53,6 +54,7 @@ class Sidebar(QFrame):
             "Low Stock": "Reorder list",
             "Batch Prices": "Update all buy prices",
             "Reports/Logs": "App log",
+            "Settings": "Backups and preferences",
         }
 
         for name in [
@@ -64,6 +66,7 @@ class Sidebar(QFrame):
             "Low Stock",
             "Batch Prices",
             "Reports/Logs",
+            "Settings",
         ]:
             item = QWidget()
             item_layout = QVBoxLayout(item)

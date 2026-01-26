@@ -37,10 +37,15 @@ class SalesLine:
 
 
 class InvoiceService:
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        backup_dir: Path | None = None,
+    ) -> None:
         if db_path is None:
             db_path = Path(__file__).resolve().parents[2] / "invoices.db"
         self.db_path = db_path
+        self.backup_dir = backup_dir
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -54,8 +59,12 @@ class InvoiceService:
             return
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"invoices_backup_{timestamp}{self.db_path.suffix}"
-        backup_path = self.db_path.with_name(backup_name)
+        target_dir = self.backup_dir if self.backup_dir else self.db_path.parent
+        backup_path = target_dir / backup_name
         shutil.copy2(self.db_path, backup_path)
+
+    def set_backup_dir(self, backup_dir: Path | None) -> None:
+        self.backup_dir = backup_dir
 
     def _init_db(self) -> None:
         with self._connect() as conn:

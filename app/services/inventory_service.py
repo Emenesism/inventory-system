@@ -29,7 +29,10 @@ class InventoryService:
         return df
 
     def save(self, df: pd.DataFrame) -> Path:
-        backup_path = self.store.backup()
+        backup_dir = (
+            Path(self.config.backup_dir) if self.config.backup_dir else None
+        )
+        backup_path = self.store.backup(backup_dir=backup_dir)
         self.store.save(df)
         self._rebuild_index(df)
         self._logger.info("Inventory saved. Backup created at %s", backup_path)

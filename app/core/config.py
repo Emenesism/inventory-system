@@ -10,6 +10,7 @@ class AppConfig:
     inventory_file: str | None = None
     theme: str = "light"
     low_stock_threshold: int = 5
+    backup_dir: str | None = None
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -23,6 +24,7 @@ class AppConfig:
             inventory_file=data.get("inventory_file"),
             theme=data.get("theme", "light"),
             low_stock_threshold=data.get("low_stock_threshold", 5),
+            backup_dir=data.get("backup_dir"),
         )
 
     def save(self) -> None:
@@ -30,5 +32,6 @@ class AppConfig:
             "inventory_file": self.inventory_file,
             "theme": self.theme,
             "low_stock_threshold": self.low_stock_threshold,
+            "backup_dir": self.backup_dir,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
