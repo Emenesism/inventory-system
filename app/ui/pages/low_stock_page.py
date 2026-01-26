@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -28,6 +29,7 @@ class LowStockPage(QWidget):
         super().__init__(parent)
         self.inventory_service = inventory_service
         self.config = config
+        self._rows: list[dict[str, object]] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -47,6 +49,10 @@ class LowStockPage(QWidget):
         self.threshold_input.setValue(self.config.low_stock_threshold)
         self.threshold_input.valueChanged.connect(self._on_threshold_changed)
         header.addWidget(self.threshold_input)
+
+        export_button = QPushButton("Export")
+        export_button.clicked.connect(self._export)
+        header.addWidget(export_button)
 
         refresh_button = QPushButton("Refresh")
         refresh_button.clicked.connect(self.refresh)
@@ -97,7 +103,7 @@ class LowStockPage(QWidget):
         threshold = self.config.low_stock_threshold
         df = self.inventory_service.get_dataframe()
 
-        rows = []
+        rows: list[dict[str, object]] = []
         for _, row in df.iterrows():
             qty = int(row.get("quantity", 0))
             if qty >= threshold:
@@ -118,6 +124,7 @@ class LowStockPage(QWidget):
                 }
             )
 
+        self._rows = rows
         self.items_label.setText(f"Items below minimum: {len(rows)}")
         self.total_needed_label.setText(
             f"Total needed: {sum(item['needed'] for item in rows)}"
@@ -149,6 +156,36 @@ class LowStockPage(QWidget):
         self.config.low_stock_threshold = value
         self.config.save()
         self.refresh()
+
+    def _export(self) -> None:
+        if not self._rows:
+            return
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Low Stock List",
+            "low_stock.xlsx",
+            "Excel Files (*.xlsx);;CSV Files (*.csv)",
+        )
+        if not file_path:
+            return
+
+        import pandas as pd
+
+        df = pd.DataFrame(self._rows)
+        df = df.rename(
+            columns={
+                "product": "Product",
+                "quantity": "Quantity",
+                "min": "Min",
+                "needed": "Needed",
+                "avg_buy": "Avg Buy",
+                "source": "Source",
+            }
+        )
+        if file_path.lower().endswith(".csv"):
+            df.to_csv(file_path, index=False)
+        else:
+            df.to_excel(file_path, index=False)
 
     @staticmethod
     def _format_amount(value: float) -> str:
