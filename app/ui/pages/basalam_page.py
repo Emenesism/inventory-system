@@ -3,17 +3,18 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 
 import requests
-from PySide6.QtCore import Qt, QTime
+from PySide6.QtCore import QObject, Qt, QThread, QTime, Signal, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -44,6 +45,124 @@ PERSIAN_MONTHS = [
 
 TARGET_STATUS_FA = "رضایت مشتری"
 PAGE_LIMIT = 30
+REQUEST_SLEEP_SECONDS = 5
+
+
+def extract_records(payload) -> list[dict]:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return [data]
+        for key in ("items", "results", "parcels", "orders"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        for key in ("items", "results", "parcels", "orders"):
+            value = data.get(key) if isinstance(data, dict) else None
+            if isinstance(value, list):
+                return value
+        return [payload]
+    return []
+
+
+class BasalamWorker(QObject):
+    progress = Signal(int)
+    finished = Signal(list, int)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        vendor_id: str,
+        tab: str,
+        start_paid_at: str,
+        end_paid_at: str,
+        access_token: str,
+        sleep_seconds: int = REQUEST_SLEEP_SECONDS,
+    ) -> None:
+        super().__init__()
+        self.vendor_id = vendor_id
+        self.tab = tab
+        self.start_paid_at = start_paid_at
+        self.end_paid_at = end_paid_at
+        self.access_token = access_token
+        self.sleep_seconds = sleep_seconds
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            records, total_count = self._fetch_all_records()
+        except requests.HTTPError as exc:
+            message = str(exc)
+            if exc.response is not None and exc.response.text:
+                message = f"{message}\n\n{exc.response.text}"
+            self._logger.exception("Basalam worker HTTP error")
+            self.error.emit(message)
+            return
+        except requests.RequestException as exc:
+            self._logger.exception("Basalam worker request failed")
+            self.error.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._logger.exception("Basalam worker crashed")
+            self.error.emit(str(exc))
+            return
+
+        self.finished.emit(records, total_count)
+
+    def _fetch_all_records(self) -> tuple[list[dict], int]:
+        offset = 0
+        all_records: list[dict] = []
+        seen_ids: set[str] = set()
+        self._logger.info(
+            "Basalam worker start vendor=%s start=%s end=%s",
+            self.vendor_id,
+            self.start_paid_at,
+            self.end_paid_at,
+        )
+
+        while True:
+            payload = list_vendor_orders(
+                vendor_id=self.vendor_id,
+                tab=self.tab,
+                start_paid_at=self.start_paid_at,
+                end_paid_at=self.end_paid_at,
+                limit=PAGE_LIMIT,
+                offset=offset,
+                access_token=self.access_token,
+            )
+            batch = extract_records(payload)
+            if not batch:
+                break
+
+            unique_batch = []
+            for item in batch:
+                item_id = (
+                    str(item.get("id", "")) if isinstance(item, dict) else ""
+                )
+                if item_id and item_id in seen_ids:
+                    continue
+                if item_id:
+                    seen_ids.add(item_id)
+                unique_batch.append(item)
+
+            before_count = len(all_records)
+            all_records.extend(unique_batch)
+            self.progress.emit(len(all_records))
+            if len(all_records) == before_count:
+                break
+            if len(batch) < PAGE_LIMIT:
+                break
+
+            offset += PAGE_LIMIT
+            time.sleep(self.sleep_seconds)
+
+        self._logger.info("Basalam worker finished total=%s", len(all_records))
+        return all_records, len(all_records)
 
 
 class JalaliDateTimePicker(QWidget):
@@ -124,6 +243,8 @@ class BasalamPage(QWidget):
         self.config = config
         self._dataframe = None
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._worker_thread: QThread | None = None
+        self._worker: BasalamWorker | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -144,6 +265,17 @@ class BasalamPage(QWidget):
         self.export_button.clicked.connect(self._export)
         header.addWidget(self.export_button)
         layout.addLayout(header)
+
+        progress_row = QHBoxLayout()
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("color: #6B7280;")
+        self.progress_label.hide()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.hide()
+        progress_row.addWidget(self.progress_label)
+        progress_row.addWidget(self.progress_bar, 1)
+        layout.addLayout(progress_row)
 
         form_card = QFrame()
         form_card.setObjectName("Card")
@@ -199,61 +331,42 @@ class BasalamPage(QWidget):
             return
 
         vendor_id = "563284"
-        self._logger.info(
-            "Basalam fetch started vendor=%s start=%s end=%s",
-            vendor_id,
-            self.start_paid_input.to_gregorian_str(),
-            self.end_paid_input.to_gregorian_str(),
-        )
+        if self._worker_thread and self._worker_thread.isRunning():
+            self._logger.warning("Basalam fetch already running")
+            return
 
         start_paid_at = self.start_paid_input.to_gregorian_str()
         end_paid_at = self.end_paid_input.to_gregorian_str()
         tab = "COMPLECTED"
 
-        self.fetch_button.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            records, total_count = self._fetch_all_records(
-                vendor_id=vendor_id,
-                tab=tab,
-                start_paid_at=start_paid_at,
-                end_paid_at=end_paid_at,
-                access_token=access_token,
-            )
-        except requests.HTTPError as exc:
-            message = str(exc)
-            if exc.response is not None and exc.response.text:
-                message = f"{message}\n\n{exc.response.text}"
-            self._logger.exception("Basalam HTTP error")
-            dialogs.show_error(self, "Basalam Error", message)
-            return
-        except requests.RequestException as exc:
-            self._logger.exception("Basalam request failed")
-            dialogs.show_error(self, "Basalam Error", str(exc))
-            return
-        finally:
-            self.fetch_button.setEnabled(True)
-            QApplication.restoreOverrideCursor()
-
-        df = self._records_to_dataframe(records)
-        self._dataframe = df
-        self._update_table(df)
-        self.export_button.setEnabled(df is not None and not df.empty)
-        if total_count == 0:
-            self.summary_label.setText("No data returned.")
-        elif df.empty:
-            self.summary_label.setText(
-                f"{total_count} rows fetched, 0 matched {TARGET_STATUS_FA}."
-            )
-        else:
-            self.summary_label.setText(
-                f"{len(df)} rows matched {TARGET_STATUS_FA} out of {total_count} fetched."
-            )
+        self._set_loading(True)
         self._logger.info(
-            "Basalam fetch finished fetched=%s matched=%s",
-            total_count,
-            len(df) if df is not None else 0,
+            "Basalam fetch started vendor=%s start=%s end=%s",
+            vendor_id,
+            start_paid_at,
+            end_paid_at,
         )
+
+        self._worker_thread = QThread(self)
+        self._worker = BasalamWorker(
+            vendor_id=vendor_id,
+            tab=tab,
+            start_paid_at=start_paid_at,
+            end_paid_at=end_paid_at,
+            access_token=access_token,
+            sleep_seconds=REQUEST_SLEEP_SECONDS,
+        )
+        self._worker.moveToThread(self._worker_thread)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_worker_finished)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.finished.connect(self._worker_thread.quit)
+        self._worker.error.connect(self._worker_thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.error.connect(self._worker.deleteLater)
+        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._worker_thread.start()
 
     def _export(self) -> None:
         if self._dataframe is None or self._dataframe.empty:
@@ -282,61 +395,6 @@ class BasalamPage(QWidget):
             len(self._dataframe),
         )
 
-    def _fetch_all_records(
-        self,
-        vendor_id: str,
-        tab: str,
-        start_paid_at: str,
-        end_paid_at: str,
-        access_token: str,
-    ) -> tuple[list[dict], int]:
-        offset = 0
-        all_records: list[dict] = []
-        seen_ids: set[str] = set()
-        while True:
-            self._logger.info(
-                "Basalam paging offset=%s limit=%s", offset, PAGE_LIMIT
-            )
-            payload = list_vendor_orders(
-                vendor_id=vendor_id,
-                tab=tab,
-                start_paid_at=start_paid_at,
-                end_paid_at=end_paid_at,
-                limit=PAGE_LIMIT,
-                offset=offset,
-                access_token=access_token,
-            )
-            batch = self._extract_records(payload)
-            if not batch:
-                self._logger.info("Basalam paging finished: empty batch")
-                break
-
-            unique_batch = []
-            for item in batch:
-                item_id = (
-                    str(item.get("id", "")) if isinstance(item, dict) else ""
-                )
-                if item_id and item_id in seen_ids:
-                    continue
-                if item_id:
-                    seen_ids.add(item_id)
-                unique_batch.append(item)
-
-            before_count = len(all_records)
-            all_records.extend(unique_batch)
-            if len(all_records) == before_count:
-                self._logger.warning(
-                    "Basalam paging stopped: no new unique records"
-                )
-                break
-            if len(batch) < PAGE_LIMIT:
-                self._logger.info("Basalam paging finished: last batch")
-                break
-            offset += PAGE_LIMIT
-
-        filtered = self._filter_records(all_records)
-        return filtered, len(all_records)
-
     def _filter_records(self, records: list[dict]) -> list[dict]:
         filtered = [
             record
@@ -350,6 +408,54 @@ class BasalamPage(QWidget):
             len(filtered),
         )
         return filtered
+
+    def _on_progress(self, total_count: int) -> None:
+        self.progress_label.setText(f"Loading... fetched {total_count} orders")
+
+    def _on_worker_error(self, message: str) -> None:
+        self._logger.error("Basalam worker error: %s", message)
+        self._set_loading(False)
+        self._worker = None
+        self._worker_thread = None
+        dialogs.show_error(self, "Basalam Error", message)
+
+    def _on_worker_finished(self, records: list, total_count: int) -> None:
+        filtered = self._filter_records(records)
+        df = self._records_to_dataframe(filtered)
+        self._dataframe = df
+        self._update_table(df)
+        self.export_button.setEnabled(df is not None and not df.empty)
+        if total_count == 0:
+            self.summary_label.setText("No data returned.")
+        elif df.empty:
+            self.summary_label.setText(
+                f"{total_count} rows fetched, 0 matched {TARGET_STATUS_FA}."
+            )
+        else:
+            self.summary_label.setText(
+                f"{len(df)} rows matched {TARGET_STATUS_FA} out of {total_count} fetched."
+            )
+        self._logger.info(
+            "Basalam fetch finished fetched=%s matched=%s",
+            total_count,
+            len(df) if df is not None else 0,
+        )
+        self._set_loading(False)
+        self._worker = None
+        self._worker_thread = None
+
+    def _set_loading(self, active: bool) -> None:
+        if active:
+            self.fetch_button.setEnabled(False)
+            self.export_button.setEnabled(False)
+            self.progress_bar.setRange(0, 0)
+            self.progress_label.setText("Loading...")
+            self.progress_bar.show()
+            self.progress_label.show()
+        else:
+            self.fetch_button.setEnabled(True)
+            self.progress_bar.hide()
+            self.progress_label.hide()
 
     def _status_matches(self, record: dict, target: str) -> bool:
         if not isinstance(record, dict):
@@ -547,27 +653,6 @@ class BasalamPage(QWidget):
                     return int(cleaned)
                 return cleaned
         return None
-
-    @staticmethod
-    def _extract_records(payload) -> list[dict]:
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            data = payload.get("data")
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict):
-                return [data]
-            for key in ("items", "results", "parcels", "orders"):
-                value = payload.get(key)
-                if isinstance(value, list):
-                    return value
-            for key in ("items", "results", "parcels", "orders"):
-                value = data.get(key) if isinstance(data, dict) else None
-                if isinstance(value, list):
-                    return value
-            return [payload]
-        return []
 
     @staticmethod
     def _pretty_column(name: str) -> str:
