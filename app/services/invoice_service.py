@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.services.purchase_service import PurchaseLine
 
@@ -119,7 +120,9 @@ class InvoiceService:
     def create_purchase_invoice(self, lines: list[PurchaseLine]) -> int:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
-        created_at = datetime.now().isoformat(timespec="seconds")
+        created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
+            timespec="seconds"
+        )
 
         self._backup_db()
         with self._connect() as conn:
@@ -166,7 +169,9 @@ class InvoiceService:
     def create_sales_invoice(self, lines: list[SalesLine]) -> int:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
-        created_at = datetime.now().isoformat(timespec="seconds")
+        created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
+            timespec="seconds"
+        )
 
         self._backup_db()
         with self._connect() as conn:

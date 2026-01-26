@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 def _gregorian_to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
@@ -48,6 +49,9 @@ def to_jalali_datetime(value: str) -> str:
         dt = datetime.fromisoformat(value)
     except ValueError:
         return value
+
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(ZoneInfo("Asia/Tehran"))
 
     jy, jm, jd = _gregorian_to_jalali(dt.year, dt.month, dt.day)
     return f"{jy:04d}/{jm:02d}/{jd:02d} {dt:%H:%M}"
