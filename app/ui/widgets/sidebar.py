@@ -41,7 +41,6 @@ class Sidebar(QFrame):
             "Invoices": QStyle.SP_FileDialogInfoView,
             "Analytics": QStyle.SP_ComputerIcon,
             "Low Stock": QStyle.SP_MessageBoxWarning,
-            "Batch Prices": QStyle.SP_ArrowUp,
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
             "Settings": QStyle.SP_FileDialogContentsView,
         }
@@ -52,7 +51,6 @@ class Sidebar(QFrame):
             "Invoices": "Browse saved invoices",
             "Analytics": "Profit and trends",
             "Low Stock": "Reorder list",
-            "Batch Prices": "Update all buy prices",
             "Reports/Logs": "App log",
             "Settings": "Backups and preferences",
         }
@@ -64,7 +62,6 @@ class Sidebar(QFrame):
             "Invoices",
             "Analytics",
             "Low Stock",
-            "Batch Prices",
             "Reports/Logs",
             "Settings",
         ]:
