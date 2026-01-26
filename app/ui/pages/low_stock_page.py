@@ -172,10 +172,51 @@ class LowStockPage(QWidget):
             df.to_csv(file_path, index=False)
         else:
             df.to_excel(file_path, index=False)
+            self._apply_export_colors(file_path, df)
 
     @staticmethod
     def _format_amount(value: float) -> str:
         return f"{value:,.0f}"
+
+    def _apply_export_colors(self, file_path: str, df) -> None:
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+        except ImportError:
+            return
+
+        max_needed = 0
+        for value in df["Needed"].tolist():
+            try:
+                max_needed = max(max_needed, int(value))
+            except (TypeError, ValueError):
+                continue
+        if max_needed <= 0:
+            return
+
+        wb = load_workbook(file_path)
+        ws = wb.active
+        start_row = 2
+        end_row = start_row + len(df) - 1
+
+        for row_idx in range(start_row, end_row + 1):
+            needed_value = ws.cell(row_idx, 4).value
+            try:
+                needed = int(needed_value)
+            except (TypeError, ValueError):
+                continue
+            severity = min(max(needed / max_needed, 0.0), 1.0)
+            green = int(235 - (140 * severity))
+            red = int(255 - (15 * (1 - severity)))
+            fill = PatternFill(
+                start_color=f"{red:02X}{green:02X}66",
+                end_color=f"{red:02X}{green:02X}66",
+                fill_type="solid",
+            )
+            for col_idx in range(1, ws.max_column + 1):
+                ws.cell(row_idx, col_idx).fill = fill
+
+        wb.save(file_path)
 
     @staticmethod
     def _parse_alarm(value: object) -> int:
