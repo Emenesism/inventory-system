@@ -22,6 +22,7 @@ class InventoryStore:
         "قیمت خرید": "avg_buy_price",
         "قيمت خريد": "avg_buy_price",
         "میانگین قیمت خرید": "avg_buy_price",
+        "آلارم": "alarm",
         "منبع": "source",
     }
 

@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from app.core.config import AppConfig
 from app.services.inventory_service import InventoryService
+from app.utils.numeric import normalize_numeric_text
 
 
 class LowStockPage(QWidget):
@@ -41,15 +41,6 @@ class LowStockPage(QWidget):
         header.addWidget(title)
         header.addStretch(1)
 
-        threshold_label = QLabel("Min stock:")
-        header.addWidget(threshold_label)
-
-        self.threshold_input = QSpinBox()
-        self.threshold_input.setRange(0, 1_000_000)
-        self.threshold_input.setValue(self.config.low_stock_threshold)
-        self.threshold_input.valueChanged.connect(self._on_threshold_changed)
-        header.addWidget(self.threshold_input)
-
         export_button = QPushButton("Export")
         export_button.clicked.connect(self._export)
         header.addWidget(export_button)
@@ -65,7 +56,7 @@ class LowStockPage(QWidget):
         summary_layout.setContentsMargins(16, 16, 16, 16)
         summary_layout.setSpacing(24)
 
-        self.items_label = QLabel("Items below minimum: 0")
+        self.items_label = QLabel("Items below alarm: 0")
         self.total_needed_label = QLabel("Total needed: 0")
         summary_layout.addWidget(self.items_label)
         summary_layout.addWidget(self.total_needed_label)
@@ -79,7 +70,7 @@ class LowStockPage(QWidget):
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Quantity", "Min", "Needed", "Avg Buy", "Source"]
+            ["Product", "Quantity", "Alarm", "Needed", "Avg Buy", "Source"]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -90,25 +81,25 @@ class LowStockPage(QWidget):
         layout.addWidget(table_card)
 
     def set_enabled_state(self, enabled: bool) -> None:
-        self.threshold_input.setEnabled(enabled)
         self.table.setEnabled(enabled)
 
     def refresh(self) -> None:
         if not self.inventory_service.is_loaded():
             self.table.setRowCount(0)
-            self.items_label.setText("Items below minimum: 0")
+            self.items_label.setText("Items below alarm: 0")
             self.total_needed_label.setText("Total needed: 0")
             return
 
-        threshold = self.config.low_stock_threshold
         df = self.inventory_service.get_dataframe()
 
         rows: list[dict[str, object]] = []
         for _, row in df.iterrows():
             qty = int(row.get("quantity", 0))
-            if qty >= threshold:
+            alarm_value = row.get("alarm", self.config.low_stock_threshold)
+            alarm = self._parse_alarm(alarm_value)
+            if qty >= alarm:
                 continue
-            needed = threshold - qty
+            needed = alarm - qty
             source_value = row.get("source", "")
             source_text = "" if source_value is None else str(source_value)
             if source_text.lower() == "nan":
@@ -117,7 +108,7 @@ class LowStockPage(QWidget):
                 {
                     "product": str(row.get("product_name", "")).strip(),
                     "quantity": qty,
-                    "min": threshold,
+                    "alarm": alarm,
                     "needed": needed,
                     "avg_buy": float(row.get("avg_buy_price", 0.0)),
                     "source": source_text.strip(),
@@ -125,7 +116,7 @@ class LowStockPage(QWidget):
             )
 
         self._rows = rows
-        self.items_label.setText(f"Items below minimum: {len(rows)}")
+        self.items_label.setText(f"Items below alarm: {len(rows)}")
         self.total_needed_label.setText(
             f"Total needed: {sum(item['needed'] for item in rows)}"
         )
@@ -138,7 +129,7 @@ class LowStockPage(QWidget):
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 1, qty_item)
 
-            min_item = QTableWidgetItem(str(item["min"]))
+            min_item = QTableWidgetItem(str(item["alarm"]))
             min_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 2, min_item)
 
@@ -151,11 +142,6 @@ class LowStockPage(QWidget):
             self.table.setItem(row_idx, 4, avg_item)
 
             self.table.setItem(row_idx, 5, QTableWidgetItem(item["source"]))
-
-    def _on_threshold_changed(self, value: int) -> None:
-        self.config.low_stock_threshold = value
-        self.config.save()
-        self.refresh()
 
     def _export(self) -> None:
         if not self._rows:
@@ -176,7 +162,7 @@ class LowStockPage(QWidget):
             columns={
                 "product": "Product",
                 "quantity": "Quantity",
-                "min": "Min",
+                "alarm": "Alarm",
                 "needed": "Needed",
                 "avg_buy": "Avg Buy",
                 "source": "Source",
@@ -190,3 +176,21 @@ class LowStockPage(QWidget):
     @staticmethod
     def _format_amount(value: float) -> str:
         return f"{value:,.0f}"
+
+    @staticmethod
+    def _parse_alarm(value: object) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            if value != value:
+                return 0
+            return int(value)
+        if isinstance(value, str):
+            normalized = normalize_numeric_text(value)
+            if not normalized:
+                return 0
+            try:
+                return int(float(normalized))
+            except ValueError:
+                return 0
+        return 0
