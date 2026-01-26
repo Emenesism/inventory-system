@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
+from rapidfuzz import process
 
 from app.models.errors import InventoryFileError
 from app.utils.text import normalize_text
@@ -16,6 +17,7 @@ class SalesPreviewRow:
     cost_price: float
     status: str
     message: str
+    resolved_name: str = ""
 
 
 @dataclass
@@ -78,14 +80,19 @@ class SalesImportService:
     ) -> tuple[list[SalesPreviewRow], SalesPreviewSummary]:
         preview_rows: list[SalesPreviewRow] = []
 
-        inventory_lookup = {}
-        cost_lookup = {}
+        inventory_lookup: dict[str, int] = {}
+        cost_lookup: dict[str, float] = {}
+        name_lookup: dict[str, str] = {}
         for _, row in inventory_df.iterrows():
             key = normalize_text(row.get("product_name", ""))
             if key:
                 inventory_lookup[key] = int(row.get("quantity", 0))
                 cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
+                name_lookup.setdefault(
+                    key, str(row.get("product_name", "")).strip()
+                )
         available = inventory_lookup.copy()
+        inventory_keys = list(inventory_lookup.keys())
 
         total = 0
         success = 0
@@ -118,14 +125,30 @@ class SalesImportService:
 
             quantity = int(quantity)
             key = normalize_text(product_name)
-            cost_price = cost_lookup.get(key, 0.0)
+            matched_key = key if key in available else ""
+            match_message = ""
+
+            if not matched_key and inventory_keys:
+                match = process.extractOne(
+                    key,
+                    inventory_keys,
+                    score_cutoff=95,
+                    processor=None,
+                )
+                if match:
+                    matched_key = match[0]
+                    match_message = (
+                        f"Matched to {name_lookup.get(matched_key, '')}"
+                    )
+
+            cost_price = cost_lookup.get(matched_key or key, 0.0)
             sell_price = row.get("sell_price", None)
             if pd.isna(sell_price) or sell_price is None or sell_price <= 0:
                 sell_price = cost_price
             else:
                 sell_price = float(sell_price)
 
-            if key not in available:
+            if not matched_key:
                 preview_rows.append(
                     SalesPreviewRow(
                         product_name,
@@ -139,7 +162,7 @@ class SalesImportService:
                 errors += 1
                 continue
 
-            available[key] -= quantity
+            available[matched_key] -= quantity
             preview_rows.append(
                 SalesPreviewRow(
                     product_name,
@@ -147,7 +170,8 @@ class SalesImportService:
                     sell_price,
                     cost_price,
                     "OK",
-                    "Will update stock",
+                    match_message or "Will update stock",
+                    name_lookup.get(matched_key, product_name),
                 )
             )
             success += 1
@@ -162,14 +186,14 @@ class SalesImportService:
     ) -> pd.DataFrame:
         updated_df = inventory_df.copy()
         name_to_index = {
-            str(name).strip().lower(): idx
+            normalize_text(name): idx
             for idx, name in updated_df["product_name"].items()
         }
 
         for row in preview_rows:
             if row.status != "OK":
                 continue
-            key = row.product_name.strip().lower()
+            key = normalize_text(row.resolved_name or row.product_name)
             idx = name_to_index.get(key)
             if idx is None:
                 continue

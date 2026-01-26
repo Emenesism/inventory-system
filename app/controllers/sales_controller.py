@@ -109,7 +109,7 @@ class SalesImportController(QObject):
         try:
             sales_lines = [
                 SalesLine(
-                    product_name=row.product_name,
+                    product_name=row.resolved_name or row.product_name,
                     price=row.sell_price,
                     quantity=row.quantity_sold,
                     cost_price=row.cost_price,
