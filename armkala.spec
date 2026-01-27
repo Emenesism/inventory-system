@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -7,6 +8,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 project_root = Path.cwd()
+sys.path.insert(0, str(project_root))
 
 hiddenimports = collect_submodules("app")
 datas = collect_data_files("app")
