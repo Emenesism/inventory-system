@@ -272,3 +272,11 @@ class MainWindow(QMainWindow):
         if app:
             app.setStyleSheet(get_stylesheet(theme))
         self.header.set_theme_label(theme)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._logger.warning(
+            "Main window closeEvent: accepted=%s spontaneous=%s",
+            event.isAccepted(),
+            event.spontaneous(),
+        )
+        super().closeEvent(event)

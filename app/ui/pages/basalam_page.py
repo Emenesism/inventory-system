@@ -437,9 +437,9 @@ class BasalamPage(QWidget):
         self._worker.error.connect(self._on_worker_error)
         self._worker.finished.connect(self._worker_thread.quit)
         self._worker.error.connect(self._worker_thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.error.connect(self._worker.deleteLater)
+        self._worker_thread.finished.connect(self._worker.deleteLater)
         self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._worker_thread.finished.connect(self._on_worker_thread_finished)
         self._worker_thread.start()
 
     def _export(self) -> None:
@@ -459,14 +459,16 @@ class BasalamPage(QWidget):
             self._logger.info("Basalam export cancelled")
             return
 
+        export_df, group_sizes = self._build_export_payload(self._dataframe)
         if file_path.lower().endswith(".csv"):
-            self._dataframe.to_csv(file_path, index=False)
+            export_df.to_csv(file_path, index=False)
         else:
-            self._dataframe.to_excel(file_path, index=False)
+            export_df.to_excel(file_path, index=False)
+            self._apply_export_merges(file_path, export_df, group_sizes)
         self._logger.info(
             "Basalam export completed path=%s rows=%s",
             file_path,
-            len(self._dataframe),
+            len(export_df),
         )
 
     def _on_progress(self, total_count: int) -> None:
@@ -475,37 +477,43 @@ class BasalamPage(QWidget):
     def _on_worker_error(self, message: str) -> None:
         self._logger.error("Basalam worker error: %s", message)
         self._set_loading(False)
-        self._worker = None
-        self._worker_thread = None
         dialogs.show_error(self, "Basalam Error", message)
 
     def _on_worker_finished(
         self, records: list, total_count: int, skipped_existing: int
     ) -> None:
-        df = self._records_to_dataframe(records)
-        self._dataframe = df
-        self._update_table(df)
-        self.export_button.setEnabled(df is not None and not df.empty)
-        if total_count == 0:
-            self.summary_label.setText("No data returned.")
-        elif df.empty and skipped_existing:
-            self.summary_label.setText(
-                f"{total_count} rows fetched, {skipped_existing} already processed."
-            )
-        else:
-            if skipped_existing:
+        try:
+            df = self._records_to_dataframe(records)
+            self._dataframe = df
+            self._update_table(df)
+            self.export_button.setEnabled(df is not None and not df.empty)
+            if total_count == 0:
+                self.summary_label.setText("No data returned.")
+            elif df.empty and skipped_existing:
                 self.summary_label.setText(
-                    f"{len(df)} new rows loaded, {skipped_existing} already processed."
+                    f"{total_count} rows fetched, {skipped_existing} already processed."
                 )
             else:
-                self.summary_label.setText(f"{len(df)} rows loaded.")
-        self._logger.info(
-            "Basalam fetch finished fetched=%s new=%s skipped_existing=%s",
-            total_count,
-            len(df) if df is not None else 0,
-            skipped_existing,
-        )
-        self._set_loading(False)
+                if skipped_existing:
+                    self.summary_label.setText(
+                        f"{len(df)} new rows loaded, {skipped_existing} already processed."
+                    )
+                else:
+                    self.summary_label.setText(f"{len(df)} rows loaded.")
+            self._logger.info(
+                "Basalam fetch finished fetched=%s new=%s skipped_existing=%s",
+                total_count,
+                len(df) if df is not None else 0,
+                skipped_existing,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.exception("Basalam finished handler failed")
+            dialogs.show_error(self, "Basalam Error", str(exc))
+        finally:
+            self._set_loading(False)
+
+    def _on_worker_thread_finished(self) -> None:
+        self._logger.info("Basalam worker thread finished cleanup")
         self._worker = None
         self._worker_thread = None
 
@@ -525,15 +533,168 @@ class BasalamPage(QWidget):
     def _records_to_dataframe(self, records):
         import pandas as pd
 
-        if not records:
-            return pd.DataFrame()
-        dict_records = [r for r in records if isinstance(r, dict)]
-        if not dict_records:
-            return pd.DataFrame()
-        df = pd.json_normalize(dict_records, sep=".")
-        for column in df.columns:
-            df[column] = df[column].map(self._format_nested)
-        return df
+        rows = self._extract_item_rows(records)
+        columns = ["Recipient Name", "Product Name", "Color", "Quantity"]
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        return pd.DataFrame(rows, columns=columns)
+
+    def _build_export_payload(self, df):
+        import pandas as pd
+
+        columns = [
+            "Product Name",
+            "Recipient Name",
+            "Quantity",
+            "Total Quantity",
+        ]
+        if df is None or df.empty:
+            return pd.DataFrame(columns=columns), []
+
+        if (
+            "Product Name" not in df.columns
+            or "Quantity" not in df.columns
+            or "Recipient Name" not in df.columns
+        ):
+            return pd.DataFrame(columns=columns), []
+
+        product_col = "Product Name"
+        recipient_col = "Recipient Name"
+        quantity_col = "Quantity"
+
+        grouped_rows: dict[str, list[tuple[str, object, object]]] = {}
+        product_order: list[str] = []
+
+        totals: dict[str, int] = {}
+        numeric_counts: dict[str, int] = {}
+
+        for _, row in df.iterrows():
+            product_value = row.get(product_col, "")
+            if product_value is None or pd.isna(product_value):
+                product_value = ""
+            product = str(product_value).strip()
+
+            recipient_value = row.get(recipient_col, "")
+            if recipient_value is None or pd.isna(recipient_value):
+                recipient_value = ""
+            recipient = str(recipient_value).strip()
+
+            quantity_value = row.get(quantity_col, "")
+            quantity = self._coerce_quantity_value(quantity_value)
+
+            if product not in grouped_rows:
+                grouped_rows[product] = []
+                product_order.append(product)
+            grouped_rows[product].append((recipient, quantity, quantity_value))
+
+            numeric_quantity = self._numeric_quantity(quantity_value)
+            if numeric_quantity is not None:
+                totals[product] = totals.get(product, 0) + numeric_quantity
+                numeric_counts[product] = numeric_counts.get(product, 0) + 1
+
+        export_rows: list[dict[str, object]] = []
+        group_sizes: list[int] = []
+        for product in product_order:
+            quantities = grouped_rows.get(product, [])
+            total_quantity = totals.get(product)
+            has_numeric = numeric_counts.get(product, 0) > 0
+            total_cell: object = (
+                total_quantity
+                if has_numeric and total_quantity is not None
+                else ""
+            )
+            for idx, (recipient, quantity, _raw_value) in enumerate(quantities):
+                export_rows.append(
+                    {
+                        "Product Name": product,
+                        "Recipient Name": recipient,
+                        "Quantity": quantity,
+                        "Total Quantity": total_cell if idx == 0 else "",
+                    }
+                )
+            group_sizes.append(len(quantities))
+
+        return pd.DataFrame(export_rows, columns=columns), group_sizes
+
+    @staticmethod
+    def _apply_export_merges(
+        file_path: str, df, group_sizes: list[int]
+    ) -> None:
+        if not group_sizes:
+            return
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import Alignment
+        except ImportError:
+            return
+
+        if "Total Quantity" not in df.columns:
+            return
+
+        total_col = list(df.columns).index("Total Quantity") + 1
+        start_row = 2
+
+        wb = load_workbook(file_path)
+        ws = wb.active
+        for group_size in group_sizes:
+            if group_size <= 0:
+                continue
+            end_row = start_row + group_size - 1
+            if group_size > 1:
+                ws.merge_cells(
+                    start_row=start_row,
+                    start_column=total_col,
+                    end_row=end_row,
+                    end_column=total_col,
+                )
+            cell = ws.cell(row=start_row, column=total_col)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            start_row = end_row + 1
+
+        wb.save(file_path)
+
+    @staticmethod
+    def _coerce_quantity_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, float) and math.isnan(value):
+            return ""
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return value
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return ""
+            if cleaned.isdigit():
+                return int(cleaned)
+            return cleaned
+        return value
+
+    @staticmethod
+    def _numeric_quantity(value) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, float) and math.isnan(value):
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return int(value)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if cleaned.isdigit():
+                return int(cleaned)
+        return None
 
     def _extract_summary_rows(self, records: list[dict]) -> list[dict]:
         rows: list[dict] = []
@@ -571,6 +732,31 @@ class BasalamPage(QWidget):
                 }
             )
 
+        return rows
+
+    def _extract_item_rows(self, records: list[dict]) -> list[dict]:
+        rows: list[dict] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            recipient_name = self._get_recipient_name(record)
+            items = self._get_items(record)
+            if not items:
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                product_name = self._get_product_name(item)
+                color = self._get_item_color(item)
+                quantity = self._get_quantity(item)
+                rows.append(
+                    {
+                        "Recipient Name": recipient_name or "",
+                        "Product Name": product_name or "",
+                        "Color": color or "",
+                        "Quantity": "" if quantity is None else quantity,
+                    }
+                )
         return rows
 
     def _get_items(self, record: dict) -> list[dict]:
@@ -625,6 +811,20 @@ class BasalamPage(QWidget):
             "full_name",
             "fullname",
         ):
+            value = record.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _get_recipient_name(self, record: dict) -> str | None:
+        for path in (
+            ("customer_data", "recipient", "name"),
+            ("customerData", "recipient", "name"),
+        ):
+            value = self._get_nested_value(record, path)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for key in ("customer_data_recipient_name", "recipient_name"):
             value = record.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -692,6 +892,32 @@ class BasalamPage(QWidget):
                 if cleaned.isdigit():
                     return int(cleaned)
                 return cleaned
+        return None
+
+    def _get_item_color(self, item: dict) -> str | None:
+        variation = item.get("variation")
+        if not isinstance(variation, dict):
+            return None
+        properties = variation.get("properties")
+        if not isinstance(properties, list):
+            return None
+        for prop in properties:
+            if not isinstance(prop, dict):
+                continue
+            prop_info = prop.get("property")
+            value_info = prop.get("value")
+            title = (
+                prop_info.get("title")
+                if isinstance(prop_info, dict)
+                else prop.get("title")
+            )
+            if isinstance(title, str) and title.strip() in {"رنگ", "Color"}:
+                if isinstance(value_info, dict):
+                    value_title = value_info.get("title")
+                    if isinstance(value_title, str) and value_title.strip():
+                        return value_title.strip()
+                if isinstance(value_info, str) and value_info.strip():
+                    return value_info.strip()
         return None
 
     @staticmethod
