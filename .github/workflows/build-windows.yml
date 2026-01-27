@@ -24,7 +24,7 @@ jobs:
 
       - name: Build exe
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name armkala app\main.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name armkala --collect-submodules app app\main.py
 
       - uses: actions/upload-artifact@v4
         with:
