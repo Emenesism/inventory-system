@@ -24,7 +24,7 @@ jobs:
 
       - name: Build exe
         run: |
-          py -m PyInstaller --noconfirm --clean --onefile --windowed --name armkala app\main.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name armkala app\main.py
 
       - name: Copy external files
         run: |
