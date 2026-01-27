@@ -1,8 +1,9 @@
 import logging
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+from app.core.paths import app_dir
+
+LOG_DIR = app_dir() / "logs"
 
 
 def setup_logging() -> None:

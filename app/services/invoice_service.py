@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.paths import app_dir
 from app.services.purchase_service import PurchaseLine
 
 
@@ -44,7 +45,7 @@ class InvoiceService:
         backup_dir: Path | None = None,
     ) -> None:
         if db_path is None:
-            db_path = Path(__file__).resolve().parents[2] / "invoices.db"
+            db_path = app_dir() / "invoices.db"
         self.db_path = db_path
         self.backup_dir = backup_dir
         self._init_db()
@@ -215,7 +216,9 @@ class InvoiceService:
             )
             return invoice_id
 
-    def list_invoices(self, limit: int = 200) -> list[InvoiceSummary]:
+    def list_invoices(
+        self, limit: int = 200, offset: int = 0
+    ) -> list[InvoiceSummary]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -229,8 +232,9 @@ class InvoiceService:
                 FROM invoices
                 ORDER BY id DESC
                 LIMIT ?
+                OFFSET ?
                 """,
-                (limit,),
+                (limit, offset),
             ).fetchall()
         return [
             InvoiceSummary(
@@ -243,6 +247,20 @@ class InvoiceService:
             )
             for row in rows
         ]
+
+    def count_invoices(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()
+        return int(row[0] if row else 0)
+
+    def get_invoice_stats(self) -> tuple[int, float]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM invoices"
+            ).fetchone()
+        if not row:
+            return 0, 0.0
+        return int(row[0]), float(row[1])
 
     def get_invoice_lines(self, invoice_id: int) -> list[InvoiceLine]:
         with self._connect() as conn:

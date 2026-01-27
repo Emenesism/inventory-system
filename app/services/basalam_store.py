@@ -5,11 +5,13 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.paths import app_dir
+
 
 class BasalamIdStore:
     def __init__(self, db_path: Path | None = None) -> None:
         if db_path is None:
-            db_path = Path(__file__).resolve().parents[2] / "invoices.db"
+            db_path = app_dir() / "invoices.db"
         self.db_path = db_path
         self._init_db()
 

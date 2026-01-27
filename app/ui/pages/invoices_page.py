@@ -25,6 +25,10 @@ class InvoicesPage(QWidget):
         super().__init__(parent)
         self.invoice_service = invoice_service
         self.invoices: list[InvoiceSummary] = []
+        self._page_size = 200
+        self._loaded_count = 0
+        self._total_count = 0
+        self._loading_more = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -39,6 +43,11 @@ class InvoicesPage(QWidget):
         refresh_button = QPushButton("Refresh")
         refresh_button.clicked.connect(self.refresh)
         header.addWidget(refresh_button)
+
+        self.load_more_button = QPushButton("Load More")
+        self.load_more_button.clicked.connect(self._load_more)
+        self.load_more_button.setEnabled(False)
+        header.addWidget(self.load_more_button)
         layout.addLayout(header)
 
         summary_card = QFrame()
@@ -78,6 +87,9 @@ class InvoicesPage(QWidget):
         self.invoices_table.itemSelectionChanged.connect(
             self._show_selected_details
         )
+        self.invoices_table.verticalScrollBar().valueChanged.connect(
+            self._maybe_load_more
+        )
         list_layout.addWidget(self.invoices_table)
         layout.addWidget(list_card)
 
@@ -110,44 +122,23 @@ class InvoicesPage(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        self.invoices = self.invoice_service.list_invoices()
-
-        total_amount = sum(inv.total_amount for inv in self.invoices)
+        self.invoices = []
+        self._loaded_count = 0
+        self._total_count, total_amount = (
+            self.invoice_service.get_invoice_stats()
+        )
         self.total_invoices_label.setText(
-            f"Total invoices: {len(self.invoices)}"
+            f"Total invoices: {self._total_count}"
         )
         self.total_amount_label.setText(
             f"Total amount: {self._format_amount(total_amount)}"
         )
-
-        self.invoices_table.setRowCount(len(self.invoices))
-        for row_idx, invoice in enumerate(self.invoices):
-            date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
-            date_item.setData(Qt.UserRole, invoice.invoice_id)
-            self.invoices_table.setItem(row_idx, 0, date_item)
-            self.invoices_table.setItem(
-                row_idx,
-                1,
-                QTableWidgetItem(self._format_type(invoice.invoice_type)),
-            )
-            lines_item = QTableWidgetItem(str(invoice.total_lines))
-            lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 2, lines_item)
-
-            qty_item = QTableWidgetItem(str(invoice.total_qty))
-            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 3, qty_item)
-
-            total_item = QTableWidgetItem(
-                self._format_amount(invoice.total_amount)
-            )
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 4, total_item)
-        if self.invoices:
-            self.invoices_table.selectRow(0)
-        else:
-            self.details_label.setText("No invoices yet.")
-            self.lines_table.setRowCount(0)
+        self.invoices_table.blockSignals(True)
+        self.invoices_table.setRowCount(0)
+        self.invoices_table.blockSignals(False)
+        self.details_label.setText("Select an invoice to view details.")
+        self.lines_table.setRowCount(0)
+        self._load_more()
 
     def _show_selected_details(self) -> None:
         row = self.invoices_table.currentRow()
@@ -189,6 +180,67 @@ class InvoicesPage(QWidget):
             total_item = QTableWidgetItem(self._format_amount(line.line_total))
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.lines_table.setItem(row_idx, 3, total_item)
+
+    def _maybe_load_more(self) -> None:
+        if self._loading_more or self._loaded_count >= self._total_count:
+            return
+        bar = self.invoices_table.verticalScrollBar()
+        if bar.maximum() == 0:
+            return
+        if bar.value() >= bar.maximum() - 20:
+            self._load_more()
+
+    def _load_more(self) -> None:
+        if self._loading_more or self._loaded_count >= self._total_count:
+            self.load_more_button.setEnabled(False)
+            return
+        self._loading_more = True
+        batch = self.invoice_service.list_invoices(
+            limit=self._page_size, offset=self._loaded_count
+        )
+        if not batch:
+            self._loading_more = False
+            self.load_more_button.setEnabled(False)
+            if not self.invoices:
+                self.details_label.setText("No invoices yet.")
+            return
+
+        start_row = self.invoices_table.rowCount()
+        self.invoices_table.setUpdatesEnabled(False)
+        self.invoices_table.blockSignals(True)
+        self.invoices_table.setRowCount(start_row + len(batch))
+        for row_offset, invoice in enumerate(batch):
+            row_idx = start_row + row_offset
+            date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
+            date_item.setData(Qt.UserRole, invoice.invoice_id)
+            self.invoices_table.setItem(row_idx, 0, date_item)
+            self.invoices_table.setItem(
+                row_idx,
+                1,
+                QTableWidgetItem(self._format_type(invoice.invoice_type)),
+            )
+            lines_item = QTableWidgetItem(str(invoice.total_lines))
+            lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.invoices_table.setItem(row_idx, 2, lines_item)
+
+            qty_item = QTableWidgetItem(str(invoice.total_qty))
+            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.invoices_table.setItem(row_idx, 3, qty_item)
+
+            total_item = QTableWidgetItem(
+                self._format_amount(invoice.total_amount)
+            )
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.invoices_table.setItem(row_idx, 4, total_item)
+
+        self.invoices.extend(batch)
+        self._loaded_count += len(batch)
+        self.invoices_table.blockSignals(False)
+        self.invoices_table.setUpdatesEnabled(True)
+        self._loading_more = False
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+        if start_row == 0 and self.invoices:
+            self.invoices_table.selectRow(0)
 
     @staticmethod
     def _format_type(value: str) -> str:
