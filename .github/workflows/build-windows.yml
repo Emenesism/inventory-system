@@ -26,7 +26,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name armkala --paths . --collect-submodules app --hidden-import app.services.basalam_store app\main.py
+          python -m PyInstaller --noconfirm --clean armkala.spec
 
       - uses: actions/upload-artifact@v4
         with:
