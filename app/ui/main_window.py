@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -154,10 +155,24 @@ class MainWindow(QMainWindow):
             self.centralWidget().setGraphicsEffect(None)
 
     def initialize_inventory(self) -> None:
-        default_path = Path(__file__).resolve().parents[2] / "stock.xlsx"
-        if not self.config.inventory_file and default_path.exists():
-            self.config.inventory_file = str(default_path)
+        config_path = (
+            Path(self.config.inventory_file)
+            if self.config.inventory_file
+            else None
+        )
+        if config_path and not config_path.exists():
+            self._logger.warning(
+                "Configured inventory file missing: %s", config_path
+            )
+            self.config.inventory_file = None
             self.config.save()
+            config_path = None
+
+        if not config_path:
+            default_path = self._find_default_inventory_path()
+            if default_path is not None:
+                self.config.inventory_file = str(default_path)
+                self.config.save()
 
         if self.config.inventory_file:
             self.inventory_service.set_inventory_path(
@@ -177,6 +192,22 @@ class MainWindow(QMainWindow):
         self.choose_inventory_file()
         if not self.inventory_service.is_loaded():
             self.disable_inventory_features("No inventory file loaded")
+
+    @staticmethod
+    def _find_default_inventory_path() -> Path | None:
+        candidates: list[Path] = []
+        if getattr(sys, "frozen", False):
+            candidates.append(
+                Path(sys.executable).resolve().parent / "stock.xlsx"
+            )
+        argv_path = Path(sys.argv[0]).resolve()
+        candidates.append(argv_path.parent / "stock.xlsx")
+        candidates.append(Path.cwd() / "stock.xlsx")
+        candidates.append(Path(__file__).resolve().parents[2] / "stock.xlsx")
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
 
     def choose_inventory_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
