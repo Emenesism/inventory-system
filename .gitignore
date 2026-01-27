@@ -30,3 +30,5 @@ build/Armkala/Armkala.pkg
 build/Armkala/Analysis-00.toc
 app/services/basalam_store.py
 Armkala.spec
+.~lock.basalam_orders.xlsx#
+logs/crash.log
