@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from app.core.config import AppConfig
 from app.services.basalam_service import list_vendor_orders
+from app.services.basalam_store import BasalamIdStore
 from app.utils import dialogs
 from app.utils.dates import jalali_month_days, jalali_to_gregorian, jalali_today
 
@@ -44,6 +45,8 @@ PERSIAN_MONTHS = [
 ]
 
 TARGET_STATUS_FA = "رضایت مشتری"
+TAB_COMPLETED = "COMPLECTED"
+TABS_TO_FETCH = ["SHIPPED", "PENDING", TAB_COMPLETED]
 PAGE_LIMIT = 30
 REQUEST_SLEEP_SECONDS = 5
 
@@ -69,33 +72,66 @@ def extract_records(payload) -> list[dict]:
     return []
 
 
+def status_matches(record: dict, target: str) -> bool:
+    if not isinstance(record, dict):
+        return False
+    for key, value in record.items():
+        key_lower = str(key).lower()
+        if (
+            "status" in key_lower
+            or "state" in key_lower
+            or "وضعیت" in key_lower
+        ):
+            if value_matches_status(value, target):
+                return True
+    return False
+
+
+def value_matches_status(value, target: str) -> bool:
+    if isinstance(value, str):
+        return value.strip() == target
+    if isinstance(value, dict):
+        for key in ("title", "name", "label", "value", "fa", "fa_IR"):
+            inner = value.get(key)
+            if isinstance(inner, str) and inner.strip() == target:
+                return True
+        for key, inner in value.items():
+            if "status" in str(key).lower() and isinstance(inner, str):
+                if inner.strip() == target:
+                    return True
+    return False
+
+
 class BasalamWorker(QObject):
     progress = Signal(int)
-    finished = Signal(list, int)
+    finished = Signal(list, int, int)
     error = Signal(str)
 
     def __init__(
         self,
         vendor_id: str,
-        tab: str,
         start_paid_at: str,
         end_paid_at: str,
         access_token: str,
+        tabs: list[str] | None = None,
+        completed_status: str = TARGET_STATUS_FA,
         sleep_seconds: int = REQUEST_SLEEP_SECONDS,
     ) -> None:
         super().__init__()
         self.vendor_id = vendor_id
-        self.tab = tab
         self.start_paid_at = start_paid_at
         self.end_paid_at = end_paid_at
         self.access_token = access_token
+        self.tabs = tabs or list(TABS_TO_FETCH)
+        self.completed_status = completed_status
         self.sleep_seconds = sleep_seconds
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._id_store = BasalamIdStore()
 
     @Slot()
     def run(self) -> None:
         try:
-            records, total_count = self._fetch_all_records()
+            records, total_count, skipped_existing = self._fetch_all_records()
         except requests.HTTPError as exc:
             message = str(exc)
             if exc.response is not None and exc.response.text:
@@ -112,57 +148,95 @@ class BasalamWorker(QObject):
             self.error.emit(str(exc))
             return
 
-        self.finished.emit(records, total_count)
+        self.finished.emit(records, total_count, skipped_existing)
 
-    def _fetch_all_records(self) -> tuple[list[dict], int]:
-        offset = 0
+    def _fetch_all_records(self) -> tuple[list[dict], int, int]:
         all_records: list[dict] = []
         seen_ids: set[str] = set()
+        fetched_total = 0
+        skipped_existing = 0
+        stored_ids: list[str] = []
         self._logger.info(
-            "Basalam worker start vendor=%s start=%s end=%s",
+            "Basalam worker start vendor=%s start=%s end=%s tabs=%s",
             self.vendor_id,
             self.start_paid_at,
             self.end_paid_at,
+            ",".join(self.tabs),
         )
 
-        while True:
-            payload = list_vendor_orders(
-                vendor_id=self.vendor_id,
-                tab=self.tab,
-                start_paid_at=self.start_paid_at,
-                end_paid_at=self.end_paid_at,
-                limit=PAGE_LIMIT,
-                offset=offset,
-                access_token=self.access_token,
-            )
-            batch = extract_records(payload)
-            if not batch:
-                break
-
-            unique_batch = []
-            for item in batch:
-                item_id = (
-                    str(item.get("id", "")) if isinstance(item, dict) else ""
+        for tab in self.tabs:
+            offset = 0
+            while True:
+                payload = list_vendor_orders(
+                    vendor_id=self.vendor_id,
+                    tab=tab,
+                    start_paid_at=self.start_paid_at,
+                    end_paid_at=self.end_paid_at,
+                    limit=PAGE_LIMIT,
+                    offset=offset,
+                    access_token=self.access_token,
                 )
-                if item_id and item_id in seen_ids:
-                    continue
-                if item_id:
-                    seen_ids.add(item_id)
-                unique_batch.append(item)
+                batch = extract_records(payload)
+                raw_batch_len = len(batch)
+                if not batch:
+                    break
 
-            before_count = len(all_records)
-            all_records.extend(unique_batch)
-            self.progress.emit(len(all_records))
-            if len(all_records) == before_count:
-                break
-            if len(batch) < PAGE_LIMIT:
-                break
+                fetched_total += raw_batch_len
+                self.progress.emit(fetched_total)
 
-            offset += PAGE_LIMIT
-            time.sleep(self.sleep_seconds)
+                if tab == TAB_COMPLETED:
+                    batch = [
+                        item
+                        for item in batch
+                        if status_matches(item, self.completed_status)
+                    ]
 
-        self._logger.info("Basalam worker finished total=%s", len(all_records))
-        return all_records, len(all_records)
+                unique_batch: list[dict] = []
+                batch_ids: list[str] = []
+                for item in batch:
+                    if not isinstance(item, dict):
+                        continue
+                    item_id = str(item.get("id", "")).strip()
+                    if item_id:
+                        if item_id in seen_ids:
+                            continue
+                        seen_ids.add(item_id)
+                        batch_ids.append(item_id)
+                    unique_batch.append(item)
+
+                existing_ids = (
+                    self._id_store.fetch_existing_ids(batch_ids)
+                    if batch_ids
+                    else set()
+                )
+                for item in unique_batch:
+                    item_id = str(item.get("id", "")).strip()
+                    if item_id and item_id in existing_ids:
+                        skipped_existing += 1
+                        continue
+                    all_records.append(item)
+                    if item_id:
+                        stored_ids.append(item_id)
+
+                if raw_batch_len < PAGE_LIMIT:
+                    break
+
+                offset += PAGE_LIMIT
+                time.sleep(self.sleep_seconds)
+
+        if stored_ids:
+            self._id_store.store_ids(stored_ids)
+
+        self._logger.info(
+            "Basalam worker finished total=%s skipped_existing=%s",
+            len(all_records),
+            skipped_existing,
+        )
+        return (
+            all_records,
+            len(all_records) + skipped_existing,
+            skipped_existing,
+        )
 
 
 class JalaliDateTimePicker(QWidget):
@@ -337,7 +411,6 @@ class BasalamPage(QWidget):
 
         start_paid_at = self.start_paid_input.to_gregorian_str()
         end_paid_at = self.end_paid_input.to_gregorian_str()
-        tab = "COMPLECTED"
 
         self._set_loading(True)
         self._logger.info(
@@ -350,10 +423,11 @@ class BasalamPage(QWidget):
         self._worker_thread = QThread(self)
         self._worker = BasalamWorker(
             vendor_id=vendor_id,
-            tab=tab,
             start_paid_at=start_paid_at,
             end_paid_at=end_paid_at,
             access_token=access_token,
+            tabs=list(TABS_TO_FETCH),
+            completed_status=TARGET_STATUS_FA,
             sleep_seconds=REQUEST_SLEEP_SECONDS,
         )
         self._worker.moveToThread(self._worker_thread)
@@ -395,20 +469,6 @@ class BasalamPage(QWidget):
             len(self._dataframe),
         )
 
-    def _filter_records(self, records: list[dict]) -> list[dict]:
-        filtered = [
-            record
-            for record in records
-            if self._status_matches(record, TARGET_STATUS_FA)
-        ]
-        self._logger.info(
-            "Basalam filter status=%s in=%s out=%s",
-            TARGET_STATUS_FA,
-            len(records),
-            len(filtered),
-        )
-        return filtered
-
     def _on_progress(self, total_count: int) -> None:
         self.progress_label.setText(f"Loading... fetched {total_count} orders")
 
@@ -419,26 +479,31 @@ class BasalamPage(QWidget):
         self._worker_thread = None
         dialogs.show_error(self, "Basalam Error", message)
 
-    def _on_worker_finished(self, records: list, total_count: int) -> None:
-        filtered = self._filter_records(records)
-        df = self._records_to_dataframe(filtered)
+    def _on_worker_finished(
+        self, records: list, total_count: int, skipped_existing: int
+    ) -> None:
+        df = self._records_to_dataframe(records)
         self._dataframe = df
         self._update_table(df)
         self.export_button.setEnabled(df is not None and not df.empty)
         if total_count == 0:
             self.summary_label.setText("No data returned.")
-        elif df.empty:
+        elif df.empty and skipped_existing:
             self.summary_label.setText(
-                f"{total_count} rows fetched, 0 matched {TARGET_STATUS_FA}."
+                f"{total_count} rows fetched, {skipped_existing} already processed."
             )
         else:
-            self.summary_label.setText(
-                f"{len(df)} rows matched {TARGET_STATUS_FA} out of {total_count} fetched."
-            )
+            if skipped_existing:
+                self.summary_label.setText(
+                    f"{len(df)} new rows loaded, {skipped_existing} already processed."
+                )
+            else:
+                self.summary_label.setText(f"{len(df)} rows loaded.")
         self._logger.info(
-            "Basalam fetch finished fetched=%s matched=%s",
+            "Basalam fetch finished fetched=%s new=%s skipped_existing=%s",
             total_count,
             len(df) if df is not None else 0,
+            skipped_existing,
         )
         self._set_loading(False)
         self._worker = None
@@ -457,43 +522,18 @@ class BasalamPage(QWidget):
             self.progress_bar.hide()
             self.progress_label.hide()
 
-    def _status_matches(self, record: dict, target: str) -> bool:
-        if not isinstance(record, dict):
-            return False
-        for key, value in record.items():
-            key_lower = str(key).lower()
-            if (
-                "status" in key_lower
-                or "state" in key_lower
-                or "وضعیت" in key_lower
-            ):
-                if self._value_matches_status(value, target):
-                    return True
-        return False
-
-    def _value_matches_status(self, value, target: str) -> bool:
-        if isinstance(value, str):
-            return value.strip() == target
-        if isinstance(value, dict):
-            for key in ("title", "name", "label", "value", "fa", "fa_IR"):
-                inner = value.get(key)
-                if isinstance(inner, str) and inner.strip() == target:
-                    return True
-            for key, inner in value.items():
-                if "status" in str(key).lower() and isinstance(inner, str):
-                    if inner.strip() == target:
-                        return True
-        return False
-
     def _records_to_dataframe(self, records):
         import pandas as pd
 
-        rows = self._extract_summary_rows(records)
-        if not rows:
+        if not records:
             return pd.DataFrame()
-        return pd.DataFrame(
-            rows, columns=["Customer Name", "Product Name", "Quantity"]
-        )
+        dict_records = [r for r in records if isinstance(r, dict)]
+        if not dict_records:
+            return pd.DataFrame()
+        df = pd.json_normalize(dict_records, sep=".")
+        for column in df.columns:
+            df[column] = df[column].map(self._format_nested)
+        return df
 
     def _extract_summary_rows(self, records: list[dict]) -> list[dict]:
         rows: list[dict] = []
@@ -681,7 +721,7 @@ class BasalamPage(QWidget):
             self.summary_label.setText("No data returned.")
             return
 
-        max_rows = min(len(df), 200)
+        max_rows = len(df)
         self.table.setColumnCount(len(df.columns))
         self.table.setRowCount(max_rows)
         self.table.setHorizontalHeaderLabels([str(c) for c in df.columns])
