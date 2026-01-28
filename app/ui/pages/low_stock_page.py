@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -142,6 +143,9 @@ class LowStockPage(QWidget):
             self.table.setItem(row_idx, 4, avg_item)
 
             self.table.setItem(row_idx, 5, QTableWidgetItem(item["source"]))
+            self._apply_severity_color(
+                row_idx, int(item["quantity"]), int(item["alarm"])
+            )
 
     def _export(self) -> None:
         if not self._rows:
@@ -217,6 +221,25 @@ class LowStockPage(QWidget):
                 ws.cell(row_idx, col_idx).fill = fill
 
         wb.save(file_path)
+
+    def _apply_severity_color(self, row_idx: int, qty: int, alarm: int) -> None:
+        if alarm <= 0:
+            return
+        deficit = max(alarm - qty, 0)
+        severity = min(deficit / alarm, 1.0)
+        if severity <= 0:
+            return
+        # Blend from light warning to strong red based on severity.
+        low = (255, 244, 228)
+        high = (255, 153, 153)
+        red = int(low[0] + (high[0] - low[0]) * severity)
+        green = int(low[1] + (high[1] - low[1]) * severity)
+        blue = int(low[2] + (high[2] - low[2]) * severity)
+        brush = QBrush(QColor(red, green, blue))
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row_idx, col)
+            if item is not None:
+                item.setBackground(brush)
 
     @staticmethod
     def _parse_alarm(value: object) -> int:
