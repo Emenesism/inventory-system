@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.models.errors import InventoryFileError
+from app.utils.excel import apply_banded_rows
 
 
 @dataclass
@@ -65,6 +66,7 @@ class InventoryStore:
         else:
             df_to_save.to_excel(self.path, index=False)
             self._ensure_sheet_ltr(self.path)
+            apply_banded_rows(self.path)
 
         self.dataframe = df_to_save
 
