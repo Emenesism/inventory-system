@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -62,8 +63,13 @@ class InventoryPage(QWidget):
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
+        if hasattr(self.table, "setUniformRowHeights"):
+            self.table.setUniformRowHeights(True)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
+        self.table.verticalScrollBar().valueChanged.connect(
+            self._maybe_fetch_more
+        )
         card_layout.addWidget(self.table)
 
         layout.addWidget(card)
@@ -91,14 +97,20 @@ class InventoryPage(QWidget):
                 if col not in self._blocked_columns
             ]
         self._model = DataFrameTableModel(
-            dataframe, editable_columns=active_editable
+            dataframe,
+            editable_columns=active_editable,
+            lazy_load=True,
+            chunk_size=100,
         )
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self.table.setModel(self._proxy)
         if filter_text:
             self._proxy.set_filter_text(filter_text)
-        self.table.resizeColumnsToContents()
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, self._model.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
@@ -130,5 +142,19 @@ class InventoryPage(QWidget):
         self.table.setEnabled(enabled)
 
     def _apply_filter(self, text: str) -> None:
-        if self._proxy:
+        if self._proxy and self._model:
+            if text:
+                self._model.set_lazy_loading(False)
+            else:
+                self._model.set_lazy_loading(True)
             self._proxy.set_filter_text(text)
+
+    def _maybe_fetch_more(self) -> None:
+        if not self._proxy:
+            return
+        bar = self.table.verticalScrollBar()
+        if bar.maximum() == 0:
+            return
+        if bar.value() >= bar.maximum() - 24:
+            if self._proxy.canFetchMore(QModelIndex()):
+                self._proxy.fetchMore(QModelIndex())

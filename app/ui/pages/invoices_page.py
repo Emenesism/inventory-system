@@ -47,7 +47,7 @@ class InvoicesPage(QWidget):
         self._on_inventory_updated = on_inventory_updated
         self._on_invoices_updated = on_invoices_updated
         self.invoices: list[InvoiceSummary] = []
-        self._page_size = 200
+        self._page_size = 100
         self._loaded_count = 0
         self._total_count = 0
         self._total_amount = 0.0
@@ -139,6 +139,8 @@ class InvoicesPage(QWidget):
         header_view.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         self.invoices_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoices_table.setAlternatingRowColors(True)
+        if hasattr(self.invoices_table, "setUniformRowHeights"):
+            self.invoices_table.setUniformRowHeights(True)
         self.invoices_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.invoices_table.horizontalHeader().setStretchLastSection(False)
         self.invoices_table.verticalHeader().setDefaultSectionSize(34)
@@ -174,6 +176,8 @@ class InvoicesPage(QWidget):
         lines_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         lines_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.lines_table.setAlternatingRowColors(True)
+        if hasattr(self.lines_table, "setUniformRowHeights"):
+            self.lines_table.setUniformRowHeights(True)
         self.lines_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.lines_table.horizontalHeader().setStretchLastSection(True)
         self.lines_table.verticalHeader().setDefaultSectionSize(32)

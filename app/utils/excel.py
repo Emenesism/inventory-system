@@ -70,6 +70,7 @@ def autofit_columns(
 ) -> None:
     try:
         from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
     except ImportError:
         return
     try:
@@ -79,7 +80,9 @@ def autofit_columns(
     for worksheet in workbook.worksheets:
         for column_cells in worksheet.columns:
             max_len = 0
-            column_letter = column_cells[0].column_letter
+            if not column_cells:
+                continue
+            column_letter = get_column_letter(column_cells[0].column)
             for cell in column_cells:
                 value = cell.value
                 if value is None:
