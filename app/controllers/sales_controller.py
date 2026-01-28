@@ -24,6 +24,7 @@ class SalesImportController(QObject):
         on_inventory_updated,
         on_invoices_updated,
         parent=None,
+        current_admin_provider=None,
     ) -> None:
         super().__init__(parent)
         self.page = page
@@ -33,6 +34,7 @@ class SalesImportController(QObject):
         self.toast = toast
         self.on_inventory_updated = on_inventory_updated
         self.on_invoices_updated = on_invoices_updated
+        self._current_admin_provider = current_admin_provider
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self.page.preview_requested.connect(self.preview)
@@ -118,7 +120,16 @@ class SalesImportController(QObject):
                 if row.status == "OK"
             ]
             if sales_lines:
-                self.invoice_service.create_sales_invoice(sales_lines)
+                admin = (
+                    self._current_admin_provider()
+                    if self._current_admin_provider
+                    else None
+                )
+                self.invoice_service.create_sales_invoice(
+                    sales_lines,
+                    admin_id=admin.admin_id if admin else None,
+                    admin_username=admin.username if admin else None,
+                )
                 self.on_invoices_updated()
         except Exception:  # noqa: BLE001
             self._logger.exception("Failed to store sales invoice history")

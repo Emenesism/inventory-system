@@ -19,6 +19,8 @@ class InvoiceSummary:
     total_lines: int
     total_qty: int
     total_amount: float
+    admin_id: int | None
+    admin_username: str | None
 
 
 @dataclass
@@ -109,6 +111,20 @@ class InvoiceService:
                     "ALTER TABLE invoice_lines "
                     "ADD COLUMN cost_price REAL NOT NULL DEFAULT 0"
                 )
+            invoice_columns = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(invoices)"
+                ).fetchall()
+            }
+            if "admin_id" not in invoice_columns:
+                conn.execute(
+                    "ALTER TABLE invoices ADD COLUMN admin_id INTEGER"
+                )
+            if "admin_username" not in invoice_columns:
+                conn.execute(
+                    "ALTER TABLE invoices ADD COLUMN admin_username TEXT"
+                )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id "
                 "ON invoice_lines(invoice_id)"
@@ -118,7 +134,12 @@ class InvoiceService:
                 "ON invoices(created_at)"
             )
 
-    def create_purchase_invoice(self, lines: list[PurchaseLine]) -> int:
+    def create_purchase_invoice(
+        self,
+        lines: list[PurchaseLine],
+        admin_id: int | None = None,
+        admin_username: str | None = None,
+    ) -> int:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
@@ -134,10 +155,20 @@ class InvoiceService:
                     created_at,
                     total_lines,
                     total_qty,
-                    total_amount
-                ) VALUES (?, ?, ?, ?, ?)
+                    total_amount,
+                    admin_id,
+                    admin_username
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("purchase", created_at, len(lines), total_qty, total_amount),
+                (
+                    "purchase",
+                    created_at,
+                    len(lines),
+                    total_qty,
+                    total_amount,
+                    admin_id,
+                    admin_username,
+                ),
             )
             invoice_id = int(cursor.lastrowid)
 
@@ -167,7 +198,12 @@ class InvoiceService:
             )
             return invoice_id
 
-    def create_sales_invoice(self, lines: list[SalesLine]) -> int:
+    def create_sales_invoice(
+        self,
+        lines: list[SalesLine],
+        admin_id: int | None = None,
+        admin_username: str | None = None,
+    ) -> int:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
@@ -183,10 +219,20 @@ class InvoiceService:
                     created_at,
                     total_lines,
                     total_qty,
-                    total_amount
-                ) VALUES (?, ?, ?, ?, ?)
+                    total_amount,
+                    admin_id,
+                    admin_username
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("sales", created_at, len(lines), total_qty, total_amount),
+                (
+                    "sales",
+                    created_at,
+                    len(lines),
+                    total_qty,
+                    total_amount,
+                    admin_id,
+                    admin_username,
+                ),
             )
             invoice_id = int(cursor.lastrowid)
 
@@ -228,7 +274,9 @@ class InvoiceService:
                     created_at,
                     total_lines,
                     total_qty,
-                    total_amount
+                    total_amount,
+                    admin_id,
+                    admin_username
                 FROM invoices
                 ORDER BY id DESC
                 LIMIT ?
@@ -244,6 +292,8 @@ class InvoiceService:
                 total_lines=row["total_lines"],
                 total_qty=row["total_qty"],
                 total_amount=row["total_amount"],
+                admin_id=row["admin_id"],
+                admin_username=row["admin_username"],
             )
             for row in rows
         ]

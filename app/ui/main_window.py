@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
             self.refresh_inventory_views,
             self.refresh_history_views,
             self,
+            current_admin_provider=self._get_current_admin,
         )
         self.purchase_controller = PurchaseInvoiceController(
             self.purchase_page,
@@ -142,6 +143,7 @@ class MainWindow(QMainWindow):
             self.refresh_inventory_views,
             self.refresh_history_views,
             self,
+            current_admin_provider=self._get_current_admin,
         )
 
         self.purchase_page.set_product_provider(
@@ -190,6 +192,9 @@ class MainWindow(QMainWindow):
         self._current_admin = admin
         self.settings_page.set_current_admin(admin)
         self._apply_admin_permissions(admin)
+
+    def _get_current_admin(self) -> AdminUser | None:
+        return self._current_admin
 
     def _apply_admin_permissions(self, admin: AdminUser | None) -> None:
         if admin is None:

@@ -30,6 +30,7 @@ class PurchaseInvoiceController(QObject):
         on_inventory_updated,
         on_invoices_updated,
         parent=None,
+        current_admin_provider=None,
     ) -> None:
         super().__init__(parent)
         self.page = page
@@ -39,6 +40,7 @@ class PurchaseInvoiceController(QObject):
         self.toast = toast
         self.on_inventory_updated = on_inventory_updated
         self.on_invoices_updated = on_invoices_updated
+        self._current_admin_provider = current_admin_provider
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self.page.submit_requested.connect(self.submit)
@@ -105,7 +107,16 @@ class PurchaseInvoiceController(QObject):
             return
 
         try:
-            self.invoice_service.create_purchase_invoice(valid_lines)
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.invoice_service.create_purchase_invoice(
+                valid_lines,
+                admin_id=admin.admin_id if admin else None,
+                admin_username=admin.username if admin else None,
+            )
             self.on_invoices_updated()
         except Exception as exc:  # noqa: BLE001
             self.toast.show("Invoice saved, history not updated", "error")
