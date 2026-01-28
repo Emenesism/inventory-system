@@ -71,9 +71,17 @@ class InvoicesPage(QWidget):
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.invoices_table = QTableWidget(0, 6)
+        self.invoices_table = QTableWidget(0, 7)
         self.invoices_table.setHorizontalHeaderLabels(
-            ["Date (IR)", "Type", "Lines", "Quantity", "Admin", "Total"]
+            [
+                "Date (IR)",
+                "شماره فاکتور",
+                "Type",
+                "Lines",
+                "Quantity",
+                "Admin",
+                "Total",
+            ]
         )
         header_view = self.invoices_table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -81,7 +89,8 @@ class InvoicesPage(QWidget):
         header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header_view.setSectionResizeMode(5, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(6, QHeaderView.Stretch)
         self.invoices_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoices_table.setAlternatingRowColors(True)
         self.invoices_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -159,6 +168,7 @@ class InvoicesPage(QWidget):
         )
         if inv:
             header_parts = [
+                f"شماره فاکتور {inv.invoice_id}",
                 self._format_type(inv.invoice_type),
                 to_jalali_datetime(inv.created_at),
             ]
@@ -226,23 +236,26 @@ class InvoicesPage(QWidget):
             date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
             date_item.setData(Qt.UserRole, invoice.invoice_id)
             self.invoices_table.setItem(row_idx, 0, date_item)
+            invoice_item = QTableWidgetItem(str(invoice.invoice_id))
+            invoice_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.invoices_table.setItem(row_idx, 1, invoice_item)
             self.invoices_table.setItem(
                 row_idx,
-                1,
+                2,
                 QTableWidgetItem(self._format_type(invoice.invoice_type)),
             )
             lines_item = QTableWidgetItem(str(invoice.total_lines))
             lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 2, lines_item)
+            self.invoices_table.setItem(row_idx, 3, lines_item)
 
             qty_item = QTableWidgetItem(str(invoice.total_qty))
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 3, qty_item)
+            self.invoices_table.setItem(row_idx, 4, qty_item)
 
             admin_item = QTableWidgetItem(
                 self._format_admin(invoice.admin_id, invoice.admin_username)
             )
-            self.invoices_table.setItem(row_idx, 4, admin_item)
+            self.invoices_table.setItem(row_idx, 5, admin_item)
 
             total_value = (
                 self._format_amount(invoice.total_amount)
@@ -251,7 +264,7 @@ class InvoicesPage(QWidget):
             )
             total_item = QTableWidgetItem(total_value)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 5, total_item)
+            self.invoices_table.setItem(row_idx, 6, total_item)
 
         self.invoices.extend(batch)
         self._loaded_count += len(batch)
@@ -290,7 +303,7 @@ class InvoicesPage(QWidget):
             self._show_selected_details()
 
     def _apply_price_visibility(self) -> None:
-        self.invoices_table.setColumnHidden(5, not self._show_prices)
+        self.invoices_table.setColumnHidden(6, not self._show_prices)
         self.lines_table.setColumnHidden(1, not self._show_prices)
         self.lines_table.setColumnHidden(3, not self._show_prices)
 
