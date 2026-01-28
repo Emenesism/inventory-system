@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -20,6 +20,29 @@ from PySide6.QtWidgets import (
 
 from app.services.fuzzy_search import get_fuzzy_matches
 from app.services.purchase_service import PurchaseLine
+from app.utils.numeric import format_amount, normalize_numeric_text
+
+
+class PriceSpinBox(QSpinBox):
+    def textFromValue(self, value: int) -> str:  # noqa: N802
+        return format_amount(value)
+
+    def valueFromText(self, text: str) -> int:  # noqa: N802
+        normalized = normalize_numeric_text(text)
+        if not normalized:
+            return 0
+        try:
+            return int(float(normalized))
+        except ValueError:
+            return 0
+
+    def validate(self, text: str, pos: int):  # noqa: ANN001, N802
+        normalized = normalize_numeric_text(text)
+        if normalized == "":
+            return (QValidator.Intermediate, text, pos)
+        if normalized.replace(".", "", 1).isdigit():
+            return (QValidator.Acceptable, text, pos)
+        return (QValidator.Invalid, text, pos)
 
 
 class PurchaseInvoicePage(QWidget):
@@ -103,11 +126,11 @@ class PurchaseInvoicePage(QWidget):
             )
         )
 
-        price_input = QDoubleSpinBox()
-        price_input.setRange(0.01, 1_000_000)
-        price_input.setDecimals(2)
-        price_input.setSingleStep(100.0)
-        price_input.setValue(1.0)
+        price_input = PriceSpinBox()
+        price_input.setRange(1, 1_000_000_000)
+        price_input.setSingleStep(100)
+        price_input.setValue(1)
+        price_input.setGroupSeparatorShown(True)
 
         quantity_input = QSpinBox()
         quantity_input.setRange(1, 1_000_000)
@@ -136,8 +159,8 @@ class PurchaseInvoicePage(QWidget):
             product_name = product_widget.text().strip()
             price = (
                 price_widget.value()
-                if isinstance(price_widget, QDoubleSpinBox)
-                else 0.0
+                if isinstance(price_widget, QSpinBox)
+                else 0
             )
             quantity = (
                 qty_widget.value() if isinstance(qty_widget, QSpinBox) else 0

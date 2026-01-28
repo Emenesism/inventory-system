@@ -28,6 +28,7 @@ from app.services.basalam_service import list_vendor_orders
 from app.services.basalam_store import BasalamIdStore
 from app.utils import dialogs
 from app.utils.dates import jalali_month_days, jalali_to_gregorian, jalali_today
+from app.utils.numeric import format_amount, is_price_column
 
 PERSIAN_MONTHS = [
     "Farvardin",
@@ -955,7 +956,8 @@ class BasalamPage(QWidget):
         for row_idx in range(max_rows):
             row = df.iloc[row_idx]
             for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(self._format_cell(value))
+                column_name = df.columns[col_idx]
+                item = QTableWidgetItem(self._format_cell(value, column_name))
                 if isinstance(value, (int, float)) and not self._is_nan(value):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(row_idx, col_idx, item)
@@ -967,11 +969,13 @@ class BasalamPage(QWidget):
             self.summary_label.setText(f"{len(df)} rows loaded.")
 
     @staticmethod
-    def _format_cell(value) -> str:
+    def _format_cell(value, column_name: object | None = None) -> str:
         if value is None:
             return ""
         if isinstance(value, float) and math.isnan(value):
             return ""
+        if column_name is not None and is_price_column(column_name):
+            return format_amount(value)
         return str(value)
 
     @staticmethod

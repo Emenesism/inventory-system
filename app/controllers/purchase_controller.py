@@ -10,6 +10,7 @@ from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
+from app.utils.numeric import format_amount
 
 
 class PurchaseInvoiceController(QObject):
@@ -132,14 +133,14 @@ class PurchaseInvoiceController(QObject):
                 aggregated.get(line.product_name, 0) + line.quantity
             )
             lines_out.append(
-                f"{idx}) {line.product_name} | Buy price: {line.price:.2f} | "
-                f"Qty: {line.quantity} | Line total: {line_total:.2f}"
+                f"{idx}) {line.product_name} | Buy price: {format_amount(line.price)} | "
+                f"Qty: {line.quantity} | Line total: {format_amount(line_total)}"
             )
 
         totals = [
             f"Total lines: {len(valid_lines)}",
             f"Total quantity: {total_qty}",
-            f"Total cost: {total_cost:.2f}",
+            f"Total cost: {format_amount(total_cost)}",
         ]
         if invalid_count:
             totals.append(f"Skipped invalid lines: {invalid_count}")

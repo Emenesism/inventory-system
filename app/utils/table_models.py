@@ -4,7 +4,11 @@ import numpy as np
 import pandas as pd
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
-from app.utils.numeric import normalize_numeric_text
+from app.utils.numeric import (
+    format_amount,
+    is_price_column,
+    normalize_numeric_text,
+)
 
 
 class DataFrameTableModel(QAbstractTableModel):
@@ -29,7 +33,7 @@ class DataFrameTableModel(QAbstractTableModel):
 
         column_name = self._dataframe.columns[index.column()]
         value = self._dataframe.iat[index.row(), index.column()]
-        if role in (Qt.DisplayRole, Qt.EditRole):
+        if role == Qt.DisplayRole:
             if pd.isna(value):
                 return "-" if column_name in {"منبع", "source"} else ""
             if isinstance(value, np.integer):
@@ -38,6 +42,16 @@ class DataFrameTableModel(QAbstractTableModel):
                 value = float(value)
             if column_name in {"quantity", "avg_buy_price"} and value == 0:
                 return ""
+            if is_price_column(column_name):
+                return format_amount(value)
+            return value
+        if role == Qt.EditRole:
+            if pd.isna(value):
+                return ""
+            if isinstance(value, np.integer):
+                return int(value)
+            if isinstance(value, np.floating):
+                return float(value)
             return value
         if role == Qt.TextAlignmentRole:
             return Qt.AlignVCenter | Qt.AlignLeft

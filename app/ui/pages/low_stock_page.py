@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from app.core.config import AppConfig
 from app.services.inventory_service import InventoryService
-from app.utils.numeric import normalize_numeric_text
+from app.utils.numeric import format_amount, normalize_numeric_text
 
 
 class LowStockPage(QWidget):
@@ -176,7 +176,7 @@ class LowStockPage(QWidget):
 
     @staticmethod
     def _format_amount(value: float) -> str:
-        return f"{value:,.0f}"
+        return format_amount(value)
 
     def _apply_export_colors(self, file_path: str, df) -> None:
         try:

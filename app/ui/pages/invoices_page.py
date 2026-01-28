@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.utils.dates import to_jalali_datetime
+from app.utils.numeric import format_amount
 
 
 class InvoicesPage(QWidget):
@@ -252,4 +253,4 @@ class InvoicesPage(QWidget):
 
     @staticmethod
     def _format_amount(value: float) -> str:
-        return f"{value:,.0f}"
+        return format_amount(value)
