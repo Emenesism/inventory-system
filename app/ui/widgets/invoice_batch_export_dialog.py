@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QDateEdit,
+    QComboBox,
+    QCompleter,
     QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -19,25 +21,99 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
-from app.utils.dates import to_jalali_datetime
+from app.utils.dates import (
+    jalali_month_days,
+    jalali_to_gregorian,
+    jalali_today,
+    to_jalali_datetime,
+)
 from app.utils.excel import export_invoices_excel
 from app.utils.numeric import format_amount
+from app.utils.text import normalize_text
+
+
+class JalaliDatePicker(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self.year_combo = QComboBox()
+        self.month_combo = QComboBox()
+        self.day_combo = QComboBox()
+
+        for year in range(1390, 1451):
+            self.year_combo.addItem(str(year), year)
+        for month in range(1, 13):
+            self.month_combo.addItem(f"{month:02d}", month)
+
+        layout.addWidget(self.year_combo)
+        layout.addWidget(self.month_combo)
+        layout.addWidget(self.day_combo)
+
+        self.year_combo.currentIndexChanged.connect(self._refresh_days)
+        self.month_combo.currentIndexChanged.connect(self._refresh_days)
+
+        jy, jm, jd = jalali_today()
+        self.set_jalali_date(jy, jm, jd)
+
+    def set_jalali_date(self, jy: int, jm: int, jd: int) -> None:
+        self.year_combo.setCurrentText(str(jy))
+        month_index = max(1, min(jm, 12)) - 1
+        self.month_combo.setCurrentIndex(month_index)
+        self._refresh_days()
+        day_index = max(1, min(jd, self.day_combo.count())) - 1
+        self.day_combo.setCurrentIndex(day_index)
+
+    def _refresh_days(self) -> None:
+        jy = int(self.year_combo.currentData())
+        jm = int(self.month_combo.currentData())
+        current_day = self.day_combo.currentData()
+        max_day = jalali_month_days(jy, jm)
+
+        self.day_combo.blockSignals(True)
+        self.day_combo.clear()
+        for day in range(1, max_day + 1):
+            self.day_combo.addItem(f"{day:02d}", day)
+        if isinstance(current_day, int) and 1 <= current_day <= max_day:
+            self.day_combo.setCurrentIndex(current_day - 1)
+        self.day_combo.blockSignals(False)
+
+    def jalali_date(self) -> tuple[int, int, int]:
+        jy = int(self.year_combo.currentData())
+        jm = int(self.month_combo.currentData())
+        jd = int(self.day_combo.currentData())
+        return jy, jm, jd
+
+    def to_gregorian_datetime(self, end_of_day: bool = False) -> datetime:
+        jy, jm, jd = self.jalali_date()
+        gy, gm, gd = jalali_to_gregorian(jy, jm, jd)
+        if end_of_day:
+            return datetime(
+                gy, gm, gd, 23, 59, 59, tzinfo=ZoneInfo("Asia/Tehran")
+            )
+        return datetime(gy, gm, gd, 0, 0, 0, tzinfo=ZoneInfo("Asia/Tehran"))
 
 
 class InvoiceBatchExportDialog(QDialog):
     def __init__(
         self,
         invoice_service: InvoiceService,
+        inventory_service: InventoryService | None = None,
         toast: ToastManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.invoice_service = invoice_service
+        self.inventory_service = inventory_service
         self.toast = toast
         self._invoices: list[InvoiceSummary] = []
+        self._product_map: dict[str, str] = {}
 
         self.setWindowTitle("Factor Export")
         self.setModal(True)
@@ -62,20 +138,25 @@ class InvoiceBatchExportDialog(QDialog):
 
         row = QHBoxLayout()
         row.addWidget(QLabel("From:"))
-        self.from_date = QDateEdit()
-        self.from_date.setCalendarPopup(True)
+        self.from_date = JalaliDatePicker()
         row.addWidget(self.from_date)
         row.addSpacing(20)
         row.addWidget(QLabel("Until:"))
-        self.to_date = QDateEdit()
-        self.to_date.setCalendarPopup(True)
+        self.to_date = JalaliDatePicker()
         row.addWidget(self.to_date)
         row.addStretch(1)
         date_layout.addLayout(row)
 
-        self.jalali_hint = QLabel("")
-        self.jalali_hint.setStyleSheet("color: #6B7280; font-size: 11px;")
-        date_layout.addWidget(self.jalali_hint)
+        product_row = QHBoxLayout()
+        product_row.addWidget(QLabel("Product:"))
+        self.product_input = QLineEdit()
+        self.product_input.setPlaceholderText("Product (optional)")
+        product_row.addWidget(self.product_input, 1)
+        date_layout.addLayout(product_row)
+
+        self.product_hint = QLabel("")
+        self.product_hint.setStyleSheet("color: #6B7280; font-size: 11px;")
+        date_layout.addWidget(self.product_hint)
 
         self.summary_label = QLabel("Invoices: 0")
         self.summary_label.setStyleSheet("font-weight: 600;")
@@ -110,59 +191,49 @@ class InvoiceBatchExportDialog(QDialog):
         action_row.addWidget(self.export_button)
         layout.addLayout(action_row)
 
-        today = QDate.currentDate()
-        self.from_date.setDate(today.addDays(-30))
-        self.to_date.setDate(today)
-        self.from_date.dateChanged.connect(self._reload)
-        self.to_date.dateChanged.connect(self._reload)
+        today_dt = datetime.now(ZoneInfo("Asia/Tehran"))
+        start_dt = today_dt - timedelta(days=30)
+        self._set_picker_from_gregorian(self.from_date, start_dt)
+        self._set_picker_from_gregorian(self.to_date, today_dt)
+        self.from_date.year_combo.currentIndexChanged.connect(self._reload)
+        self.from_date.month_combo.currentIndexChanged.connect(self._reload)
+        self.from_date.day_combo.currentIndexChanged.connect(self._reload)
+        self.to_date.year_combo.currentIndexChanged.connect(self._reload)
+        self.to_date.month_combo.currentIndexChanged.connect(self._reload)
+        self.to_date.day_combo.currentIndexChanged.connect(self._reload)
+        self.product_input.textChanged.connect(self._reload)
+        self._setup_product_completer()
         self._reload()
 
     def _reload(self) -> None:
-        start_date = self.from_date.date()
-        end_date = self.to_date.date()
-        if end_date < start_date:
+        start_dt = self.from_date.to_gregorian_datetime(end_of_day=False)
+        end_dt = self.to_date.to_gregorian_datetime(end_of_day=True)
+        if end_dt < start_dt:
             self.summary_label.setText("End date must be after start date.")
             self.export_button.setEnabled(False)
             self.table.setRowCount(0)
             return
-
-        start_dt = datetime(
-            start_date.year(),
-            start_date.month(),
-            start_date.day(),
-            0,
-            0,
-            0,
-            tzinfo=ZoneInfo("Asia/Tehran"),
-        )
-        end_dt = datetime(
-            end_date.year(),
-            end_date.month(),
-            end_date.day(),
-            23,
-            59,
-            59,
-            tzinfo=ZoneInfo("Asia/Tehran"),
-        )
         start_iso = start_dt.isoformat(timespec="seconds")
         end_iso = end_dt.isoformat(timespec="seconds")
+        product_filter, fuzzy = self._resolve_product_filter()
         self._invoices = self.invoice_service.list_invoices_between(
-            start_iso, end_iso
+            start_iso, end_iso, product_filter=product_filter, fuzzy=fuzzy
         )
-        self._update_jalali_hint(start_dt, end_dt)
         self._populate_table()
         self.export_button.setEnabled(bool(self._invoices))
 
-    def _update_jalali_hint(self, start_dt: datetime, end_dt: datetime) -> None:
-        start_jalali = to_jalali_datetime(
-            start_dt.isoformat(timespec="seconds")
+    @staticmethod
+    def _set_picker_from_gregorian(
+        picker: JalaliDatePicker, dt: datetime
+    ) -> None:
+        jalali_text = to_jalali_datetime(
+            dt.isoformat(timespec="seconds")
         ).split(" ")[0]
-        end_jalali = to_jalali_datetime(
-            end_dt.isoformat(timespec="seconds")
-        ).split(" ")[0]
-        self.jalali_hint.setText(
-            f"Jalali range: {start_jalali} تا {end_jalali}"
-        )
+        try:
+            jy, jm, jd = (int(part) for part in jalali_text.split("/"))
+        except ValueError:
+            return
+        picker.set_jalali_date(jy, jm, jd)
 
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self._invoices))
@@ -192,6 +263,39 @@ class InvoiceBatchExportDialog(QDialog):
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 5, total_item)
         self.summary_label.setText(f"Invoices: {len(self._invoices)}")
+
+    def _setup_product_completer(self) -> None:
+        if not self.inventory_service or not self.inventory_service.is_loaded():
+            self.product_hint.setText(
+                "Inventory not loaded; product suggestions unavailable."
+            )
+            return
+        product_names = self.inventory_service.get_product_names()
+        self._product_map = {
+            normalize_text(name): name for name in product_names
+        }
+        completer = QCompleter(product_names, self)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        self.product_input.setCompleter(completer)
+        self.product_hint.setText("Type to search products.")
+
+    def _resolve_product_filter(self) -> tuple[str | None, bool]:
+        text = self.product_input.text().strip()
+        if not text:
+            self.product_hint.setText(
+                "Type to search products." if self._product_map else ""
+            )
+            return None, False
+        normalized = normalize_text(text)
+        if normalized in self._product_map:
+            self.product_hint.setText("")
+            return self._product_map[normalized], False
+        if self._product_map:
+            self.product_hint.setText(
+                "Product not found in inventory; using partial search."
+            )
+        return text, True
 
     def _export(self) -> None:
         if not self._invoices:

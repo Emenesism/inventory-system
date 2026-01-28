@@ -297,26 +297,57 @@ class InvoiceService:
         ]
 
     def list_invoices_between(
-        self, start_iso: str, end_iso: str
+        self,
+        start_iso: str,
+        end_iso: str,
+        product_filter: str | None = None,
+        fuzzy: bool = False,
     ) -> list[InvoiceSummary]:
         with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    id,
-                    invoice_type,
-                    created_at,
-                    total_lines,
-                    total_qty,
-                    total_amount,
-                    admin_id,
-                    admin_username
-                FROM invoices
-                WHERE created_at >= ? AND created_at <= ?
-                ORDER BY id DESC
-                """,
-                (start_iso, end_iso),
-            ).fetchall()
+            if product_filter:
+                if fuzzy:
+                    product_value = f"%{product_filter}%"
+                    op = "LIKE"
+                else:
+                    product_value = product_filter
+                    op = "="
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT
+                        i.id,
+                        i.invoice_type,
+                        i.created_at,
+                        i.total_lines,
+                        i.total_qty,
+                        i.total_amount,
+                        i.admin_id,
+                        i.admin_username
+                    FROM invoices i
+                    JOIN invoice_lines il ON i.id = il.invoice_id
+                    WHERE i.created_at >= ? AND i.created_at <= ?
+                        AND il.product_name {op} ?
+                    ORDER BY i.id DESC
+                    """,
+                    (start_iso, end_iso, product_value),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        id,
+                        invoice_type,
+                        created_at,
+                        total_lines,
+                        total_qty,
+                        total_amount,
+                        admin_id,
+                        admin_username
+                    FROM invoices
+                    WHERE created_at >= ? AND created_at <= ?
+                    ORDER BY id DESC
+                    """,
+                    (start_iso, end_iso),
+                ).fetchall()
         return [
             InvoiceSummary(
                 invoice_id=row["id"],

@@ -564,7 +564,7 @@ class InvoicesPage(QWidget):
 
     def _open_factor_export(self) -> None:
         dialog = InvoiceBatchExportDialog(
-            self.invoice_service, self.toast, self
+            self.invoice_service, self.inventory_service, self.toast, self
         )
         dialog.exec()
 
