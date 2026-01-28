@@ -88,6 +88,16 @@ QPushButton:hover {
 QPushButton:disabled {
     background: #9CA3AF;
 }
+QPushButton[compact="true"] {
+    background: #F3F4F6;
+    color: #111827;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    padding: 4px 10px;
+}
+QPushButton[compact="true"]:hover {
+    background: #E5E7EB;
+}
 QTableView {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
@@ -206,6 +216,16 @@ QPushButton:hover {
 }
 QPushButton:disabled {
     background: #374151;
+}
+QPushButton[compact="true"] {
+    background: #1F2937;
+    color: #F8FAFC;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px 10px;
+}
+QPushButton[compact="true"]:hover {
+    background: #334155;
 }
 QTableView {
     background: #0B1220;

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from app.core.config import AppConfig
 from app.services.inventory_service import InventoryService
-from app.utils.excel import ensure_sheet_rtl
+from app.utils.excel import autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, normalize_numeric_text
 
 
@@ -179,6 +179,7 @@ class LowStockPage(QWidget):
             df.to_excel(file_path, index=False)
             self._apply_export_colors(file_path, df)
             ensure_sheet_rtl(file_path)
+            autofit_columns(file_path)
 
     @staticmethod
     def _format_amount(value: float) -> str:

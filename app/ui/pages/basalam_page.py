@@ -28,7 +28,7 @@ from app.services.basalam_service import list_vendor_orders
 from app.services.basalam_store import BasalamIdStore
 from app.utils import dialogs
 from app.utils.dates import jalali_month_days, jalali_to_gregorian, jalali_today
-from app.utils.excel import apply_banded_rows, ensure_sheet_rtl
+from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, is_price_column
 
 PERSIAN_MONTHS = [
@@ -469,6 +469,7 @@ class BasalamPage(QWidget):
             self._apply_export_merges(file_path, export_df, group_sizes)
             ensure_sheet_rtl(file_path)
             apply_banded_rows(file_path)
+            autofit_columns(file_path)
         self._logger.info(
             "Basalam export completed path=%s rows=%s",
             file_path,

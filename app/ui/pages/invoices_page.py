@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -23,6 +24,7 @@ from app.ui.widgets.invoice_edit_dialog import InvoiceEditDialog
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
 from app.utils.dates import to_jalali_datetime
+from app.utils.excel import export_invoice_excel
 from app.utils.numeric import format_amount
 from app.utils.text import normalize_text
 
@@ -108,7 +110,7 @@ class InvoicesPage(QWidget):
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.invoices_table = QTableWidget(0, 7)
+        self.invoices_table = QTableWidget(0, 8)
         self.invoices_table.setHorizontalHeaderLabels(
             [
                 "Date (IR)",
@@ -118,6 +120,7 @@ class InvoicesPage(QWidget):
                 "Quantity",
                 "Admin",
                 "Total",
+                "Export",
             ]
         )
         header_view = self.invoices_table.horizontalHeader()
@@ -128,10 +131,11 @@ class InvoicesPage(QWidget):
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(6, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         self.invoices_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoices_table.setAlternatingRowColors(True)
         self.invoices_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.invoices_table.horizontalHeader().setStretchLastSection(True)
+        self.invoices_table.horizontalHeader().setStretchLastSection(False)
         self.invoices_table.verticalHeader().setDefaultSectionSize(34)
         self.invoices_table.setMinimumHeight(240)
         self.invoices_table.itemSelectionChanged.connect(
@@ -306,6 +310,15 @@ class InvoicesPage(QWidget):
             total_item = QTableWidgetItem(total_value)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 6, total_item)
+
+            export_button = QPushButton("Export")
+            export_button.setProperty("compact", True)
+            export_button.clicked.connect(
+                lambda _=False, inv_id=invoice.invoice_id: self._export_invoice(
+                    inv_id
+                )
+            )
+            self.invoices_table.setCellWidget(row_idx, 7, export_button)
 
         self.invoices.extend(batch)
         self._loaded_count += len(batch)
@@ -513,6 +526,32 @@ class InvoicesPage(QWidget):
         else:
             dialogs.show_info(self, "Invoices", "Invoice deleted.")
         self._after_invoice_change()
+
+    def _export_invoice(self, invoice_id: int) -> None:
+        invoice = self.invoice_service.get_invoice(invoice_id)
+        if invoice is None:
+            dialogs.show_error(self, "Export Invoice", "Invoice not found.")
+            return
+        lines = self.invoice_service.get_invoice_lines(invoice_id)
+        if not lines:
+            dialogs.show_error(self, "Export Invoice", "Invoice has no lines.")
+            return
+        default_name = f"invoice_{invoice.invoice_id}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Invoice",
+            default_name,
+            "Excel Files (*.xlsx)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path = f"{file_path}.xlsx"
+        export_invoice_excel(file_path, invoice, lines)
+        if self.toast:
+            self.toast.show("Invoice exported", "success")
+        else:
+            dialogs.show_info(self, "Export Invoice", "Invoice exported.")
 
     def _after_invoice_change(self) -> None:
         if self._on_inventory_updated:
