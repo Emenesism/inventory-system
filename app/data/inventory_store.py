@@ -16,6 +16,13 @@ class InventoryStore:
     dataframe: pd.DataFrame | None = None
 
     REQUIRED_COLUMNS = ["product_name", "quantity", "avg_buy_price"]
+    COLUMN_ORDER = [
+        "product_name",
+        "quantity",
+        "avg_buy_price",
+        "alarm",
+        "source",
+    ]
     PERSIAN_COLUMN_MAP = {
         "نام محصول": "product_name",
         "تعداد": "quantity",
@@ -44,18 +51,20 @@ class InventoryStore:
 
         df = self._normalize_columns(df)
         self._validate(df)
+        df = self._reorder_columns(df)
         self.dataframe = df
         return df
 
     def save(self, df: pd.DataFrame) -> None:
         if not self.path:
             raise InventoryFileError("No inventory file selected.")
-        df_to_save = df.copy()
+        df_to_save = self._reorder_columns(df.copy())
 
         if self.path.suffix.lower() == ".csv":
             df_to_save.to_csv(self.path, index=False)
         else:
             df_to_save.to_excel(self.path, index=False)
+            self._ensure_sheet_ltr(self.path)
 
         self.dataframe = df_to_save
 
@@ -120,3 +129,24 @@ class InventoryStore:
 
         avg_buy = pd.to_numeric(df["avg_buy_price"], errors="coerce").fillna(0)
         df["avg_buy_price"] = avg_buy.astype(float)
+
+    def _reorder_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        preferred = [col for col in self.COLUMN_ORDER if col in df.columns]
+        remaining = [col for col in df.columns if col not in preferred]
+        if not preferred:
+            return df
+        return df[preferred + remaining]
+
+    @staticmethod
+    def _ensure_sheet_ltr(path: Path) -> None:
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            return
+        try:
+            wb = load_workbook(path)
+        except Exception:  # noqa: BLE001
+            return
+        for ws in wb.worksheets:
+            ws.sheet_view.rightToLeft = True
+        wb.save(path)
