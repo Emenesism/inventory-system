@@ -29,7 +29,9 @@ class InvoicesPage(QWidget):
         self._page_size = 200
         self._loaded_count = 0
         self._total_count = 0
+        self._total_amount = 0.0
         self._loading_more = False
+        self._show_prices = True
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -120,20 +122,19 @@ class InvoicesPage(QWidget):
         details_layout.addWidget(self.lines_table)
 
         layout.addWidget(details_card)
+        self._apply_price_visibility()
         self.refresh()
 
     def refresh(self) -> None:
         self.invoices = []
         self._loaded_count = 0
-        self._total_count, total_amount = (
+        self._total_count, self._total_amount = (
             self.invoice_service.get_invoice_stats()
         )
         self.total_invoices_label.setText(
             f"Total invoices: {self._total_count}"
         )
-        self.total_amount_label.setText(
-            f"Total amount: {self._format_amount(total_amount)}"
-        )
+        self._set_total_amount_label()
         self.invoices_table.blockSignals(True)
         self.invoices_table.setRowCount(0)
         self.invoices_table.blockSignals(False)
@@ -156,11 +157,17 @@ class InvoicesPage(QWidget):
             None,
         )
         if inv:
-            header = (
-                f"{self._format_type(inv.invoice_type)} | "
-                f"{to_jalali_datetime(inv.created_at)} | "
-                f"Total {self._format_amount(inv.total_amount)}"
-            )
+            header_parts = [
+                self._format_type(inv.invoice_type),
+                to_jalali_datetime(inv.created_at),
+            ]
+            if self._show_prices:
+                header_parts.append(
+                    f"Total {self._format_amount(inv.total_amount)}"
+                )
+            else:
+                header_parts.append("Total hidden")
+            header = " | ".join(header_parts)
         else:
             header = "Invoice details"
         self.details_label.setText(header)
@@ -228,9 +235,12 @@ class InvoicesPage(QWidget):
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 3, qty_item)
 
-            total_item = QTableWidgetItem(
+            total_value = (
                 self._format_amount(invoice.total_amount)
+                if self._show_prices
+                else ""
             )
+            total_item = QTableWidgetItem(total_value)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 4, total_item)
 
@@ -254,3 +264,23 @@ class InvoicesPage(QWidget):
     @staticmethod
     def _format_amount(value: float) -> str:
         return format_amount(value)
+
+    def set_price_visibility(self, show: bool) -> None:
+        self._show_prices = bool(show)
+        self._apply_price_visibility()
+        self._set_total_amount_label()
+        if self.invoices_table.currentRow() >= 0:
+            self._show_selected_details()
+
+    def _apply_price_visibility(self) -> None:
+        self.invoices_table.setColumnHidden(4, not self._show_prices)
+        self.lines_table.setColumnHidden(1, not self._show_prices)
+        self.lines_table.setColumnHidden(3, not self._show_prices)
+
+    def _set_total_amount_label(self) -> None:
+        if self._show_prices:
+            self.total_amount_label.setText(
+                f"Total amount: {self._format_amount(self._total_amount)}"
+            )
+        else:
+            self.total_amount_label.setText("Total amount: Hidden")

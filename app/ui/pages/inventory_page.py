@@ -25,6 +25,8 @@ class InventoryPage(QWidget):
         super().__init__(parent)
         self._model: DataFrameTableModel | None = None
         self._proxy: NormalizedFilterProxyModel | None = None
+        self._editable_columns: list[str] | None = None
+        self._blocked_columns: set[str] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -66,19 +68,60 @@ class InventoryPage(QWidget):
 
         layout.addWidget(card)
 
-    def set_inventory(self, dataframe) -> None:  # noqa: ANN001
+    def set_inventory(
+        self,
+        dataframe,
+        editable_columns: list[str] | None = None,
+        blocked_columns: list[str] | None = None,
+    ) -> None:  # noqa: ANN001
         if dataframe is None:
             return
-        self._model = DataFrameTableModel(dataframe)
+        if editable_columns is not None:
+            self._editable_columns = editable_columns
+            self._blocked_columns = None
+        if blocked_columns is not None:
+            self._blocked_columns = set(blocked_columns)
+            self._editable_columns = None
+        filter_text = self.search_input.text()
+        active_editable = self._editable_columns
+        if active_editable is None and self._blocked_columns:
+            active_editable = [
+                col
+                for col in dataframe.columns
+                if col not in self._blocked_columns
+            ]
+        self._model = DataFrameTableModel(
+            dataframe, editable_columns=active_editable
+        )
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self.table.setModel(self._proxy)
+        if filter_text:
+            self._proxy.set_filter_text(filter_text)
         self.table.resizeColumnsToContents()
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
             return None
         return self._model.dataframe()
+
+    def set_editable_columns(self, editable_columns: list[str] | None) -> None:
+        self._editable_columns = editable_columns
+        self._blocked_columns = None
+        if not self._model:
+            return
+        current_df = self._model.dataframe()
+        self.set_inventory(current_df, editable_columns=editable_columns)
+
+    def set_blocked_columns(self, blocked_columns: list[str] | None) -> None:
+        self._blocked_columns = (
+            set(blocked_columns) if blocked_columns else None
+        )
+        self._editable_columns = None
+        if not self._model:
+            return
+        current_df = self._model.dataframe()
+        self.set_inventory(current_df, blocked_columns=blocked_columns)
 
     def set_enabled_state(self, enabled: bool) -> None:
         self.search_input.setEnabled(enabled)

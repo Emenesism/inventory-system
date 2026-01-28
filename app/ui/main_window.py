@@ -189,6 +189,19 @@ class MainWindow(QMainWindow):
     def _set_current_admin(self, admin: AdminUser) -> None:
         self._current_admin = admin
         self.settings_page.set_current_admin(admin)
+        self._apply_admin_permissions(admin)
+
+    def _apply_admin_permissions(self, admin: AdminUser | None) -> None:
+        if admin is None:
+            return
+        if admin.role == "employee":
+            self.inventory_page.set_blocked_columns(
+                ["quantity", "avg_buy_price"]
+            )
+            self.invoices_page.set_price_visibility(False)
+        else:
+            self.inventory_page.set_blocked_columns(None)
+            self.invoices_page.set_price_visibility(True)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if not self._lock_open and event.type() in (
