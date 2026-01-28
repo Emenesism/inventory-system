@@ -98,19 +98,22 @@ def autofit_columns(
         return
 
 
-def export_invoice_excel(file_path: str | Path, invoice, lines) -> None:
+def _sanitize_sheet_title(value: str) -> str:
+    invalid = set(r"[]:*?/\\")
+    cleaned = "".join("_" if ch in invalid else ch for ch in value)
+    cleaned = cleaned.strip()
+    return cleaned[:31] if cleaned else "Invoice"
+
+
+def _populate_invoice_sheet(ws, invoice, lines) -> None:
     try:
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        from openpyxl import Workbook
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     except Exception:  # noqa: BLE001
         return
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Invoice"
     ws.sheet_view.rightToLeft = True
 
     # Styles
@@ -238,9 +241,45 @@ def export_invoice_excel(file_path: str | Path, invoice, lines) -> None:
             start_color="EEF2FF", end_color="EEF2FF", fill_type="solid"
         )
 
+
+def export_invoice_excel(file_path: str | Path, invoice, lines) -> None:
+    try:
+        from openpyxl import Workbook
+    except Exception:  # noqa: BLE001
+        return
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Invoice"
+    _populate_invoice_sheet(ws, invoice, lines)
     try:
         wb.save(file_path)
     except Exception:  # noqa: BLE001
         return
-    # Slightly wider columns keep the date section readable.
+    autofit_columns(file_path, min_width=12, max_width=60)
+
+
+def export_invoices_excel(file_path: str | Path, invoices_with_lines) -> None:
+    try:
+        from openpyxl import Workbook
+    except Exception:  # noqa: BLE001
+        return
+    wb = Workbook()
+    ws = wb.active
+    used_titles: set[str] = set()
+    for idx, (invoice, lines) in enumerate(invoices_with_lines):
+        sheet = ws if idx == 0 else wb.create_sheet()
+        base_title = _sanitize_sheet_title(str(invoice.invoice_id))
+        title = base_title
+        counter = 2
+        while title in used_titles:
+            suffix = f"_{counter}"
+            title = (base_title[: 31 - len(suffix)] + suffix)[:31]
+            counter += 1
+        sheet.title = title
+        used_titles.add(title)
+        _populate_invoice_sheet(sheet, invoice, lines)
+    try:
+        wb.save(file_path)
+    except Exception:  # noqa: BLE001
+        return
     autofit_columns(file_path, min_width=12, max_width=60)

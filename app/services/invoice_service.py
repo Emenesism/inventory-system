@@ -296,6 +296,41 @@ class InvoiceService:
             for row in rows
         ]
 
+    def list_invoices_between(
+        self, start_iso: str, end_iso: str
+    ) -> list[InvoiceSummary]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    invoice_type,
+                    created_at,
+                    total_lines,
+                    total_qty,
+                    total_amount,
+                    admin_id,
+                    admin_username
+                FROM invoices
+                WHERE created_at >= ? AND created_at <= ?
+                ORDER BY id DESC
+                """,
+                (start_iso, end_iso),
+            ).fetchall()
+        return [
+            InvoiceSummary(
+                invoice_id=row["id"],
+                invoice_type=row["invoice_type"],
+                created_at=row["created_at"],
+                total_lines=row["total_lines"],
+                total_qty=row["total_qty"],
+                total_amount=row["total_amount"],
+                admin_id=row["admin_id"],
+                admin_username=row["admin_username"],
+            )
+            for row in rows
+        ]
+
     def get_invoice(self, invoice_id: int) -> InvoiceSummary | None:
         with self._connect() as conn:
             row = conn.execute(

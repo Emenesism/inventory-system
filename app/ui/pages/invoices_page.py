@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
+from app.ui.widgets.invoice_batch_export_dialog import InvoiceBatchExportDialog
 from app.ui.widgets.invoice_edit_dialog import InvoiceEditDialog
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
@@ -63,6 +64,10 @@ class InvoicesPage(QWidget):
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
+
+        self.factor_button = QPushButton("Factor")
+        self.factor_button.clicked.connect(self._open_factor_export)
+        header.addWidget(self.factor_button)
 
         refresh_button = QPushButton("Refresh")
         refresh_button.clicked.connect(self.refresh)
@@ -552,6 +557,12 @@ class InvoicesPage(QWidget):
             self.toast.show("Invoice exported", "success")
         else:
             dialogs.show_info(self, "Export Invoice", "Invoice exported.")
+
+    def _open_factor_export(self) -> None:
+        dialog = InvoiceBatchExportDialog(
+            self.invoice_service, self.toast, self
+        )
+        dialog.exec()
 
     def _after_invoice_change(self) -> None:
         if self._on_inventory_updated:
