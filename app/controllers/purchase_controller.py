@@ -3,14 +3,20 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QDialog
 
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.ui.pages.purchase_invoice_page import PurchaseInvoicePage
+from app.ui.widgets.purchase_invoice_preview_dialog import (
+    PurchaseInvoicePreviewData,
+    PurchaseInvoicePreviewDialog,
+    PurchaseInvoicePreviewLine,
+    PurchaseInvoiceStockProjection,
+)
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
-from app.utils.numeric import format_amount
 
 
 class PurchaseInvoiceController(QObject):
@@ -78,12 +84,11 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("Product(s) not found", "error")
             return
 
-        preview_message = self._build_preview_message(
+        preview_data = self._build_preview_data(
             valid_lines, inventory_df, invalid
         )
-        if not dialogs.ask_yes_no(
-            self.page, "Purchase Invoice Preview", preview_message
-        ):
+        dialog = PurchaseInvoicePreviewDialog(self.page, preview_data)
+        if dialog.exec() != QDialog.Accepted:
             self.toast.show("Purchase invoice canceled", "info")
             return
 
@@ -114,58 +119,52 @@ class PurchaseInvoiceController(QObject):
         self.toast.show(message, "success")
         self.page.reset_after_submit()
 
-    def _build_preview_message(
+    def _build_preview_data(
         self,
         valid_lines: list[PurchaseLine],
         inventory_df,
         invalid_count: int,
-    ) -> str:
-        lines_out: list[str] = []
+    ) -> PurchaseInvoicePreviewData:
+        preview_lines: list[PurchaseInvoicePreviewLine] = []
         total_qty = 0
         total_cost = 0.0
         aggregated: dict[str, int] = {}
 
-        for idx, line in enumerate(valid_lines, start=1):
+        for line in valid_lines:
             line_total = line.price * line.quantity
             total_qty += line.quantity
             total_cost += line_total
             aggregated[line.product_name] = (
                 aggregated.get(line.product_name, 0) + line.quantity
             )
-            lines_out.append(
-                f"{idx}) {line.product_name} | Buy price: {format_amount(line.price)} | "
-                f"Qty: {line.quantity} | Line total: {format_amount(line_total)}"
+            preview_lines.append(
+                PurchaseInvoicePreviewLine(
+                    product_name=line.product_name,
+                    price=line.price,
+                    quantity=line.quantity,
+                    line_total=line_total,
+                )
             )
 
-        totals = [
-            f"Total lines: {len(valid_lines)}",
-            f"Total quantity: {total_qty}",
-            f"Total cost: {format_amount(total_cost)}",
-        ]
-        if invalid_count:
-            totals.append(f"Skipped invalid lines: {invalid_count}")
-
-        stock_lines: list[str] = []
+        projections: list[PurchaseInvoiceStockProjection] = []
         for product_name, add_qty in aggregated.items():
             index = self.inventory_service.find_index(product_name)
             current_qty = int(inventory_df.loc[index, "quantity"])
             new_qty = current_qty + add_qty
-            stock_lines.append(
-                f"{product_name}: current {current_qty} + add {add_qty} = {new_qty}"
+            projections.append(
+                PurchaseInvoiceStockProjection(
+                    product_name=product_name,
+                    current_qty=current_qty,
+                    added_qty=add_qty,
+                    new_qty=new_qty,
+                )
             )
 
-        message_parts = [
-            "Please review the purchase invoice before submitting.",
-            "",
-            "Lines:",
-            *lines_out,
-            "",
-            "Totals:",
-            *totals,
-            "",
-            "Projected stock after submit:",
-            *stock_lines,
-            "",
-            "Submit this invoice?",
-        ]
-        return "\n".join(message_parts)
+        return PurchaseInvoicePreviewData(
+            lines=preview_lines,
+            total_lines=len(valid_lines),
+            total_quantity=total_qty,
+            total_cost=total_cost,
+            invalid_count=invalid_count,
+            projections=projections,
+        )
