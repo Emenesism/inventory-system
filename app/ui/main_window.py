@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
+from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QGraphicsBlurEffect,
     QHBoxLayout,
@@ -20,6 +23,7 @@ from app.controllers.sales_controller import SalesImportController
 from app.core.config import AppConfig
 from app.core.logging_setup import LOG_DIR
 from app.models.errors import InventoryFileError
+from app.services.admin_service import AdminService, AdminUser
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
@@ -54,6 +58,9 @@ class MainWindow(QMainWindow):
 
         self.toast = ToastManager(self)
         self._lock_shown = False
+        self._lock_open = False
+        self._current_admin: AdminUser | None = None
+        self._last_activity = time.monotonic()
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -71,6 +78,7 @@ class MainWindow(QMainWindow):
 
         self.header = HeaderBar()
         self.header.inventory_requested.connect(self.choose_inventory_file)
+        self.header.lock_requested.connect(self.lock)
         main_layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
@@ -85,13 +93,18 @@ class MainWindow(QMainWindow):
             Path(self.config.backup_dir) if self.config.backup_dir else None
         )
         self.invoice_service = InvoiceService(backup_dir=backup_dir)
+        self.admin_service = AdminService()
         self.invoices_page = InvoicesPage(self.invoice_service)
         self.analytics_page = AnalyticsPage(self.invoice_service)
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
         self.basalam_page = BasalamPage(self.config)
         self.reports_page = ReportsPage(LOG_DIR / "app.log")
         self.settings_page = SettingsPage(
-            self.config, self.invoice_service, self.apply_theme
+            self.config,
+            self.invoice_service,
+            self.admin_service,
+            self.apply_theme,
+            self._set_current_admin,
         )
 
         self.pages.addWidget(self.inventory_page)
@@ -138,6 +151,14 @@ class MainWindow(QMainWindow):
         self.apply_theme(self.config.theme)
         self.initialize_inventory()
 
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setInterval(1000)
+        self._idle_timer.timeout.connect(self._check_idle)
+        self._idle_timer.start()
+
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         if not self._lock_shown:
@@ -145,14 +166,48 @@ class MainWindow(QMainWindow):
             self._show_lock()
 
     def _show_lock(self) -> None:
+        if self._lock_open:
+            return
+        self._lock_open = True
         blur = QGraphicsBlurEffect(self)
         blur.setBlurRadius(12)
         if self.centralWidget():
             self.centralWidget().setGraphicsEffect(blur)
-        dialog = LockDialog(self.config.passcode, self)
+        username = self._current_admin.username if self._current_admin else ""
+        dialog = LockDialog(self.admin_service, self, username=username)
         dialog.exec()
+        if dialog.authenticated_admin is not None:
+            self._set_current_admin(dialog.authenticated_admin)
+            self._last_activity = time.monotonic()
         if self.centralWidget():
             self.centralWidget().setGraphicsEffect(None)
+        self._lock_open = False
+
+    def lock(self) -> None:
+        self._show_lock()
+
+    def _set_current_admin(self, admin: AdminUser) -> None:
+        self._current_admin = admin
+        self.settings_page.set_current_admin(admin)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if not self._lock_open and event.type() in (
+            QEvent.KeyPress,
+            QEvent.MouseButtonPress,
+            QEvent.MouseButtonDblClick,
+            QEvent.MouseMove,
+            QEvent.Wheel,
+            QEvent.TouchBegin,
+        ):
+            self._last_activity = time.monotonic()
+        return super().eventFilter(obj, event)
+
+    def _check_idle(self) -> None:
+        if self._lock_open or self._current_admin is None:
+            return
+        timeout_minutes = max(1, self._current_admin.auto_lock_minutes)
+        if time.monotonic() - self._last_activity >= timeout_minutes * 60:
+            self._show_lock()
 
     def initialize_inventory(self) -> None:
         config_path = (

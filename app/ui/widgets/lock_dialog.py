@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, Qt
-from PySide6.QtGui import QRegularExpressionValidator
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -12,11 +11,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.services.admin_service import AdminService, AdminUser
+
 
 class LockDialog(QDialog):
-    def __init__(self, passcode: str, parent=None) -> None:
+    def __init__(
+        self,
+        admin_service: AdminService,
+        parent=None,
+        username: str = "",
+    ) -> None:
         super().__init__(parent)
-        self._passcode = passcode or "1111"
+        self._admin_service = admin_service
+        self.authenticated_admin: AdminUser | None = None
         self.setWindowTitle("Locked")
         self.setModal(True)
         self.setWindowFlags(
@@ -67,7 +74,7 @@ class LockDialog(QDialog):
         wrapper.addStretch(1)
         layout.addLayout(wrapper)
 
-        title = QLabel("Enter Passcode")
+        title = QLabel("Unlock")
         title.setObjectName("LockTitle")
         card_layout.addWidget(title)
 
@@ -75,15 +82,17 @@ class LockDialog(QDialog):
         hint.setObjectName("LockHint")
         card_layout.addWidget(hint)
 
-        self.input = QLineEdit()
-        self.input.setEchoMode(QLineEdit.Password)
-        self.input.setPlaceholderText("Passcode")
-        validator = QRegularExpressionValidator(
-            QRegularExpression(r"\d{0,8}"), self
-        )
-        self.input.setValidator(validator)
-        self.input.returnPressed.connect(self._try_unlock)
-        card_layout.addWidget(self.input)
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Username")
+        self.username_input.setText(username)
+        self.username_input.returnPressed.connect(self._try_unlock)
+        card_layout.addWidget(self.username_input)
+
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setPlaceholderText("Password")
+        self.password_input.returnPressed.connect(self._try_unlock)
+        card_layout.addWidget(self.password_input)
 
         self.error_label = QLabel("")
         self.error_label.setObjectName("LockError")
@@ -96,12 +105,22 @@ class LockDialog(QDialog):
         button_row.addWidget(unlock_button)
         card_layout.addLayout(button_row)
 
-    def _try_unlock(self) -> None:
-        if self.input.text() == self._passcode:
-            self.accept()
+        if not username:
+            self.username_input.setFocus()
         else:
-            self.error_label.setText("Wrong passcode.")
-            self.input.selectAll()
+            self.password_input.setFocus()
+
+    def _try_unlock(self) -> None:
+        username = self.username_input.text().strip()
+        password = self.password_input.text()
+        admin = self._admin_service.authenticate(username, password)
+        if admin is not None:
+            self.authenticated_admin = admin
+            self.accept()
+            return
+        self.error_label.setText("Wrong username or password.")
+        self.password_input.selectAll()
+        self.password_input.setFocus()
 
     def reject(self) -> None:
         return

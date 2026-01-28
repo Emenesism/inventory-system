@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 class HeaderBar(QFrame):
     inventory_requested = Signal()
+    lock_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -41,6 +42,12 @@ class HeaderBar(QFrame):
             self.inventory_requested.emit
         )
         layout.addWidget(self.select_inventory_button)
+
+        self.lock_button = QToolButton()
+        self.lock_button.setObjectName("LockButton")
+        self.lock_button.setText("Lock")
+        self.lock_button.clicked.connect(self.lock_requested.emit)
+        layout.addWidget(self.lock_button)
 
     def set_status(self, message: str) -> None:
         self.status_label.setText(message)
