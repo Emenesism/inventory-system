@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -89,6 +89,7 @@ class PurchaseInvoicePage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.verticalHeader().setDefaultSectionSize(36)
         table_layout.addWidget(self.table)
+        self.table.installEventFilter(self)
 
         button_row = QHBoxLayout()
         self.add_button = QPushButton("Add Line")
@@ -110,6 +111,17 @@ class PurchaseInvoicePage(QWidget):
 
         self.add_row()
 
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self.add_row()
+                return True
+            if key == Qt.Key_Delete:
+                self.remove_selected()
+                return True
+        return super().eventFilter(obj, event)
+
     def set_product_provider(self, provider: Callable[[], list[str]]) -> None:
         self.product_provider = provider
 
@@ -125,20 +137,24 @@ class PurchaseInvoicePage(QWidget):
                 text, widget
             )
         )
+        product_input.installEventFilter(self)
 
         price_input = PriceSpinBox()
         price_input.setRange(1, 1_000_000_000)
         price_input.setSingleStep(100)
         price_input.setValue(1)
         price_input.setGroupSeparatorShown(True)
+        price_input.installEventFilter(self)
 
         quantity_input = QSpinBox()
         quantity_input.setRange(1, 1_000_000)
         quantity_input.setValue(1)
+        quantity_input.installEventFilter(self)
 
         self.table.setCellWidget(row, 0, product_input)
         self.table.setCellWidget(row, 1, price_input)
         self.table.setCellWidget(row, 2, quantity_input)
+        product_input.setFocus()
 
     def remove_selected(self) -> None:
         rows = sorted(
