@@ -118,9 +118,7 @@ class InvoiceService:
                 ).fetchall()
             }
             if "admin_id" not in invoice_columns:
-                conn.execute(
-                    "ALTER TABLE invoices ADD COLUMN admin_id INTEGER"
-                )
+                conn.execute("ALTER TABLE invoices ADD COLUMN admin_id INTEGER")
             if "admin_username" not in invoice_columns:
                 conn.execute(
                     "ALTER TABLE invoices ADD COLUMN admin_username TEXT"
@@ -297,6 +295,93 @@ class InvoiceService:
             )
             for row in rows
         ]
+
+    def get_invoice(self, invoice_id: int) -> InvoiceSummary | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    invoice_type,
+                    created_at,
+                    total_lines,
+                    total_qty,
+                    total_amount,
+                    admin_id,
+                    admin_username
+                FROM invoices
+                WHERE id = ?
+                """,
+                (invoice_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return InvoiceSummary(
+            invoice_id=row["id"],
+            invoice_type=row["invoice_type"],
+            created_at=row["created_at"],
+            total_lines=row["total_lines"],
+            total_qty=row["total_qty"],
+            total_amount=row["total_amount"],
+            admin_id=row["admin_id"],
+            admin_username=row["admin_username"],
+        )
+
+    def update_invoice_lines(
+        self,
+        invoice_id: int,
+        invoice_type: str,
+        lines: list[InvoiceLine],
+    ) -> None:
+        total_qty = sum(line.quantity for line in lines)
+        total_amount = sum(line.price * line.quantity for line in lines)
+        self._backup_db()
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM invoice_lines WHERE invoice_id = ?",
+                (invoice_id,),
+            )
+            line_rows = [
+                (
+                    invoice_id,
+                    line.product_name,
+                    float(line.price),
+                    int(line.quantity),
+                    float(line.price * line.quantity),
+                    float(
+                        line.cost_price
+                        if invoice_type == "sales"
+                        else line.price
+                    ),
+                )
+                for line in lines
+            ]
+            conn.executemany(
+                """
+                INSERT INTO invoice_lines (
+                    invoice_id,
+                    product_name,
+                    price,
+                    quantity,
+                    line_total,
+                    cost_price
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                line_rows,
+            )
+            conn.execute(
+                """
+                UPDATE invoices
+                SET total_lines = ?, total_qty = ?, total_amount = ?
+                WHERE id = ?
+                """,
+                (len(lines), total_qty, total_amount, invoice_id),
+            )
+
+    def delete_invoice(self, invoice_id: int) -> None:
+        self._backup_db()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
 
     def count_invoices(self) -> int:
         with self._connect() as conn:

@@ -94,7 +94,13 @@ class MainWindow(QMainWindow):
         )
         self.invoice_service = InvoiceService(backup_dir=backup_dir)
         self.admin_service = AdminService()
-        self.invoices_page = InvoicesPage(self.invoice_service)
+        self.invoices_page = InvoicesPage(
+            self.invoice_service,
+            self.inventory_service,
+            self.toast,
+            self.refresh_inventory_views,
+            self.refresh_history_views,
+        )
         self.analytics_page = AnalyticsPage(self.invoice_service)
         self.low_stock_page = LowStockPage(self.inventory_service, self.config)
         self.basalam_page = BasalamPage(self.config)
@@ -204,9 +210,11 @@ class MainWindow(QMainWindow):
                 ["quantity", "avg_buy_price"]
             )
             self.invoices_page.set_price_visibility(False)
+            self.invoices_page.set_edit_enabled(True)
         else:
             self.inventory_page.set_blocked_columns(None)
             self.invoices_page.set_price_visibility(True)
+            self.invoices_page.set_edit_enabled(True)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if not self._lock_open and event.type() in (
