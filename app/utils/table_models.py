@@ -101,7 +101,9 @@ class DataFrameTableModel(QAbstractTableModel):
     def setData(self, index: QModelIndex, value, role: int = Qt.EditRole):  # noqa: ANN001, N802
         if role != Qt.EditRole or not index.isValid():
             return False
-        column_name = self._dataframe.columns[index.column()]
+        if index.row() >= self._visible_rows:
+            return False
+        column_name = self._full_dataframe.columns[index.column()]
         if (
             self._editable_columns is not None
             and column_name not in self._editable_columns

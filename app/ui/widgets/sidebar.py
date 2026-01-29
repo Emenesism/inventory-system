@@ -42,6 +42,7 @@ class Sidebar(QFrame):
             "Analytics": QStyle.SP_ComputerIcon,
             "Low Stock": QStyle.SP_MessageBoxWarning,
             "Basalam": QStyle.SP_DriveNetIcon,
+            "Actions": QStyle.SP_FileDialogDetailedView,
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
             "Settings": QStyle.SP_FileDialogContentsView,
         }
@@ -53,6 +54,7 @@ class Sidebar(QFrame):
             "Analytics": "Profit and trends",
             "Low Stock": "Reorder list",
             "Basalam": "Vendor parcels",
+            "Actions": "Audit trail",
             "Reports/Logs": "App log",
             "Settings": "Backups and preferences",
         }
@@ -65,6 +67,7 @@ class Sidebar(QFrame):
             "Analytics",
             "Low Stock",
             "Basalam",
+            "Actions",
             "Reports/Logs",
             "Settings",
         ]:

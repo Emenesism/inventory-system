@@ -5,6 +5,7 @@ import logging
 from PySide6.QtCore import QObject
 
 from app.models.errors import InventoryFileError
+from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, SalesLine
 from app.services.sales_import_service import SalesImportService
@@ -25,6 +26,7 @@ class SalesImportController(QObject):
         on_invoices_updated,
         parent=None,
         current_admin_provider=None,
+        action_log_service: ActionLogService | None = None,
     ) -> None:
         super().__init__(parent)
         self.page = page
@@ -36,6 +38,7 @@ class SalesImportController(QObject):
         self.on_invoices_updated = on_invoices_updated
         self._current_admin_provider = current_admin_provider
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._action_log_service = action_log_service
 
         self.page.preview_requested.connect(self.preview)
         self.page.apply_requested.connect(self.apply)
@@ -125,11 +128,28 @@ class SalesImportController(QObject):
                     if self._current_admin_provider
                     else None
                 )
-                self.invoice_service.create_sales_invoice(
+                invoice_id = self.invoice_service.create_sales_invoice(
                     sales_lines,
                     admin_id=admin.admin_id if admin else None,
                     admin_username=admin.username if admin else None,
                 )
+                if self._action_log_service:
+                    total_qty = sum(line.quantity for line in sales_lines)
+                    total_amount = sum(
+                        line.price * line.quantity for line in sales_lines
+                    )
+                    details = (
+                        f"شماره فاکتور: {invoice_id}\n"
+                        f"تعداد ردیف‌ها: {len(sales_lines)}\n"
+                        f"تعداد کل: {total_qty}\n"
+                        f"مبلغ کل: {total_amount:,.0f}"
+                    )
+                    self._action_log_service.log_action(
+                        "sales_import",
+                        "ثبت فاکتور فروش",
+                        details,
+                        admin=admin,
+                    )
                 self.on_invoices_updated()
         except Exception:  # noqa: BLE001
             self._logger.exception("Failed to store sales invoice history")

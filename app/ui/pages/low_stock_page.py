@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
+from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.utils.excel import autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, normalize_numeric_text
@@ -26,11 +27,15 @@ class LowStockPage(QWidget):
         self,
         inventory_service: InventoryService,
         config: AppConfig,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.inventory_service = inventory_service
         self.config = config
+        self.action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
         self._rows: list[dict[str, object]] = []
 
         layout = QVBoxLayout(self)
@@ -180,6 +185,18 @@ class LowStockPage(QWidget):
             self._apply_export_colors(file_path, df)
             ensure_sheet_rtl(file_path)
             autofit_columns(file_path)
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "low_stock_export",
+                "خروجی کمبود موجودی",
+                f"تعداد ردیف‌ها: {len(df)}\nمسیر: {file_path}",
+                admin=admin,
+            )
 
     @staticmethod
     def _format_amount(value: float) -> str:

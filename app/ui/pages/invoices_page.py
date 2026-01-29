@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.ui.widgets.invoice_batch_export_dialog import InvoiceBatchExportDialog
@@ -38,6 +39,8 @@ class InvoicesPage(QWidget):
         toast: ToastManager | None = None,
         on_inventory_updated=None,
         on_invoices_updated=None,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -46,6 +49,8 @@ class InvoicesPage(QWidget):
         self.toast = toast
         self._on_inventory_updated = on_inventory_updated
         self._on_invoices_updated = on_invoices_updated
+        self._action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
         self.invoices: list[InvoiceSummary] = []
         self._page_size = 100
         self._loaded_count = 0
@@ -482,6 +487,25 @@ class InvoicesPage(QWidget):
             ),
         ):
             return
+        if self._action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            before_block = self._format_lines_for_log(lines, "قبل")
+            after_block = self._format_lines_for_log(new_lines, "بعد")
+            self._action_log_service.log_action(
+                "invoice_edit",
+                "ویرایش فاکتور خرید",
+                (
+                    f"شماره فاکتور: {invoice.invoice_id}\n"
+                    f"تعداد ردیف‌ها: {len(lines)} → {len(new_lines)}\n"
+                    f"تغییر موجودی:\n{impact_text}"
+                    f"\n\n{before_block}\n\n{after_block}"
+                ),
+                admin=admin,
+            )
         if self.toast:
             self.toast.show("Invoice updated", "success")
         else:
@@ -530,6 +554,27 @@ class InvoicesPage(QWidget):
             lambda: self.invoice_service.delete_invoice(invoice.invoice_id),
         ):
             return
+        if self._action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            title = (
+                "حذف فاکتور فروش"
+                if invoice.invoice_type == "sales"
+                else "حذف فاکتور خرید"
+            )
+            self._action_log_service.log_action(
+                "invoice_delete",
+                title,
+                (
+                    f"شماره فاکتور: {invoice.invoice_id}\n"
+                    f"تعداد ردیف‌ها: {invoice.total_lines}\n"
+                    f"تغییر موجودی:\n{impact_text}"
+                ),
+                admin=admin,
+            )
         if self.toast:
             self.toast.show("Invoice deleted", "success")
         else:
@@ -557,6 +602,18 @@ class InvoicesPage(QWidget):
         if not file_path.lower().endswith(".xlsx"):
             file_path = f"{file_path}.xlsx"
         export_invoice_excel(file_path, invoice, lines)
+        if self._action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self._action_log_service.log_action(
+                "invoice_export",
+                "خروجی اکسل فاکتور",
+                f"شماره فاکتور: {invoice.invoice_id}\nمسیر: {file_path}",
+                admin=admin,
+            )
         if self.toast:
             self.toast.show("Invoice exported", "success")
         else:
@@ -564,7 +621,12 @@ class InvoicesPage(QWidget):
 
     def _open_factor_export(self) -> None:
         dialog = InvoiceBatchExportDialog(
-            self.invoice_service, self.inventory_service, self.toast, self
+            self.invoice_service,
+            self.inventory_service,
+            self._action_log_service,
+            self._current_admin_provider,
+            self.toast,
+            self,
         )
         dialog.exec()
 
@@ -709,7 +771,7 @@ class InvoicesPage(QWidget):
     @staticmethod
     def _format_stock_impact(delta_map: dict[str, int]) -> str:
         if not delta_map:
-            return "No stock change."
+            return "بدون تغییر موجودی."
         lines = []
         sorted_items = sorted(
             delta_map.items(), key=lambda item: abs(item[1]), reverse=True
@@ -719,5 +781,21 @@ class InvoicesPage(QWidget):
             lines.append(f"{sign}{abs(delta)} {name}")
         remaining = len(delta_map) - len(lines)
         if remaining > 0:
-            lines.append(f"... and {remaining} more")
+            lines.append(f"... و {remaining} مورد دیگر")
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_lines_for_log(lines, label: str) -> str:
+        header = f"{label}:"
+        if not lines:
+            return f"{header}\n(هیچ)"
+        rows = []
+        for idx, line in enumerate(lines[:60], start=1):
+            total = float(line.price) * int(line.quantity)
+            rows.append(
+                f"{idx}) {line.product_name} | قیمت: {line.price} | "
+                f"تعداد: {line.quantity} | جمع: {total:,.0f}"
+            )
+        if len(lines) > 60:
+            rows.append(f"... {len(lines) - 60} ردیف دیگر")
+        return header + "\n" + "\n".join(rows)

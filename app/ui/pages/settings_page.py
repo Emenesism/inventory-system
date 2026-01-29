@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
+from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
 from app.services.invoice_service import InvoiceService
 from app.utils import dialogs
@@ -33,6 +34,8 @@ class SettingsPage(QWidget):
         admin_service: AdminService,
         on_theme_changed=None,
         on_admin_updated=None,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -41,6 +44,8 @@ class SettingsPage(QWidget):
         self.admin_service = admin_service
         self.on_theme_changed = on_theme_changed
         self.on_admin_updated = on_admin_updated
+        self.action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
         self.current_admin: AdminUser | None = None
 
         layout = QVBoxLayout(self)
@@ -268,6 +273,18 @@ class SettingsPage(QWidget):
         self.admin_service.update_password(
             self.current_admin.admin_id, new_password
         )
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "password_change",
+                "تغییر رمز عبور",
+                f"کاربر: {self.current_admin.username}",
+                admin=admin,
+            )
         dialogs.show_info(self, "Password", "Password updated.")
         self.current_password_input.clear()
         self.new_password_input.clear()
@@ -289,6 +306,18 @@ class SettingsPage(QWidget):
         )
         if self.on_admin_updated and self.current_admin:
             self.on_admin_updated(self.current_admin)
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "auto_lock_update",
+                "تغییر قفل خودکار",
+                f"کاربر: {self.current_admin.username}\nدقیقه: {minutes}",
+                admin=admin,
+            )
         dialogs.show_info(self, "Auto lock", "Auto lock updated.")
 
     def _create_admin(self) -> None:
@@ -313,6 +342,18 @@ class SettingsPage(QWidget):
         self.new_admin_role.setCurrentIndex(0)
         self.new_admin_lock.setValue(1)
         self._refresh_admins()
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "admin_create",
+                "ایجاد ادمین جدید",
+                f"نام کاربری: {username}\nنقش: {role}",
+                admin=admin,
+            )
         dialogs.show_info(self, "Admin", "Admin created.")
 
     def _refresh_admins(self) -> None:
@@ -352,6 +393,18 @@ class SettingsPage(QWidget):
             return
         self.admin_service.delete_admin(int(admin_id))
         self._refresh_admins()
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "admin_delete",
+                "حذف ادمین",
+                f"نام کاربری: {username}",
+                admin=admin,
+            )
         dialogs.show_info(self, "Admin", "Admin deleted.")
 
     def _apply_theme(self, value: str) -> None:

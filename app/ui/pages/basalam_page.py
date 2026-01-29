@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
+from app.services.action_log_service import ActionLogService
 from app.services.basalam_service import list_vendor_orders
 from app.services.basalam_store import BasalamIdStore
 from app.utils import dialogs
@@ -313,10 +314,16 @@ class JalaliDateTimePicker(QWidget):
 
 class BasalamPage(QWidget):
     def __init__(
-        self, config: AppConfig, parent: QWidget | None = None
+        self,
+        config: AppConfig,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.config = config
+        self.action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
         self._dataframe = None
         self._logger = logging.getLogger(self.__class__.__name__)
         self._worker_thread: QThread | None = None
@@ -421,6 +428,23 @@ class BasalamPage(QWidget):
             start_paid_at,
             end_paid_at,
         )
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            details = (
+                f"شناسه فروشنده: {vendor_id}\n"
+                f"شروع پرداخت: {start_paid_at}\n"
+                f"پایان پرداخت: {end_paid_at}"
+            )
+            self.action_log_service.log_action(
+                "basalam_fetch",
+                "دریافت سفارشات باسلام",
+                details,
+                admin=admin,
+            )
 
         self._worker_thread = QThread(self)
         self._worker = BasalamWorker(
@@ -470,6 +494,18 @@ class BasalamPage(QWidget):
             ensure_sheet_rtl(file_path)
             apply_banded_rows(file_path)
             autofit_columns(file_path)
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "basalam_export",
+                "خروجی باسلام",
+                f"تعداد ردیف‌ها: {len(export_df)}\nمسیر: {file_path}",
+                admin=admin,
+            )
         self._logger.info(
             "Basalam export completed path=%s rows=%s",
             file_path,

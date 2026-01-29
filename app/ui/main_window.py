@@ -23,11 +23,13 @@ from app.controllers.sales_controller import SalesImportController
 from app.core.config import AppConfig
 from app.core.logging_setup import LOG_DIR
 from app.models.errors import InventoryFileError
+from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
+from app.ui.pages.actions_page import ActionsPage
 from app.ui.pages.analytics_page import AnalyticsPage
 from app.ui.pages.basalam_page import BasalamPage
 from app.ui.pages.inventory_page import InventoryPage
@@ -94,23 +96,40 @@ class MainWindow(QMainWindow):
         )
         self.invoice_service = InvoiceService(backup_dir=backup_dir)
         self.admin_service = AdminService()
+        self.action_log_service = ActionLogService()
         self.invoices_page = InvoicesPage(
             self.invoice_service,
             self.inventory_service,
             self.toast,
             self.refresh_inventory_views,
             self.refresh_history_views,
+            self.action_log_service,
+            self._get_current_admin,
         )
         self.analytics_page = AnalyticsPage(self.invoice_service)
-        self.low_stock_page = LowStockPage(self.inventory_service, self.config)
-        self.basalam_page = BasalamPage(self.config)
-        self.reports_page = ReportsPage(LOG_DIR / "app.log")
+        self.low_stock_page = LowStockPage(
+            self.inventory_service,
+            self.config,
+            self.action_log_service,
+            self._get_current_admin,
+        )
+        self.basalam_page = BasalamPage(
+            self.config, self.action_log_service, self._get_current_admin
+        )
+        self.actions_page = ActionsPage(self.action_log_service)
+        self.reports_page = ReportsPage(
+            LOG_DIR / "app.log",
+            self.action_log_service,
+            self._get_current_admin,
+        )
         self.settings_page = SettingsPage(
             self.config,
             self.invoice_service,
             self.admin_service,
             self.apply_theme,
             self._set_current_admin,
+            self.action_log_service,
+            self._get_current_admin,
         )
 
         self.pages.addWidget(self.inventory_page)
@@ -120,6 +139,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.analytics_page)
         self.pages.addWidget(self.low_stock_page)
         self.pages.addWidget(self.basalam_page)
+        self.pages.addWidget(self.actions_page)
         self.pages.addWidget(self.reports_page)
         self.pages.addWidget(self.settings_page)
 
@@ -127,7 +147,12 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(self.inventory_page)
 
         self.inventory_controller = InventoryController(
-            self.inventory_page, self.inventory_service, self.toast, self
+            self.inventory_page,
+            self.inventory_service,
+            self.toast,
+            self.action_log_service,
+            self._get_current_admin,
+            self,
         )
         self.sales_controller = SalesImportController(
             self.sales_page,
@@ -139,6 +164,7 @@ class MainWindow(QMainWindow):
             self.refresh_history_views,
             self,
             current_admin_provider=self._get_current_admin,
+            action_log_service=self.action_log_service,
         )
         self.purchase_controller = PurchaseInvoiceController(
             self.purchase_page,
@@ -150,6 +176,7 @@ class MainWindow(QMainWindow):
             self.refresh_history_views,
             self,
             current_admin_provider=self._get_current_admin,
+            action_log_service=self.action_log_service,
         )
 
         self.purchase_page.set_product_provider(
@@ -177,6 +204,13 @@ class MainWindow(QMainWindow):
         if self._lock_open:
             return
         self._lock_open = True
+        if self._current_admin and self.action_log_service:
+            self.action_log_service.log_action(
+                "logout",
+                "خروج از حساب",
+                "قفل برنامه",
+                admin=self._current_admin,
+            )
         blur = QGraphicsBlurEffect(self)
         blur.setBlurRadius(12)
         if self.centralWidget():
@@ -195,9 +229,19 @@ class MainWindow(QMainWindow):
         self._show_lock()
 
     def _set_current_admin(self, admin: AdminUser) -> None:
+        previous = self._current_admin
         self._current_admin = admin
         self.settings_page.set_current_admin(admin)
         self._apply_admin_permissions(admin)
+        if self.action_log_service and (
+            previous is None or previous.admin_id != admin.admin_id
+        ):
+            self.action_log_service.log_action(
+                "login",
+                "ورود به سیستم",
+                f"کاربر: {admin.username}",
+                admin=admin,
+            )
 
     def _get_current_admin(self) -> AdminUser | None:
         return self._current_admin
@@ -211,10 +255,14 @@ class MainWindow(QMainWindow):
             )
             self.invoices_page.set_price_visibility(False)
             self.invoices_page.set_edit_enabled(True)
+            self.actions_page.set_accessible(False)
+            self.reports_page.set_accessible(False)
         else:
             self.inventory_page.set_blocked_columns(None)
             self.invoices_page.set_price_visibility(True)
             self.invoices_page.set_edit_enabled(True)
+            self.actions_page.set_accessible(True)
+            self.reports_page.set_accessible(True)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if not self._lock_open and event.type() in (
@@ -365,6 +413,7 @@ class MainWindow(QMainWindow):
             "Analytics": self.analytics_page,
             "Low Stock": self.low_stock_page,
             "Basalam": self.basalam_page,
+            "Actions": self.actions_page,
             "Reports/Logs": self.reports_page,
             "Settings": self.settings_page,
         }

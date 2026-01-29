@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.ui.widgets.toast import ToastManager
@@ -105,12 +106,16 @@ class InvoiceBatchExportDialog(QDialog):
         self,
         invoice_service: InvoiceService,
         inventory_service: InventoryService | None = None,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
         toast: ToastManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.invoice_service = invoice_service
         self.inventory_service = inventory_service
+        self.action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
         self.toast = toast
         self._invoices: list[InvoiceSummary] = []
         self._product_map: dict[str, str] = {}
@@ -316,6 +321,30 @@ class InvoiceBatchExportDialog(QDialog):
             lines = self.invoice_service.get_invoice_lines(invoice.invoice_id)
             invoices_with_lines.append((invoice, lines))
         export_invoices_excel(file_path, invoices_with_lines)
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            product_filter, fuzzy = self._resolve_product_filter()
+            jy_from, jm_from, jd_from = self.from_date.jalali_date()
+            jy_to, jm_to, jd_to = self.to_date.jalali_date()
+            filter_text = product_filter if product_filter else "همه کالاها"
+            filter_type = "دقیق" if product_filter and not fuzzy else "جزئی"
+            self.action_log_service.log_action(
+                "invoice_batch_export",
+                "خروجی گروهی فاکتور",
+                (
+                    f"بازه تاریخ: {jy_from:04d}/{jm_from:02d}/{jd_from:02d} "
+                    f"تا {jy_to:04d}/{jm_to:02d}/{jd_to:02d}\n"
+                    f"فیلتر کالا: {filter_text}\n"
+                    f"نوع فیلتر: {filter_type}\n"
+                    f"تعداد فاکتور: {len(invoices_with_lines)}\n"
+                    f"مسیر: {file_path}"
+                ),
+                admin=admin,
+            )
         if self.toast:
             self.toast.show("Invoices exported", "success")
         else:

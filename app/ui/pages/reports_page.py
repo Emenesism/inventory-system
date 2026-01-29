@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
+    QGraphicsBlurEffect,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -14,17 +15,33 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.action_log_service import ActionLogService
+
 
 class ReportsPage(QWidget):
-    def __init__(self, log_path: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        log_path: Path,
+        action_log_service: ActionLogService | None = None,
+        current_admin_provider=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self._last_loaded_text = ""
+        self.action_log_service = action_log_service
+        self._current_admin_provider = current_admin_provider
+
+        self._content = QWidget()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
+
+        content_layout = QVBoxLayout(self._content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(16)
 
         header = QHBoxLayout()
         title = QLabel("Reports & Logs")
@@ -44,7 +61,7 @@ class ReportsPage(QWidget):
         export_button.clicked.connect(self.export_tail)
         header.addWidget(export_button)
 
-        layout.addLayout(header)
+        content_layout.addLayout(header)
 
         card = QFrame()
         card.setObjectName("Card")
@@ -55,8 +72,20 @@ class ReportsPage(QWidget):
         self.log_view.setReadOnly(True)
         card_layout.addWidget(self.log_view)
 
-        layout.addWidget(card)
+        content_layout.addWidget(card)
+        layout.addWidget(self._content)
+
+        self._overlay = QFrame(self)
+        self._overlay.setStyleSheet(
+            "background: rgba(15, 23, 42, 0.55); border-radius: 16px;"
+        )
+        overlay_layout = QVBoxLayout(self._overlay)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.addStretch(1)
+        self._overlay.hide()
+
         self.load_logs_all()
+        self.set_accessible(False)
 
     def load_logs_all(self) -> None:
         text = self._read_all_logs()
@@ -93,6 +122,18 @@ class ReportsPage(QWidget):
         self._logger.info(
             "Reports exported last %s lines to %s", line_count, file_path
         )
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "reports_export",
+                "خروجی گزارش‌ها",
+                f"تعداد خطوط: {line_count}\nمسیر: {file_path}",
+                admin=admin,
+            )
 
     def _set_log_text(self, text: str) -> None:
         self._last_loaded_text = text
@@ -126,3 +167,20 @@ class ReportsPage(QWidget):
         ordered = [path for _, path in backups]
         ordered.append(base)
         return ordered
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._overlay.setGeometry(self.rect())
+
+    def set_accessible(self, accessible: bool) -> None:
+        if accessible:
+            self._content.setGraphicsEffect(None)
+            self._content.setEnabled(True)
+            self._overlay.hide()
+        else:
+            blur = QGraphicsBlurEffect(self)
+            blur.setBlurRadius(12)
+            self._content.setGraphicsEffect(blur)
+            self._content.setEnabled(False)
+            self._overlay.show()
+            self._overlay.raise_()
