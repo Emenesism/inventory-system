@@ -21,6 +21,13 @@ from app.services.inventory_service import InventoryService
 from app.utils.excel import autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, normalize_numeric_text
 
+COL_PRODUCT = "نام کالا"
+COL_QUANTITY = "تعداد"
+COL_ALARM = "حد هشدار"
+COL_NEEDED = "نیاز"
+COL_AVG_BUY = "میانگین خرید"
+COL_SOURCE = "منبع"
+
 
 class LowStockPage(QWidget):
     def __init__(
@@ -170,12 +177,12 @@ class LowStockPage(QWidget):
         df = pd.DataFrame(self._rows)
         df = df.rename(
             columns={
-                "product": "Product",
-                "quantity": "Quantity",
-                "alarm": "Alarm",
-                "needed": "Needed",
-                "avg_buy": "Avg Buy",
-                "source": "Source",
+                "product": COL_PRODUCT,
+                "quantity": COL_QUANTITY,
+                "alarm": COL_ALARM,
+                "needed": COL_NEEDED,
+                "avg_buy": COL_AVG_BUY,
+                "source": COL_SOURCE,
             }
         )
         if file_path.lower().endswith(".csv"):
@@ -210,7 +217,9 @@ class LowStockPage(QWidget):
             return
 
         max_needed = 0
-        for value in df["Needed"].tolist():
+        if COL_NEEDED not in df.columns:
+            return
+        for value in df[COL_NEEDED].tolist():
             try:
                 max_needed = max(max_needed, int(value))
             except (TypeError, ValueError):
@@ -221,11 +230,12 @@ class LowStockPage(QWidget):
         wb = load_workbook(file_path)
         ws = wb.active
         ws.sheet_view.rightToLeft = True
+        needed_col = list(df.columns).index(COL_NEEDED) + 1
         start_row = 2
         end_row = start_row + len(df) - 1
 
         for row_idx in range(start_row, end_row + 1):
-            needed_value = ws.cell(row_idx, 4).value
+            needed_value = ws.cell(row_idx, needed_col).value
             try:
                 needed = int(needed_value)
             except (TypeError, ValueError):

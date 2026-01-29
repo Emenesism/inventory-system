@@ -31,6 +31,7 @@ from app.utils import dialogs
 from app.utils.dates import jalali_month_days, jalali_to_gregorian, jalali_today
 from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, is_price_column
+from app.utils.text import normalize_text
 
 PERSIAN_MONTHS = [
     "Farvardin",
@@ -46,6 +47,44 @@ PERSIAN_MONTHS = [
     "Bahman",
     "Esfand",
 ]
+
+PROPERTY_TITLES = [
+    "سایز",
+    "رنگ",
+    "مدل",
+    "نوع پلاک",
+    "فونت",
+    "رنگ دوخت",
+    "مدل سمت جلد",
+    "جنس زیره",
+]
+
+PROPERTY_TITLE_MAP = {
+    normalize_text("سایز"): "سایز",
+    normalize_text("size"): "سایز",
+    normalize_text("رنگ"): "رنگ",
+    normalize_text("color"): "رنگ",
+    normalize_text("مدل"): "مدل",
+    normalize_text("model"): "مدل",
+    normalize_text("نوع پلاک"): "نوع پلاک",
+    normalize_text("plate type"): "نوع پلاک",
+    normalize_text("plaque type"): "نوع پلاک",
+    normalize_text("فونت"): "فونت",
+    normalize_text("font"): "فونت",
+    normalize_text("رنگ دوخت"): "رنگ دوخت",
+    normalize_text("stitch color"): "رنگ دوخت",
+    normalize_text("مدل سمت جلد"): "مدل سمت جلد",
+    normalize_text("سمت جلد"): "مدل سمت جلد",
+    normalize_text("cover side model"): "مدل سمت جلد",
+    normalize_text("جنس زیره"): "جنس زیره",
+    normalize_text("sole material"): "جنس زیره",
+}
+
+COL_RECIPIENT = "نام گیرنده"
+COL_PRODUCT = "نام کالا"
+COL_QUANTITY = "تعداد"
+COL_TOTAL_QUANTITY = "جمع تعداد"
+COL_CUSTOMER = "نام مشتری"
 
 TARGET_STATUS_FA = "رضایت مشتری"
 TAB_COMPLETED = "COMPLECTED"
@@ -575,7 +614,11 @@ class BasalamPage(QWidget):
         import pandas as pd
 
         rows = self._extract_item_rows(records)
-        columns = ["Recipient Name", "Product Name", "Color", "Quantity"]
+        columns = [
+            COL_RECIPIENT,
+            COL_PRODUCT,
+            COL_QUANTITY,
+        ] + PROPERTY_TITLES
         if not rows:
             return pd.DataFrame(columns=columns)
         return pd.DataFrame(rows, columns=columns)
@@ -583,27 +626,28 @@ class BasalamPage(QWidget):
     def _build_export_payload(self, df):
         import pandas as pd
 
-        columns = [
-            "Product Name",
-            "Recipient Name",
-            "Quantity",
-            "Total Quantity",
-        ]
+        columns = (
+            [COL_PRODUCT]
+            + PROPERTY_TITLES
+            + [COL_RECIPIENT, COL_QUANTITY, COL_TOTAL_QUANTITY]
+        )
         if df is None or df.empty:
             return pd.DataFrame(columns=columns), []
 
         if (
-            "Product Name" not in df.columns
-            or "Quantity" not in df.columns
-            or "Recipient Name" not in df.columns
+            COL_PRODUCT not in df.columns
+            or COL_QUANTITY not in df.columns
+            or COL_RECIPIENT not in df.columns
         ):
             return pd.DataFrame(columns=columns), []
 
-        product_col = "Product Name"
-        recipient_col = "Recipient Name"
-        quantity_col = "Quantity"
+        product_col = COL_PRODUCT
+        recipient_col = COL_RECIPIENT
+        quantity_col = COL_QUANTITY
 
-        grouped_rows: dict[str, list[tuple[str, object, object]]] = {}
+        grouped_rows: dict[
+            str, list[tuple[str, object, object, dict[str, object]]]
+        ] = {}
         product_order: list[str] = []
 
         totals: dict[str, int] = {}
@@ -626,7 +670,10 @@ class BasalamPage(QWidget):
             if product not in grouped_rows:
                 grouped_rows[product] = []
                 product_order.append(product)
-            grouped_rows[product].append((recipient, quantity, quantity_value))
+            props = {title: row.get(title, "") for title in PROPERTY_TITLES}
+            grouped_rows[product].append(
+                (recipient, quantity, quantity_value, props)
+            )
 
             numeric_quantity = self._numeric_quantity(quantity_value)
             if numeric_quantity is not None:
@@ -644,13 +691,19 @@ class BasalamPage(QWidget):
                 if has_numeric and total_quantity is not None
                 else ""
             )
-            for idx, (recipient, quantity, _raw_value) in enumerate(quantities):
+            for idx, (recipient, quantity, _raw_value, props) in enumerate(
+                quantities
+            ):
                 export_rows.append(
                     {
-                        "Product Name": product,
-                        "Recipient Name": recipient,
-                        "Quantity": quantity,
-                        "Total Quantity": total_cell if idx == 0 else "",
+                        COL_PRODUCT: product,
+                        **{
+                            title: props.get(title, "")
+                            for title in PROPERTY_TITLES
+                        },
+                        COL_RECIPIENT: recipient,
+                        COL_QUANTITY: quantity,
+                        COL_TOTAL_QUANTITY: total_cell if idx == 0 else "",
                     }
                 )
             group_sizes.append(len(quantities))
@@ -669,10 +722,10 @@ class BasalamPage(QWidget):
         except ImportError:
             return
 
-        if "Total Quantity" not in df.columns:
+        if COL_TOTAL_QUANTITY not in df.columns:
             return
 
-        total_col = list(df.columns).index("Total Quantity") + 1
+        total_col = list(df.columns).index(COL_TOTAL_QUANTITY) + 1
         start_row = 2
 
         wb = load_workbook(file_path)
@@ -755,9 +808,9 @@ class BasalamPage(QWidget):
                         continue
                     rows.append(
                         {
-                            "Customer Name": customer_name or "",
-                            "Product Name": product_name or "",
-                            "Quantity": "" if quantity is None else quantity,
+                            COL_CUSTOMER: customer_name or "",
+                            COL_PRODUCT: product_name or "",
+                            COL_QUANTITY: "" if quantity is None else quantity,
                         }
                     )
                 continue
@@ -768,9 +821,9 @@ class BasalamPage(QWidget):
                 continue
             rows.append(
                 {
-                    "Customer Name": customer_name or "",
-                    "Product Name": product_name or "",
-                    "Quantity": "" if quantity is None else quantity,
+                    COL_CUSTOMER: customer_name or "",
+                    COL_PRODUCT: product_name or "",
+                    COL_QUANTITY: "" if quantity is None else quantity,
                 }
             )
 
@@ -789,16 +842,19 @@ class BasalamPage(QWidget):
                 if not isinstance(item, dict):
                     continue
                 product_name = self._get_product_name(item)
-                color = self._get_item_color(item)
-                quantity = self._get_quantity(item)
-                rows.append(
-                    {
-                        "Recipient Name": recipient_name or "",
-                        "Product Name": product_name or "",
-                        "Color": color or "",
-                        "Quantity": "" if quantity is None else quantity,
-                    }
+                properties = self._extract_item_properties(item)
+                formatted_name = self._format_product_name(
+                    product_name or "", properties
                 )
+                quantity = self._get_quantity(item)
+                row = {
+                    COL_RECIPIENT: recipient_name or "",
+                    COL_PRODUCT: formatted_name or product_name or "",
+                    COL_QUANTITY: "" if quantity is None else quantity,
+                }
+                for title in PROPERTY_TITLES:
+                    row[title] = properties.get(title, "")
+                rows.append(row)
         return rows
 
     def _get_items(self, record: dict) -> list[dict]:
@@ -961,6 +1017,59 @@ class BasalamPage(QWidget):
                 if isinstance(value_info, str) and value_info.strip():
                     return value_info.strip()
         return None
+
+    def _extract_item_properties(self, item: dict) -> dict[str, str]:
+        variation = item.get("variation")
+        if not isinstance(variation, dict):
+            return {}
+        properties = variation.get("properties")
+        if not isinstance(properties, list):
+            return {}
+        result: dict[str, str] = {}
+        for prop in properties:
+            if not isinstance(prop, dict):
+                continue
+            prop_info = prop.get("property")
+            title = (
+                prop_info.get("title")
+                if isinstance(prop_info, dict)
+                else prop.get("title")
+            )
+            if not isinstance(title, str) or not title.strip():
+                continue
+            canonical = PROPERTY_TITLE_MAP.get(normalize_text(title))
+            if not canonical:
+                continue
+            value_info = prop.get("value")
+            value = None
+            if isinstance(value_info, dict):
+                value = value_info.get("title") or value_info.get("value")
+            elif isinstance(value_info, str):
+                value = value_info
+            if not isinstance(value, str):
+                value = str(value) if value is not None else ""
+            value = value.strip()
+            if value:
+                result[canonical] = value
+        if "رنگ" not in result:
+            color = self._get_item_color(item)
+            if color:
+                result["رنگ"] = color
+        return result
+
+    @staticmethod
+    def _format_product_name(base: str, properties: dict[str, str]) -> str:
+        name = base.strip() if isinstance(base, str) else ""
+        parts = []
+        for title in PROPERTY_TITLES:
+            value = properties.get(title)
+            if value:
+                parts.append(f"{title} : {value}")
+        if not parts:
+            return name
+        if name:
+            return name + " " + " | ".join(parts)
+        return " | ".join(parts)
 
     @staticmethod
     def _pretty_column(name: str) -> str:
