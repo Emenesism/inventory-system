@@ -1,4 +1,5 @@
 stock.xlsx
+config.json
 app.logs
 app.log
 __pycache__
@@ -34,3 +35,5 @@ logs/crash.log
 low_stoasdck.xlsx
 basalam_sdfsdforders.xlsx
 invoices_export.xlsx
+inventory_backup_20260130_1506.dat
+*_*_*_*.dat

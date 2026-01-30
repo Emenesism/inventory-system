@@ -1,0 +1,9 @@
+{
+  "inventory_file": "stock.dat",
+  "theme": "light",
+  "low_stock_threshold": 5,
+  "backup_dir": null,
+  "passcode": "1111",
+  "inventory_key": null,
+  "access_token": ""
+}
