@@ -48,6 +48,7 @@ class InventoryPage(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search products...")
+        self.search_input.setMinimumWidth(260)
         self.search_input.textChanged.connect(self._queue_filter)
         header.addWidget(self.search_input)
 
