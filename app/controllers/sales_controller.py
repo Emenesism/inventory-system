@@ -12,6 +12,8 @@ from app.services.sales_import_service import SalesImportService
 from app.ui.pages.sales_import_page import SalesImportPage
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
+from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
+from app.utils.text import normalize_text
 
 
 class SalesImportController(QObject):
@@ -43,6 +45,7 @@ class SalesImportController(QObject):
         self.page.preview_requested.connect(self.preview)
         self.page.apply_requested.connect(self.apply)
         self.page.product_name_edited.connect(self.update_row_statuses)
+        self.page.export_requested.connect(self.export)
 
     def preview(self, path: str) -> None:
         if not self.inventory_service.is_loaded():
@@ -174,3 +177,177 @@ class SalesImportController(QObject):
             self._logger.exception("Failed to refresh sales preview rows")
             return
         self.page.update_preview_rows(row_indices, summary)
+
+    def export(self) -> None:
+        if not self.page.preview_rows:
+            dialogs.show_error(
+                self.page, "Sales Export", "Load a preview first."
+            )
+            return
+        if not self.inventory_service.is_loaded():
+            dialogs.show_error(
+                self.page, "Inventory Error", "Load inventory first."
+            )
+            return
+
+        self.page.flush_pending_edits()
+
+        not_found_rows = [
+            row
+            for row in self.page.preview_rows
+            if row.status == "Error" and row.message == "Product not found"
+        ]
+        fuzzy_rows = [
+            row
+            for row in self.page.preview_rows
+            if row.status == "OK" and row.message.startswith("Matched to ")
+        ]
+
+        if not not_found_rows and not fuzzy_rows:
+            dialogs.show_info(
+                self.page,
+                "Sales Export",
+                "No missing or fuzzy matches to export.",
+            )
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.page,
+            "Export Sales Issues",
+            "sales_import_review.xlsx",
+            "Excel Files (*.xlsx)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path = f"{file_path}.xlsx"
+
+        try:
+            import pandas as pd
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self.page, "Sales Export", str(exc))
+            return
+
+        inventory_df = self.inventory_service.get_dataframe()
+        stock_map = {}
+        for _, inv_row in inventory_df.iterrows():
+            key = normalize_text(inv_row.get("product_name", ""))
+            if key:
+                stock_map[key] = inv_row
+
+        def _translate_status(status: str) -> str:
+            return {"OK": "موفق", "Error": "خطا"}.get(status, status)
+
+        def _translate_message(message: str) -> str:
+            if message.startswith("Matched to "):
+                matched = message.replace("Matched to ", "", 1).strip()
+                return f"مطابقت با {matched}"
+            return {
+                "Product not found": "کالا یافت نشد",
+                "Missing product name": "نام کالا خالی است",
+                "Invalid quantity": "تعداد نامعتبر است",
+                "Will update stock": "موجودی بروزرسانی می‌شود",
+            }.get(message, message)
+
+        def _translate_inventory_columns(columns: list[str]) -> dict[str, str]:
+            mapping = {
+                "product_name": "نام محصول",
+                "quantity": "تعداد",
+                "avg_buy_price": "میانگین قیمت خرید",
+                "alarm": "آلارم",
+                "source": "منبع",
+                "category": "دسته‌بندی",
+                "brand": "برند",
+                "sku": "کد کالا",
+                "code": "کد",
+                "barcode": "بارکد",
+                "size": "سایز",
+                "color": "رنگ",
+                "description": "توضیحات",
+                "notes": "یادداشت",
+            }
+            translated: dict[str, str] = {}
+            for col in columns:
+                label = mapping.get(col)
+                if label:
+                    translated[col] = label
+                else:
+                    # Keep already-Persian headers; otherwise prefix with Persian label.
+                    if any("\u0600" <= ch <= "\u06ff" for ch in str(col)):
+                        translated[col] = str(col)
+                    else:
+                        translated[col] = f"ستون {col}"
+            return translated
+
+        inventory_columns = list(inventory_df.columns)
+        inventory_label_map = _translate_inventory_columns(inventory_columns)
+
+        not_found_payload = []
+        for row in not_found_rows:
+            not_found_payload.append(
+                {
+                    "نام محصول فروش": row.product_name,
+                    "تعداد فروش": row.quantity_sold,
+                    "وضعیت": _translate_status(row.status),
+                    "پیام": _translate_message(row.message),
+                }
+            )
+
+        fuzzy_payload = []
+        for row in fuzzy_rows:
+            record = {
+                "نام محصول فروش": row.product_name,
+                "تعداد فروش": row.quantity_sold,
+                "محصول مطابق": row.resolved_name,
+                "وضعیت": "مطابقت تقریبی",
+                "پیام": _translate_message(row.message),
+            }
+            key = normalize_text(row.resolved_name or row.product_name)
+            stock_row = stock_map.get(key)
+            if stock_row is not None:
+                for col in inventory_columns:
+                    record[inventory_label_map[col]] = stock_row.get(col, None)
+            else:
+                for col in inventory_columns:
+                    record.setdefault(inventory_label_map[col], None)
+            fuzzy_payload.append(record)
+
+        try:
+            with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+                if not_found_payload:
+                    pd.DataFrame(not_found_payload).to_excel(
+                        writer, index=False, sheet_name="یافت نشد"
+                    )
+                if fuzzy_payload:
+                    pd.DataFrame(fuzzy_payload).to_excel(
+                        writer, index=False, sheet_name="مطابقت تقریبی"
+                    )
+            ensure_sheet_rtl(file_path)
+            apply_banded_rows(file_path)
+            autofit_columns(file_path)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self.page, "Sales Export", str(exc))
+            self._logger.exception("Failed to export sales issues")
+            return
+
+        if self._action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            details = (
+                f"موارد یافت نشد: {len(not_found_payload)}\n"
+                f"موارد fuzzy: {len(fuzzy_payload)}\n"
+                f"مسیر: {file_path}"
+            )
+            self._action_log_service.log_action(
+                "sales_import_export",
+                "خروجی مغایرت‌های فروش",
+                details,
+                admin=admin,
+            )
+
+        self.toast.show("Sales export completed", "success")

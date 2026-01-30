@@ -24,6 +24,7 @@ class SalesImportPage(QWidget):
     preview_requested = Signal(str)
     apply_requested = Signal()
     product_name_edited = Signal(list)
+    export_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -69,6 +70,11 @@ class SalesImportPage(QWidget):
         self.apply_button = QPushButton("Apply Updates")
         self.apply_button.clicked.connect(self.apply_requested.emit)
         file_layout.addWidget(self.apply_button)
+
+        self.export_button = QPushButton("Export")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_requested.emit)
+        file_layout.addWidget(self.export_button)
 
         layout.addWidget(file_card)
 
@@ -119,6 +125,7 @@ class SalesImportPage(QWidget):
         self.preview_rows = rows
         self._pending_rows.clear()
         self._edit_timer.stop()
+        self.export_button.setEnabled(bool(rows))
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
@@ -152,12 +159,14 @@ class SalesImportPage(QWidget):
         self.browse_button.setEnabled(enabled)
         self.preview_button.setEnabled(enabled)
         self.apply_button.setEnabled(enabled)
+        self.export_button.setEnabled(enabled and bool(self.preview_rows))
         self.table.setEnabled(enabled)
 
     def reset_after_apply(self) -> None:
         self.preview_rows = []
         self._pending_rows.clear()
         self._edit_timer.stop()
+        self.export_button.setEnabled(False)
         self.file_input.clear()
         self.total_label.setText("Total: 0")
         self.success_label.setText("Success: 0")
@@ -181,6 +190,12 @@ class SalesImportPage(QWidget):
         if file_path:
             self.file_input.setText(file_path)
             self.preview_requested.emit(file_path)
+
+    def flush_pending_edits(self) -> None:
+        if not self._pending_rows:
+            return
+        self._edit_timer.stop()
+        self._emit_pending_updates()
 
     def update_preview_rows(
         self, row_indices: list[int], summary: SalesPreviewSummary
