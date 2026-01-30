@@ -115,7 +115,7 @@ class PurchaseInvoicePage(QWidget):
         if event.type() == QEvent.KeyPress:
             key = event.key()
             if key in (Qt.Key_Return, Qt.Key_Enter):
-                self.add_row()
+                self._advance_row()
                 return True
             if key == Qt.Key_Delete:
                 self.remove_selected()
@@ -155,6 +155,28 @@ class PurchaseInvoicePage(QWidget):
         self.table.setCellWidget(row, 1, price_input)
         self.table.setCellWidget(row, 2, quantity_input)
         product_input.setFocus()
+
+    def _advance_row(self) -> None:
+        row = self.table.currentRow()
+        col = self.table.currentColumn()
+        if row < 0:
+            self.add_row()
+            return
+        if col < 0:
+            col = 0
+        if row < self.table.rowCount() - 1:
+            next_row = row + 1
+            self.table.setCurrentCell(next_row, col)
+            widget = self.table.cellWidget(next_row, col)
+            if widget is not None:
+                widget.setFocus()
+            return
+        self.add_row()
+        next_row = self.table.rowCount() - 1
+        self.table.setCurrentCell(next_row, col)
+        widget = self.table.cellWidget(next_row, col)
+        if widget is not None:
+            widget.setFocus()
 
     def remove_selected(self) -> None:
         rows = sorted(
