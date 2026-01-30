@@ -238,6 +238,7 @@ class ActionsPage(QWidget):
             "invoice_export": "خروجی فاکتور",
             "invoice_batch_export": "خروجی گروهی فاکتورها",
             "low_stock_export": "خروجی کمبود موجودی",
+            "inventory_export": "خروجی موجودی",
             "basalam_fetch": "دریافت باسلام",
             "basalam_export": "خروجی باسلام",
             "password_change": "تغییر رمز عبور",

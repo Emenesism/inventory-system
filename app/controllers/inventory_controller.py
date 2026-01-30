@@ -10,6 +10,7 @@ from app.services.inventory_service import InventoryService
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
+from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
 from app.utils.text import normalize_text
 
 
@@ -33,6 +34,7 @@ class InventoryController(QObject):
 
         self.page.reload_requested.connect(self.reload)
         self.page.save_requested.connect(self.save)
+        self.page.export_requested.connect(self.export)
 
     def reload(self) -> None:
         try:
@@ -76,6 +78,49 @@ class InventoryController(QObject):
                 admin=admin,
             )
         self.toast.show("Inventory saved", "success")
+
+    def export(self) -> None:
+        df = self.page.get_dataframe()
+        if df is None:
+            dialogs.show_error(self.page, "Inventory", "No inventory loaded.")
+            return
+        if df.empty:
+            dialogs.show_error(self.page, "Inventory", "No data to export.")
+            return
+        from PySide6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.page,
+            "Export Inventory",
+            "stock.xlsx",
+            "Excel Files (*.xlsx)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path = f"{file_path}.xlsx"
+        try:
+            df.to_excel(file_path, index=False)
+            ensure_sheet_rtl(file_path)
+            apply_banded_rows(file_path)
+            autofit_columns(file_path)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self.page, "Inventory", str(exc))
+            self._logger.exception("Failed to export inventory")
+            return
+        if self.action_log_service:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            self.action_log_service.log_action(
+                "inventory_export",
+                "خروجی موجودی",
+                f"تعداد ردیف‌ها: {len(df)}\nمسیر: {file_path}",
+                admin=admin,
+            )
+        self.toast.show("Inventory exported", "success")
 
     @staticmethod
     def _build_inventory_diff(old_df, new_df) -> str:  # noqa: ANN001

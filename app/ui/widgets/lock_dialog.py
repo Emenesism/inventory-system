@@ -30,37 +30,11 @@ class LockDialog(QDialog):
             Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName("LockDialog")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        self.setStyleSheet(
-            """
-            QDialog {
-                background: rgba(15, 23, 42, 0.55);
-            }
-            QFrame#LockCard {
-                background: #F8FAFC;
-                border-radius: 16px;
-                padding: 8px;
-                min-width: 320px;
-            }
-            QLabel#LockTitle {
-                color: #0F172A;
-                font-size: 18px;
-                font-weight: 700;
-            }
-            QLabel#LockHint {
-                color: #64748B;
-                font-size: 12px;
-            }
-            QLabel#LockError {
-                color: #DC2626;
-                font-size: 12px;
-            }
-            """
-        )
 
         card = QFrame()
         card.setObjectName("LockCard")

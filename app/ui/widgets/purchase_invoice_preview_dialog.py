@@ -90,7 +90,7 @@ class PurchaseInvoicePreviewDialog(QDialog):
         content_layout.addWidget(title, 0, Qt.AlignRight)
 
         subtitle = QLabel("لطفاً قبل از ثبت، فاکتور خرید را بررسی کنید.")
-        subtitle.setStyleSheet("color: #6B7280;")
+        subtitle.setProperty("textRole", "muted")
         subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtitle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         content_layout.addWidget(subtitle, 0, Qt.AlignRight)
@@ -258,7 +258,7 @@ class PurchaseInvoicePreviewDialog(QDialog):
             stock_layout.addWidget(self.stock_table)
         else:
             empty_label = QLabel("موردی برای نمایش وجود ندارد.")
-            empty_label.setStyleSheet("color: #6B7280;")
+            empty_label.setProperty("textRole", "muted")
             empty_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             stock_layout.addWidget(empty_label)
 
@@ -281,7 +281,7 @@ class PurchaseInvoicePreviewDialog(QDialog):
         button_row.addWidget(confirm_button)
 
         cancel_button = QPushButton("انصراف")
-        cancel_button.setStyleSheet("background: #E5E7EB; color: #111827;")
+        cancel_button.setProperty("variant", "secondary")
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
 

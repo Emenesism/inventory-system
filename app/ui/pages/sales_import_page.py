@@ -69,7 +69,7 @@ class SalesImportPage(QWidget):
             "Expected columns: Product Name, Quantity (or Quantity Sold). "
             "Optional: Sell Price for profit analytics."
         )
-        helper.setStyleSheet("color: #9CA3AF;")
+        helper.setProperty("textRole", "muted")
         layout.addWidget(helper)
 
         summary_card = QFrame()

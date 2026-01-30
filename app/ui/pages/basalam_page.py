@@ -390,7 +390,7 @@ class BasalamPage(QWidget):
 
         progress_row = QHBoxLayout()
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("color: #6B7280;")
+        self.progress_label.setProperty("textRole", "muted")
         self.progress_label.hide()
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)
@@ -423,7 +423,7 @@ class BasalamPage(QWidget):
         layout.addWidget(form_card)
 
         self.summary_label = QLabel("No data loaded.")
-        self.summary_label.setStyleSheet("color: #6B7280;")
+        self.summary_label.setProperty("textRole", "muted")
         layout.addWidget(self.summary_label)
 
         table_card = QFrame()

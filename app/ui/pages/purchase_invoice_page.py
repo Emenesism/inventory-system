@@ -67,7 +67,7 @@ class PurchaseInvoicePage(QWidget):
             "Add purchased items. Start typing a product to see similar names "
             "from inventory."
         )
-        info.setStyleSheet("color: #9CA3AF;")
+        info.setProperty("textRole", "muted")
         layout.addWidget(info)
 
         table_card = QFrame()

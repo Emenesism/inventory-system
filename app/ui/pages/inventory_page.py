@@ -21,6 +21,7 @@ from app.utils.table_models import DataFrameTableModel
 class InventoryPage(QWidget):
     reload_requested = Signal()
     save_requested = Signal()
+    export_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,6 +58,10 @@ class InventoryPage(QWidget):
         self.save_button = QPushButton("Save Changes")
         self.save_button.clicked.connect(self.save_requested.emit)
         header.addWidget(self.save_button)
+
+        self.export_button = QPushButton("Export")
+        self.export_button.clicked.connect(self.export_requested.emit)
+        header.addWidget(self.export_button)
 
         layout.addLayout(header)
 
@@ -155,6 +160,7 @@ class InventoryPage(QWidget):
         self.search_input.setEnabled(enabled)
         self.reload_button.setEnabled(enabled)
         self.save_button.setEnabled(enabled)
+        self.export_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
 
     def _queue_filter(self, text: str) -> None:

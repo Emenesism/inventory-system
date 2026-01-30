@@ -160,7 +160,8 @@ class InvoiceBatchExportDialog(QDialog):
         date_layout.addLayout(product_row)
 
         self.product_hint = QLabel("")
-        self.product_hint.setStyleSheet("color: #6B7280; font-size: 11px;")
+        self.product_hint.setProperty("textRole", "muted")
+        self.product_hint.setProperty("size", "small")
         date_layout.addWidget(self.product_hint)
 
         self.summary_label = QLabel("Invoices: 0")

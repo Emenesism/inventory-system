@@ -54,7 +54,7 @@ class InvoiceEditDialog(QDialog):
             f"Lines: {invoice.total_lines} | "
             f"Total Qty: {invoice.total_qty}"
         )
-        meta.setStyleSheet("color: #6B7280;")
+        meta.setProperty("textRole", "muted")
         layout.addWidget(meta)
 
         hint_text = (
@@ -64,7 +64,8 @@ class InvoiceEditDialog(QDialog):
         if invoice.invoice_type == "sales":
             hint_text += " Changing product uses current avg buy price."
         hint = QLabel(hint_text)
-        hint.setStyleSheet("color: #6B7280; font-size: 11px;")
+        hint.setProperty("textRole", "muted")
+        hint.setProperty("size", "small")
         layout.addWidget(hint)
 
         card = QFrame()
@@ -99,7 +100,8 @@ class InvoiceEditDialog(QDialog):
         layout.addLayout(summary_row)
 
         self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: #DC2626; font-size: 11px;")
+        self.error_label.setProperty("textRole", "danger")
+        self.error_label.setProperty("size", "small")
         layout.addWidget(self.error_label)
 
         button_row = QHBoxLayout()
