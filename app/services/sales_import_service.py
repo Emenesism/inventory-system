@@ -201,3 +201,94 @@ class SalesImportService:
             updated_df.at[idx, "quantity"] = current_qty - row.quantity_sold
 
         return updated_df
+
+    def refresh_preview_rows(
+        self,
+        preview_rows: list[SalesPreviewRow],
+        inventory_df: pd.DataFrame,
+        row_indices: list[int] | None = None,
+    ) -> SalesPreviewSummary:
+        inventory_lookup: dict[str, int] = {}
+        cost_lookup: dict[str, float] = {}
+        name_lookup: dict[str, str] = {}
+        for _, row in inventory_df.iterrows():
+            key = normalize_text(row.get("product_name", ""))
+            if key:
+                inventory_lookup[key] = int(row.get("quantity", 0))
+                cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
+                name_lookup.setdefault(
+                    key, str(row.get("product_name", "")).strip()
+                )
+        inventory_keys = list(inventory_lookup.keys())
+
+        indices = (
+            row_indices
+            if row_indices is not None
+            else list(range(len(preview_rows)))
+        )
+        for idx in indices:
+            if idx < 0 or idx >= len(preview_rows):
+                continue
+            row = preview_rows[idx]
+            self._refresh_row(row, inventory_keys, cost_lookup, name_lookup)
+
+        total = len(preview_rows)
+        success = sum(1 for row in preview_rows if row.status == "OK")
+        errors = total - success
+        return SalesPreviewSummary(total=total, success=success, errors=errors)
+
+    @staticmethod
+    def _refresh_row(
+        row: SalesPreviewRow,
+        inventory_keys: list[str],
+        cost_lookup: dict[str, float],
+        name_lookup: dict[str, str],
+    ) -> None:
+        product_name = str(row.product_name or "").strip()
+        row.product_name = product_name
+        if not product_name:
+            row.status = "Error"
+            row.message = "Missing product name"
+            row.resolved_name = ""
+            row.cost_price = 0.0
+            return
+
+        quantity = pd.to_numeric(row.quantity_sold, errors="coerce")
+        if pd.isna(quantity) or quantity <= 0 or float(quantity) % 1 != 0:
+            row.status = "Error"
+            row.message = "Invalid quantity"
+            row.resolved_name = ""
+            row.cost_price = 0.0
+            return
+
+        quantity = int(quantity)
+        row.quantity_sold = quantity
+        key = normalize_text(product_name)
+        matched_key = key if key in name_lookup else ""
+        match_message = ""
+
+        if not matched_key and inventory_keys:
+            match = process.extractOne(
+                key,
+                inventory_keys,
+                score_cutoff=95,
+                processor=None,
+            )
+            if match:
+                matched_key = match[0]
+                match_message = f"Matched to {name_lookup.get(matched_key, '')}"
+
+        cost_price = cost_lookup.get(matched_key or key, 0.0)
+        row.cost_price = cost_price
+        if row.sell_price is None or row.sell_price <= 0:
+            row.sell_price = cost_price
+
+        if not matched_key:
+            row.status = "Error"
+            row.message = "Product not found"
+            row.resolved_name = ""
+            return
+
+        row.status = "OK"
+        row.message = match_message or "Will update stock"
+        row.resolved_name = name_lookup.get(matched_key, product_name)

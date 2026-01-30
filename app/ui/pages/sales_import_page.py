@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -23,10 +23,17 @@ from app.services.sales_import_service import (
 class SalesImportPage(QWidget):
     preview_requested = Signal(str)
     apply_requested = Signal()
+    product_name_edited = Signal(list)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.preview_rows: list[SalesPreviewRow] = []
+        self._suppress_item_updates = False
+        self._pending_rows: set[int] = set()
+        self._edit_timer = QTimer(self)
+        self._edit_timer.setSingleShot(True)
+        self._edit_timer.setInterval(350)
+        self._edit_timer.timeout.connect(self._emit_pending_updates)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -101,6 +108,7 @@ class SalesImportPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
+        self.table.itemChanged.connect(self._on_item_changed)
         table_layout.addWidget(self.table)
 
         layout.addWidget(table_card)
@@ -109,20 +117,33 @@ class SalesImportPage(QWidget):
         self, rows: list[SalesPreviewRow], summary: SalesPreviewSummary
     ) -> None:
         self.preview_rows = rows
+        self._pending_rows.clear()
+        self._edit_timer.stop()
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
 
         was_sorting = self.table.isSortingEnabled()
+        self._suppress_item_updates = True
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
         for row_idx, row in enumerate(rows):
-            self.table.setItem(row_idx, 0, QTableWidgetItem(row.product_name))
-            self.table.setItem(
-                row_idx, 1, QTableWidgetItem(str(row.quantity_sold))
-            )
-            self.table.setItem(row_idx, 2, QTableWidgetItem(row.status))
-            self.table.setItem(row_idx, 3, QTableWidgetItem(row.message))
+            name_item = QTableWidgetItem(row.product_name)
+            name_item.setData(Qt.UserRole, row_idx)
+            self.table.setItem(row_idx, 0, name_item)
+
+            qty_item = QTableWidgetItem(str(row.quantity_sold))
+            qty_item.setFlags(qty_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 1, qty_item)
+
+            status_item = QTableWidgetItem(row.status)
+            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 2, status_item)
+
+            message_item = QTableWidgetItem(row.message)
+            message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 3, message_item)
+        self._suppress_item_updates = False
         self.table.setSortingEnabled(was_sorting)
         self.table.resizeColumnsToContents()
 
@@ -135,6 +156,8 @@ class SalesImportPage(QWidget):
 
     def reset_after_apply(self) -> None:
         self.preview_rows = []
+        self._pending_rows.clear()
+        self._edit_timer.stop()
         self.file_input.clear()
         self.total_label.setText("Total: 0")
         self.success_label.setText("Success: 0")
@@ -158,3 +181,71 @@ class SalesImportPage(QWidget):
         if file_path:
             self.file_input.setText(file_path)
             self.preview_requested.emit(file_path)
+
+    def update_preview_rows(
+        self, row_indices: list[int], summary: SalesPreviewSummary
+    ) -> None:
+        self.total_label.setText(f"Total: {summary.total}")
+        self.success_label.setText(f"Success: {summary.success}")
+        self.errors_label.setText(f"Errors: {summary.errors}")
+
+        was_sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        row_map: dict[int, int] = {}
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            idx = item.data(Qt.UserRole)
+            if isinstance(idx, int):
+                row_map[idx] = row
+
+        self._suppress_item_updates = True
+        for preview_idx in row_indices:
+            table_row = row_map.get(preview_idx)
+            if table_row is None or preview_idx >= len(self.preview_rows):
+                continue
+            preview_row = self.preview_rows[preview_idx]
+
+            status_item = self.table.item(table_row, 2)
+            if status_item is None:
+                status_item = QTableWidgetItem()
+                self.table.setItem(table_row, 2, status_item)
+            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+            status_item.setText(preview_row.status)
+
+            message_item = self.table.item(table_row, 3)
+            if message_item is None:
+                message_item = QTableWidgetItem()
+                self.table.setItem(table_row, 3, message_item)
+            message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
+            message_item.setText(preview_row.message)
+        self._suppress_item_updates = False
+        self.table.setSortingEnabled(was_sorting)
+
+    def _emit_pending_updates(self) -> None:
+        if not self._pending_rows:
+            return
+        rows = sorted(self._pending_rows)
+        self._pending_rows.clear()
+        self.product_name_edited.emit(rows)
+
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._suppress_item_updates:
+            return
+        if item.column() != 0:
+            return
+        idx = item.data(Qt.UserRole)
+        if not isinstance(idx, int):
+            return
+        if idx < 0 or idx >= len(self.preview_rows):
+            return
+        raw_text = item.text()
+        text = raw_text.strip()
+        if raw_text != text:
+            self._suppress_item_updates = True
+            item.setText(text)
+            self._suppress_item_updates = False
+        self.preview_rows[idx].product_name = text
+        self._pending_rows.add(idx)
+        self._edit_timer.start()

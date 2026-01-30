@@ -42,6 +42,7 @@ class SalesImportController(QObject):
 
         self.page.preview_requested.connect(self.preview)
         self.page.apply_requested.connect(self.apply)
+        self.page.product_name_edited.connect(self.update_row_statuses)
 
     def preview(self, path: str) -> None:
         if not self.inventory_service.is_loaded():
@@ -156,3 +157,20 @@ class SalesImportController(QObject):
 
         self.page.reset_after_apply()
         self.toast.show("Sales import applied", "success")
+
+    def update_row_statuses(self, row_indices: list[int]) -> None:
+        if not row_indices or not self.page.preview_rows:
+            return
+        if not self.inventory_service.is_loaded():
+            return
+        try:
+            inventory_df = self.inventory_service.get_dataframe()
+            summary = self.sales_service.refresh_preview_rows(
+                self.page.preview_rows,
+                inventory_df,
+                row_indices=row_indices,
+            )
+        except Exception:  # noqa: BLE001
+            self._logger.exception("Failed to refresh sales preview rows")
+            return
+        self.page.update_preview_rows(row_indices, summary)
