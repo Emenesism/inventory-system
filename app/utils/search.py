@@ -24,6 +24,12 @@ class NormalizedFilterProxyModel(QSortFilterProxyModel):
         source_model = self.sourceModel()
         if source_model is None:
             return True
+        try:
+            search_text = source_model.search_text(source_row)
+        except Exception:  # noqa: BLE001
+            search_text = None
+        if search_text is not None:
+            return self._filter_text in search_text
         column_count = source_model.columnCount()
         for column in range(column_count):
             index = source_model.index(source_row, column, source_parent)

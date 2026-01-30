@@ -9,6 +9,7 @@ from app.utils.numeric import (
     is_price_column,
     normalize_numeric_text,
 )
+from app.utils.text import normalize_text
 
 
 class DataFrameTableModel(QAbstractTableModel):
@@ -31,6 +32,7 @@ class DataFrameTableModel(QAbstractTableModel):
             if self._lazy_enabled
             else len(self._full_dataframe)
         )
+        self._search_cache = self._build_search_cache()
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
         return self._visible_rows
@@ -132,6 +134,7 @@ class DataFrameTableModel(QAbstractTableModel):
             self._full_dataframe.iat[index.row(), index.column()] = value
 
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+        self._update_search_cache_row(index.row())
         return True
 
     def set_dataframe(self, dataframe: pd.DataFrame) -> None:
@@ -142,10 +145,16 @@ class DataFrameTableModel(QAbstractTableModel):
             if self._lazy_enabled
             else len(self._full_dataframe)
         )
+        self._search_cache = self._build_search_cache()
         self.endResetModel()
 
     def dataframe(self) -> pd.DataFrame:
         return self._full_dataframe.copy()
+
+    def search_text(self, row: int) -> str:
+        if row < 0 or row >= len(self._search_cache):
+            return ""
+        return self._search_cache[row]
 
     def set_lazy_loading(
         self, enabled: bool, chunk_size: int | None = None
@@ -182,3 +191,31 @@ class DataFrameTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), start, end)
         self._visible_rows += items_to_fetch
         self.endInsertRows()
+
+    def _build_search_cache(self) -> list[str]:
+        if self._full_dataframe.empty:
+            return []
+        cache: list[str] = []
+        for row in self._full_dataframe.itertuples(index=False, name=None):
+            parts: list[str] = []
+            for value in row:
+                if pd.isna(value):
+                    continue
+                parts.append(str(value))
+            cache.append(normalize_text(" ".join(parts)))
+        return cache
+
+    def _update_search_cache_row(self, row: int) -> None:
+        if row < 0 or row >= len(self._full_dataframe):
+            return
+        row_values = self._full_dataframe.iloc[row]
+        parts: list[str] = []
+        for value in row_values.values:
+            if pd.isna(value):
+                continue
+            parts.append(str(value))
+        if row >= len(self._search_cache):
+            self._search_cache.extend(
+                [""] * (row - len(self._search_cache) + 1)
+            )
+        self._search_cache[row] = normalize_text(" ".join(parts))

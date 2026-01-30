@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QModelIndex, Qt, Signal
+from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -28,6 +28,12 @@ class InventoryPage(QWidget):
         self._proxy: NormalizedFilterProxyModel | None = None
         self._editable_columns: list[str] | None = None
         self._blocked_columns: set[str] | None = None
+        self._lazy_enabled_default = True
+        self._pending_filter = ""
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._apply_filter)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -41,7 +47,7 @@ class InventoryPage(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search products...")
-        self.search_input.textChanged.connect(self._apply_filter)
+        self.search_input.textChanged.connect(self._queue_filter)
         header.addWidget(self.search_input)
 
         self.reload_button = QPushButton("Reload")
@@ -82,6 +88,7 @@ class InventoryPage(QWidget):
     ) -> None:  # noqa: ANN001
         if dataframe is None:
             return
+        row_count = len(dataframe)
         if editable_columns is not None:
             self._editable_columns = editable_columns
             self._blocked_columns = None
@@ -96,21 +103,30 @@ class InventoryPage(QWidget):
                 for col in dataframe.columns
                 if col not in self._blocked_columns
             ]
+        lazy_enabled = row_count > 500
+        self._lazy_enabled_default = lazy_enabled
+        chunk_size = 200 if row_count <= 2000 else 500
         self._model = DataFrameTableModel(
             dataframe,
             editable_columns=active_editable,
-            lazy_load=True,
-            chunk_size=100,
+            lazy_load=lazy_enabled,
+            chunk_size=chunk_size,
         )
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self.table.setModel(self._proxy)
         if filter_text:
+            self._model.set_lazy_loading(False)
             self._proxy.set_filter_text(filter_text)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
-        for col in range(1, self._model.columnCount()):
-            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        if row_count <= 2000:
+            for col in range(1, self._model.columnCount()):
+                header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        else:
+            for col in range(1, self._model.columnCount()):
+                header.setSectionResizeMode(col, QHeaderView.Interactive)
+                header.resizeSection(col, 140)
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
@@ -141,12 +157,17 @@ class InventoryPage(QWidget):
         self.save_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
 
-    def _apply_filter(self, text: str) -> None:
+    def _queue_filter(self, text: str) -> None:
+        self._pending_filter = text
+        self._search_timer.start()
+
+    def _apply_filter(self) -> None:
         if self._proxy and self._model:
+            text = self._pending_filter
             if text:
                 self._model.set_lazy_loading(False)
             else:
-                self._model.set_lazy_loading(True)
+                self._model.set_lazy_loading(self._lazy_enabled_default)
             self._proxy.set_filter_text(text)
 
     def _maybe_fetch_more(self) -> None:

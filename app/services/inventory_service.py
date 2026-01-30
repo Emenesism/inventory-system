@@ -17,6 +17,7 @@ class InventoryService:
         self.config = config
         self._name_index: dict[str, int] = {}
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._sync_passphrase()
 
     def set_inventory_path(self, path: str | Path | None) -> None:
         self.store.set_path(path)
@@ -24,18 +25,25 @@ class InventoryService:
         self.config.save()
 
     def load(self) -> pd.DataFrame:
+        self._sync_passphrase()
         df = self.store.load()
         self._rebuild_index(df)
         return df
 
-    def save(self, df: pd.DataFrame) -> Path:
+    def save(self, df: pd.DataFrame) -> Path | None:
+        self._sync_passphrase()
         backup_dir = (
             Path(self.config.backup_dir) if self.config.backup_dir else None
         )
         backup_path = self.store.backup(backup_dir=backup_dir)
         self.store.save(df)
         self._rebuild_index(df)
-        self._logger.info("Inventory saved. Backup created at %s", backup_path)
+        if backup_path:
+            self._logger.info(
+                "Inventory saved. Backup created at %s", backup_path
+            )
+        else:
+            self._logger.info("Inventory saved. No backup was created.")
         return backup_path
 
     def get_dataframe(self) -> pd.DataFrame:
@@ -65,3 +73,7 @@ class InventoryService:
     @staticmethod
     def _normalize_name(name: str) -> str:
         return normalize_text(name)
+
+    def _sync_passphrase(self) -> None:
+        passphrase = self.config.inventory_key or self.config.passcode
+        self.store.set_passphrase(passphrase)

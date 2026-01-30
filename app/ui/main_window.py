@@ -310,6 +310,9 @@ class MainWindow(QMainWindow):
             try:
                 self.inventory_service.load()
                 self.refresh_inventory_views()
+                self._maybe_convert_inventory_to_encrypted(
+                    Path(self.config.inventory_file)
+                )
                 self.toast.show("Inventory loaded", "success")
                 return
             except InventoryFileError as exc:
@@ -327,11 +330,17 @@ class MainWindow(QMainWindow):
         candidates: list[Path] = []
         if getattr(sys, "frozen", False):
             candidates.append(
+                Path(sys.executable).resolve().parent / "stock.dat"
+            )
+            candidates.append(
                 Path(sys.executable).resolve().parent / "stock.xlsx"
             )
         argv_path = Path(sys.argv[0]).resolve()
+        candidates.append(argv_path.parent / "stock.dat")
         candidates.append(argv_path.parent / "stock.xlsx")
+        candidates.append(Path.cwd() / "stock.dat")
         candidates.append(Path.cwd() / "stock.xlsx")
+        candidates.append(Path(__file__).resolve().parents[2] / "stock.dat")
         candidates.append(Path(__file__).resolve().parents[2] / "stock.xlsx")
         for path in candidates:
             if path.exists():
@@ -343,7 +352,7 @@ class MainWindow(QMainWindow):
             self,
             "Select Inventory File",
             "",
-            "Excel Files (*.xlsx *.xlsm);;CSV Files (*.csv)",
+            "Encrypted Inventory (*.dat);;Excel Files (*.xlsx *.xlsm)",
         )
         if not file_path:
             return
@@ -360,8 +369,41 @@ class MainWindow(QMainWindow):
             return
 
         self.inventory_service.set_inventory_path(file_path)
+        self._maybe_convert_inventory_to_encrypted(Path(file_path))
         self.refresh_inventory_views()
         self.toast.show("Inventory file loaded", "success")
+
+    def _maybe_convert_inventory_to_encrypted(self, source_path: Path) -> None:
+        if source_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+            return
+        convert = dialogs.ask_yes_no(
+            self,
+            "Inventory",
+            "Convert this inventory to encrypted format (.dat)?",
+        )
+        if not convert:
+            return
+        target_path = source_path.with_suffix(".dat")
+        if target_path.exists():
+            overwrite = dialogs.ask_yes_no(
+                self,
+                "Inventory",
+                "Encrypted file already exists. Overwrite it?",
+            )
+            if not overwrite:
+                return
+        original_path = self.inventory_service.store.path
+        try:
+            df = self.inventory_service.get_dataframe().copy()
+            self.inventory_service.store.set_path(target_path)
+            self.inventory_service.save(df)
+            self.inventory_service.set_inventory_path(target_path)
+            self._update_status()
+            self.toast.show("Inventory encrypted", "success")
+        except InventoryFileError as exc:
+            if original_path is not None:
+                self.inventory_service.store.set_path(original_path)
+            dialogs.show_error(self, "Inventory", str(exc))
 
     def refresh_inventory_views(self) -> None:
         if not self.inventory_service.is_loaded():

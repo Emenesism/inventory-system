@@ -14,6 +14,7 @@ class AppConfig:
     low_stock_threshold: int = 5
     backup_dir: str | None = None
     passcode: str = "1111"
+    inventory_key: str | None = None
     access_token: str | None = None
 
     @classmethod
@@ -30,6 +31,7 @@ class AppConfig:
             low_stock_threshold=data.get("low_stock_threshold", 5),
             backup_dir=data.get("backup_dir"),
             passcode=str(data.get("passcode", "1111")),
+            inventory_key=data.get("inventory_key"),
             access_token=data.get("access_token"),
         )
 
@@ -40,6 +42,7 @@ class AppConfig:
             "low_stock_threshold": self.low_stock_threshold,
             "backup_dir": self.backup_dir,
             "passcode": self.passcode,
+            "inventory_key": self.inventory_key,
             "access_token": self.access_token,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
