@@ -201,6 +201,7 @@ class InvoiceService:
         lines: list[SalesLine],
         admin_id: int | None = None,
         admin_username: str | None = None,
+        invoice_type: str = "sales",
     ) -> int:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
@@ -223,7 +224,7 @@ class InvoiceService:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    "sales",
+                    invoice_type,
                     created_at,
                     len(lines),
                     total_qty,
@@ -416,7 +417,7 @@ class InvoiceService:
                     float(line.price * line.quantity),
                     float(
                         line.cost_price
-                        if invoice_type == "sales"
+                        if invoice_type.startswith("sales")
                         else line.price
                     ),
                 )
@@ -494,7 +495,7 @@ class InvoiceService:
                         substr(created_at, 1, 7) AS month,
                         SUM(CASE WHEN invoice_type = 'purchase'
                             THEN total_amount ELSE 0 END) AS purchase_total,
-                        SUM(CASE WHEN invoice_type = 'sales'
+                        SUM(CASE WHEN invoice_type LIKE 'sales%'
                             THEN total_amount ELSE 0 END) AS sales_total,
                         COUNT(*) AS invoice_count
                     FROM invoices
@@ -507,7 +508,7 @@ class InvoiceService:
                             AS profit
                     FROM invoices i
                     JOIN invoice_lines il ON i.id = il.invoice_id
-                    WHERE i.invoice_type = 'sales'
+                    WHERE i.invoice_type LIKE 'sales%'
                     GROUP BY month
                 )
                 SELECT

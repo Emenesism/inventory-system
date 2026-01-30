@@ -347,7 +347,9 @@ class InvoicesPage(QWidget):
     def _format_type(value: str) -> str:
         if value == "purchase":
             return "Purchase"
-        if value == "sales":
+        if value == "sales_manual":
+            return "Sales Manual"
+        if value.startswith("sales"):
             return "Sales"
         return value.title()
 
@@ -562,7 +564,7 @@ class InvoicesPage(QWidget):
             )
             title = (
                 "حذف فاکتور فروش"
-                if invoice.invoice_type == "sales"
+                if invoice.invoice_type.startswith("sales")
                 else "حذف فاکتور خرید"
             )
             self._action_log_service.log_action(
@@ -660,7 +662,7 @@ class InvoicesPage(QWidget):
 
     def _apply_invoice_change(self, invoice_type, old_lines, new_lines):
         inventory_df = self.inventory_service.get_dataframe().copy()
-        if invoice_type == "sales":
+        if invoice_type.startswith("sales"):
             return self._apply_sales_change(inventory_df, old_lines, new_lines)
         if invoice_type == "purchase":
             return self._apply_purchase_change(

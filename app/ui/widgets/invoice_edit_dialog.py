@@ -61,7 +61,7 @@ class InvoiceEditDialog(QDialog):
             "Double-click to edit. Use Remove Line for mistakes, "
             "then Save to apply inventory changes."
         )
-        if invoice.invoice_type == "sales":
+        if invoice.invoice_type.startswith("sales"):
             hint_text += " Changing product uses current avg buy price."
         hint = QLabel(hint_text)
         hint.setProperty("textRole", "muted")
@@ -263,7 +263,7 @@ class InvoiceEditDialog(QDialog):
             meta = product_item.data(Qt.UserRole) or {}
             original_product = meta.get("original_product", product_name)
             cost_price = meta.get("cost_price", price)
-            if self.invoice.invoice_type == "sales":
+            if self.invoice.invoice_type.startswith("sales"):
                 if normalize_text(original_product) != product_key:
                     cost_price = float(self._cost_map.get(product_key, 0.0))
             else:

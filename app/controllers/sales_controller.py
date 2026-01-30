@@ -3,13 +3,24 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QDialog
 
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, SalesLine
 from app.services.sales_import_service import SalesImportService
+from app.services.sales_manual_service import SalesManualLine
 from app.ui.pages.sales_import_page import SalesImportPage
+from app.ui.widgets.sales_invoice_preview_dialog import (
+    SalesInvoicePreviewData,
+    SalesInvoicePreviewDialog,
+    SalesInvoicePreviewLine,
+    SalesInvoiceStockProjection,
+)
+from app.ui.widgets.sales_manual_invoice_dialog import (
+    SalesManualInvoiceDialog,
+)
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
 from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
@@ -46,6 +57,7 @@ class SalesImportController(QObject):
         self.page.apply_requested.connect(self.apply)
         self.page.product_name_edited.connect(self.update_row_statuses)
         self.page.export_requested.connect(self.export)
+        self.page.manual_invoice_requested.connect(self.open_manual_invoice)
 
     def preview(self, path: str) -> None:
         if not self.inventory_service.is_loaded():
@@ -351,3 +363,240 @@ class SalesImportController(QObject):
             )
 
         self.toast.show("Sales export completed", "success")
+
+    def open_manual_invoice(self) -> None:
+        if not self.inventory_service.is_loaded():
+            dialogs.show_error(
+                self.page, "Inventory Error", "Load inventory first."
+            )
+            self.toast.show("Inventory not loaded", "error")
+            return
+        dialog = SalesManualInvoiceDialog(self.page)
+        dialog.set_product_provider(self.inventory_service.get_product_names)
+        dialog.submit_requested.connect(
+            lambda lines, dlg=dialog: self._submit_manual_invoice(lines, dlg)
+        )
+        dialog.exec()
+
+    def _submit_manual_invoice(
+        self, lines: list[SalesManualLine], dialog: SalesManualInvoiceDialog
+    ) -> None:
+        if not self.inventory_service.is_loaded():
+            dialogs.show_error(
+                dialog, "Inventory Error", "Load inventory first."
+            )
+            self.toast.show("Inventory not loaded", "error")
+            return
+
+        valid_lines: list[SalesManualLine] = []
+        invalid = 0
+        for line in lines:
+            if not line.product_name:
+                invalid += 1
+                continue
+            if line.quantity <= 0:
+                invalid += 1
+                continue
+            valid_lines.append(line)
+
+        if not valid_lines:
+            dialogs.show_error(
+                dialog,
+                "Manual Sales Invoice",
+                "Add at least one valid line.",
+            )
+            self.toast.show("No valid sales lines", "error")
+            return
+
+        inventory_df = self.inventory_service.get_dataframe()
+        missing = [
+            line.product_name
+            for line in valid_lines
+            if self.inventory_service.find_index(line.product_name) is None
+        ]
+        if missing:
+            dialogs.show_error(
+                dialog,
+                "Manual Sales Invoice",
+                "Product(s) not found:\n\n" + "\n".join(sorted(set(missing))),
+            )
+            self.toast.show("Product(s) not found", "error")
+            return
+
+        inventory_index = {
+            normalize_text(name): idx
+            for idx, name in inventory_df["product_name"].items()
+        }
+        aggregated: dict[str, int] = {}
+        for line in valid_lines:
+            key = normalize_text(line.product_name)
+            aggregated[key] = aggregated.get(key, 0) + line.quantity
+
+        insufficient: list[str] = []
+        for key, qty in aggregated.items():
+            idx = inventory_index.get(key)
+            if idx is None:
+                continue
+            current_qty = int(inventory_df.at[idx, "quantity"])
+            if current_qty - qty < 0:
+                insufficient.append(
+                    f"{inventory_df.at[idx, 'product_name']} "
+                    f"(available {current_qty})"
+                )
+        if insufficient:
+            dialogs.show_error(
+                dialog,
+                "Manual Sales Invoice",
+                "Insufficient stock:\n\n" + "\n".join(insufficient),
+            )
+            self.toast.show("Insufficient stock", "error")
+            return
+
+        cost_map = {
+            normalize_text(name): float(inventory_df.at[idx, "avg_buy_price"])
+            for idx, name in inventory_df["product_name"].items()
+        }
+        priced_lines = [
+            SalesManualLine(
+                product_name=line.product_name,
+                quantity=line.quantity,
+                price=float(
+                    cost_map.get(normalize_text(line.product_name), 0.0)
+                ),
+            )
+            for line in valid_lines
+        ]
+
+        preview_data = self._build_sales_preview_data(
+            priced_lines, inventory_df, invalid
+        )
+        preview_dialog = SalesInvoicePreviewDialog(dialog, preview_data)
+        if preview_dialog.exec() != QDialog.Accepted:
+            self.toast.show("Manual sales invoice canceled", "info")
+            return
+
+        try:
+            updated_df = inventory_df.copy()
+            for key, qty in aggregated.items():
+                idx = inventory_index.get(key)
+                if idx is None:
+                    continue
+                current_qty = int(updated_df.at[idx, "quantity"])
+                updated_df.at[idx, "quantity"] = int(current_qty - qty)
+            self.inventory_service.save(updated_df)
+            self.on_inventory_updated()
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
+            self.toast.show("Manual sales invoice failed", "error")
+            self._logger.exception("Failed to apply manual sales invoice")
+            return
+
+        try:
+            sales_lines = [
+                SalesLine(
+                    product_name=line.product_name,
+                    price=line.price,
+                    quantity=line.quantity,
+                    cost_price=float(
+                        cost_map.get(normalize_text(line.product_name), 0.0)
+                    ),
+                )
+                for line in priced_lines
+            ]
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            invoice_id = self.invoice_service.create_sales_invoice(
+                sales_lines,
+                admin_id=admin.admin_id if admin else None,
+                admin_username=admin.username if admin else None,
+                invoice_type="sales_manual",
+            )
+            if self._action_log_service:
+                total_qty = sum(line.quantity for line in priced_lines)
+                total_amount = sum(
+                    line.price * line.quantity for line in priced_lines
+                )
+                details = (
+                    f"شماره فاکتور: {invoice_id}\n"
+                    f"تعداد ردیف‌ها: {len(valid_lines)}\n"
+                    f"تعداد کل: {total_qty}\n"
+                    f"مبلغ کل: {total_amount:,.0f}"
+                )
+                self._action_log_service.log_action(
+                    "sales_manual_invoice",
+                    "ثبت فاکتور فروش دستی",
+                    details,
+                    admin=admin,
+                )
+            self.on_invoices_updated()
+        except Exception:  # noqa: BLE001
+            self._logger.exception("Failed to store manual sales invoice")
+
+        if invalid:
+            self.toast.show(
+                f"Manual sales invoice saved (skipped {invalid} invalid rows).",
+                "success",
+            )
+        else:
+            self.toast.show("Manual sales invoice saved", "success")
+        dialog.accept()
+
+    def _build_sales_preview_data(
+        self,
+        valid_lines: list[SalesManualLine],
+        inventory_df,
+        invalid_count: int,
+    ) -> SalesInvoicePreviewData:
+        preview_lines: list[SalesInvoicePreviewLine] = []
+        total_qty = 0
+        total_amount = 0.0
+        aggregated: dict[str, int] = {}
+
+        for line in valid_lines:
+            line_total = line.price * line.quantity
+            total_qty += line.quantity
+            total_amount += line_total
+            key = normalize_text(line.product_name)
+            aggregated[key] = aggregated.get(key, 0) + line.quantity
+            preview_lines.append(
+                SalesInvoicePreviewLine(
+                    product_name=line.product_name,
+                    price=line.price,
+                    quantity=line.quantity,
+                    line_total=line_total,
+                )
+            )
+
+        inventory_index = {
+            normalize_text(name): idx
+            for idx, name in inventory_df["product_name"].items()
+        }
+        projections: list[SalesInvoiceStockProjection] = []
+        for key, sold_qty in aggregated.items():
+            idx = inventory_index.get(key)
+            if idx is None:
+                continue
+            current_qty = int(inventory_df.at[idx, "quantity"])
+            new_qty = current_qty - sold_qty
+            projections.append(
+                SalesInvoiceStockProjection(
+                    product_name=str(
+                        inventory_df.at[idx, "product_name"]
+                    ).strip(),
+                    current_qty=current_qty,
+                    sold_qty=sold_qty,
+                    new_qty=new_qty,
+                )
+            )
+
+        return SalesInvoicePreviewData(
+            lines=preview_lines,
+            total_lines=len(valid_lines),
+            total_quantity=total_qty,
+            total_amount=total_amount,
+            invalid_count=invalid_count,
+            projections=projections,
+        )

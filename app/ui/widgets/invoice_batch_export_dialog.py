@@ -256,7 +256,13 @@ class InvoiceBatchExportDialog(QDialog):
                 row_idx,
                 2,
                 QTableWidgetItem(
-                    "Sales" if invoice.invoice_type == "sales" else "Purchase"
+                    (
+                        "Sales Manual"
+                        if invoice.invoice_type == "sales_manual"
+                        else "Sales"
+                    )
+                    if invoice.invoice_type.startswith("sales")
+                    else "Purchase"
                 ),
             )
             lines_item = QTableWidgetItem(str(invoice.total_lines))

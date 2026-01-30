@@ -25,6 +25,7 @@ class SalesImportPage(QWidget):
     apply_requested = Signal()
     product_name_edited = Signal(list)
     export_requested = Signal()
+    manual_invoice_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -66,6 +67,12 @@ class SalesImportPage(QWidget):
         self.preview_button = QPushButton("Load Preview")
         self.preview_button.clicked.connect(self._emit_preview)
         file_layout.addWidget(self.preview_button)
+
+        self.manual_invoice_button = QPushButton("Manual Invoice")
+        self.manual_invoice_button.clicked.connect(
+            self.manual_invoice_requested.emit
+        )
+        file_layout.addWidget(self.manual_invoice_button)
 
         self.apply_button = QPushButton("Apply Updates")
         self.apply_button.clicked.connect(self.apply_requested.emit)
@@ -158,6 +165,7 @@ class SalesImportPage(QWidget):
         self.file_input.setEnabled(enabled)
         self.browse_button.setEnabled(enabled)
         self.preview_button.setEnabled(enabled)
+        self.manual_invoice_button.setEnabled(enabled)
         self.apply_button.setEnabled(enabled)
         self.export_button.setEnabled(enabled and bool(self.preview_rows))
         self.table.setEnabled(enabled)

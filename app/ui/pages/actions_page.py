@@ -231,6 +231,7 @@ class ActionsPage(QWidget):
     def _format_action(entry: ActionEntry) -> str:
         mapping = {
             "sales_import": "ثبت فروش",
+            "sales_manual_invoice": "ثبت فاکتور فروش دستی",
             "sales_import_export": "خروجی مغایرت‌های فروش",
             "purchase_invoice": "ثبت خرید",
             "inventory_edit": "ویرایش موجودی",

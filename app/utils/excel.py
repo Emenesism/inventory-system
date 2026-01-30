@@ -141,9 +141,14 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
     ws.column_dimensions["E"].width = 16
 
     # Title
-    title_text = (
-        "فاکتور فروش" if invoice.invoice_type == "sales" else "فاکتور خرید"
-    )
+    if invoice.invoice_type == "sales_manual":
+        title_text = "فاکتور فروش دستی"
+    else:
+        title_text = (
+            "فاکتور فروش"
+            if invoice.invoice_type.startswith("sales")
+            else "فاکتور خرید"
+        )
     ws.merge_cells("A1:E1")
     title_cell = ws["A1"]
     title_cell.value = title_text
@@ -166,7 +171,12 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
     ws["A4"].value = "شماره فاکتور:"
     ws["B4"].value = str(invoice.invoice_id)
     ws["D4"].value = "نوع:"
-    ws["E4"].value = "فروش" if invoice.invoice_type == "sales" else "خرید"
+    if invoice.invoice_type == "sales_manual":
+        ws["E4"].value = "فروش دستی"
+    else:
+        ws["E4"].value = (
+            "فروش" if invoice.invoice_type.startswith("sales") else "خرید"
+        )
 
     for cell in ("A3", "D3", "A4", "D4"):
         ws[cell].font = label_font
