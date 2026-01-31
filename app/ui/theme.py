@@ -53,6 +53,18 @@ QToolButton#SelectInventoryButton {
 QToolButton#SelectInventoryButton:hover {
     background: #BFDBFE;
 }
+QToolButton#HelpButton {
+    background: #F3F4F6;
+    color: #111827;
+    border-radius: 14px;
+    padding: 6px 10px;
+    font-weight: 700;
+    min-width: 32px;
+    min-height: 32px;
+}
+QToolButton#HelpButton:hover {
+    background: #E5E7EB;
+}
 QToolButton#SidebarButton {
     color: #E5E7EB;
     background: transparent;

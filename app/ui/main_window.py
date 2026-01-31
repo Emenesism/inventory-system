@@ -29,6 +29,7 @@ from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
 from app.services.sales_import_service import SalesImportService
+from app.ui.help_content import get_help_content
 from app.ui.pages.actions_page import ActionsPage
 from app.ui.pages.analytics_page import AnalyticsPage
 from app.ui.pages.basalam_page import BasalamPage
@@ -41,6 +42,7 @@ from app.ui.pages.sales_import_page import SalesImportPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.theme import get_stylesheet
 from app.ui.widgets.header import HeaderBar
+from app.ui.widgets.help_dialog import HelpDialog
 from app.ui.widgets.lock_dialog import LockDialog
 from app.ui.widgets.sidebar import Sidebar
 from app.ui.widgets.toast import ToastManager
@@ -81,6 +83,7 @@ class MainWindow(QMainWindow):
         self.header = HeaderBar()
         self.header.inventory_requested.connect(self.choose_inventory_file)
         self.header.lock_requested.connect(self.lock)
+        self.header.help_requested.connect(self._show_help)
         main_layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
@@ -145,6 +148,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar.set_active("Inventory")
         self.pages.setCurrentWidget(self.inventory_page)
+        self._current_page_name = "Inventory"
 
         self.inventory_controller = InventoryController(
             self.inventory_page,
@@ -463,6 +467,13 @@ class MainWindow(QMainWindow):
         if page:
             self.pages.setCurrentWidget(page)
             self.sidebar.set_active(name)
+            self._current_page_name = name
+
+    def _show_help(self) -> None:
+        content = get_help_content(self._current_page_name)
+        dialog = HelpDialog(self)
+        dialog.set_content(content.title, content.body)
+        dialog.exec()
 
     def refresh_history_views(self) -> None:
         self.invoices_page.refresh()
