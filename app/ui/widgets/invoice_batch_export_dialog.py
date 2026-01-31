@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -152,6 +153,21 @@ class InvoiceBatchExportDialog(QDialog):
         row.addStretch(1)
         date_layout.addLayout(row)
 
+        id_row = QHBoxLayout()
+        id_row.addWidget(QLabel("Invoice ID From:"))
+        self.invoice_id_from = QLineEdit()
+        self.invoice_id_from.setPlaceholderText("From (optional)")
+        self.invoice_id_from.setValidator(QIntValidator(1, 999999999, self))
+        id_row.addWidget(self.invoice_id_from)
+        id_row.addSpacing(20)
+        id_row.addWidget(QLabel("Invoice ID To:"))
+        self.invoice_id_to = QLineEdit()
+        self.invoice_id_to.setPlaceholderText("To (optional)")
+        self.invoice_id_to.setValidator(QIntValidator(1, 999999999, self))
+        id_row.addWidget(self.invoice_id_to)
+        id_row.addStretch(1)
+        date_layout.addLayout(id_row)
+
         product_row = QHBoxLayout()
         product_row.addWidget(QLabel("Product:"))
         self.product_input = QLineEdit()
@@ -207,6 +223,8 @@ class InvoiceBatchExportDialog(QDialog):
         self.to_date.year_combo.currentIndexChanged.connect(self._reload)
         self.to_date.month_combo.currentIndexChanged.connect(self._reload)
         self.to_date.day_combo.currentIndexChanged.connect(self._reload)
+        self.invoice_id_from.textChanged.connect(self._reload)
+        self.invoice_id_to.textChanged.connect(self._reload)
         self.product_input.textChanged.connect(self._reload)
         self._setup_product_completer()
         self._reload()
@@ -219,11 +237,22 @@ class InvoiceBatchExportDialog(QDialog):
             self.export_button.setEnabled(False)
             self.table.setRowCount(0)
             return
+        id_from, id_to, id_error = self._parse_invoice_id_range()
+        if id_error:
+            self.summary_label.setText(id_error)
+            self.export_button.setEnabled(False)
+            self.table.setRowCount(0)
+            return
         start_iso = start_dt.isoformat(timespec="seconds")
         end_iso = end_dt.isoformat(timespec="seconds")
         product_filter, fuzzy = self._resolve_product_filter()
         self._invoices = self.invoice_service.list_invoices_between(
-            start_iso, end_iso, product_filter=product_filter, fuzzy=fuzzy
+            start_iso,
+            end_iso,
+            product_filter=product_filter,
+            fuzzy=fuzzy,
+            id_from=id_from,
+            id_to=id_to,
         )
         self._populate_table()
         self.export_button.setEnabled(bool(self._invoices))
@@ -309,6 +338,31 @@ class InvoiceBatchExportDialog(QDialog):
             )
         return text, True
 
+    def _parse_invoice_id_range(
+        self,
+    ) -> tuple[int | None, int | None, str | None]:
+        from_text = self.invoice_id_from.text().strip()
+        to_text = self.invoice_id_to.text().strip()
+        id_from = None
+        if from_text:
+            try:
+                id_from = int(from_text)
+            except ValueError:
+                return None, None, "Invoice ID From must be a number."
+        id_to = None
+        if to_text:
+            try:
+                id_to = int(to_text)
+            except ValueError:
+                return None, None, "Invoice ID To must be a number."
+        if id_from is not None and id_from < 1:
+            return None, None, "Invoice ID From must be a positive number."
+        if id_to is not None and id_to < 1:
+            return None, None, "Invoice ID To must be a positive number."
+        if id_from is not None and id_to is not None and id_to < id_from:
+            return None, None, "Invoice ID range is invalid."
+        return id_from, id_to, None
+
     def _export(self) -> None:
         if not self._invoices:
             dialogs.show_error(self, "Export", "No invoices to export.")
@@ -335,16 +389,26 @@ class InvoiceBatchExportDialog(QDialog):
                 else None
             )
             product_filter, fuzzy = self._resolve_product_filter()
+            id_from, id_to, _ = self._parse_invoice_id_range()
             jy_from, jm_from, jd_from = self.from_date.jalali_date()
             jy_to, jm_to, jd_to = self.to_date.jalali_date()
             filter_text = product_filter if product_filter else "همه کالاها"
             filter_type = "دقیق" if product_filter and not fuzzy else "جزئی"
+            if id_from is None and id_to is None:
+                id_range_text = "همه"
+            elif id_from is not None and id_to is not None:
+                id_range_text = f"{id_from} تا {id_to}"
+            elif id_from is not None:
+                id_range_text = f"از {id_from}"
+            else:
+                id_range_text = f"تا {id_to}"
             self.action_log_service.log_action(
                 "invoice_batch_export",
                 "خروجی گروهی فاکتور",
                 (
                     f"بازه تاریخ: {jy_from:04d}/{jm_from:02d}/{jd_from:02d} "
                     f"تا {jy_to:04d}/{jm_to:02d}/{jd_to:02d}\n"
+                    f"فیلتر شماره فاکتور: {id_range_text}\n"
                     f"فیلتر کالا: {filter_text}\n"
                     f"نوع فیلتر: {filter_type}\n"
                     f"تعداد فاکتور: {len(invoices_with_lines)}\n"

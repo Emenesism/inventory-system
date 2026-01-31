@@ -303,8 +303,19 @@ class InvoiceService:
         end_iso: str,
         product_filter: str | None = None,
         fuzzy: bool = False,
+        id_from: int | None = None,
+        id_to: int | None = None,
     ) -> list[InvoiceSummary]:
         with self._connect() as conn:
+            conditions = ["i.created_at >= ?", "i.created_at <= ?"]
+            params: list[object] = [start_iso, end_iso]
+            if id_from is not None:
+                conditions.append("i.id >= ?")
+                params.append(id_from)
+            if id_to is not None:
+                conditions.append("i.id <= ?")
+                params.append(id_to)
+            where_clause = " AND ".join(conditions)
             if product_filter:
                 if fuzzy:
                     product_value = f"%{product_filter}%"
@@ -312,6 +323,7 @@ class InvoiceService:
                 else:
                     product_value = product_filter
                     op = "="
+                params.append(product_value)
                 rows = conn.execute(
                     f"""
                     SELECT DISTINCT
@@ -325,29 +337,28 @@ class InvoiceService:
                         i.admin_username
                     FROM invoices i
                     JOIN invoice_lines il ON i.id = il.invoice_id
-                    WHERE i.created_at >= ? AND i.created_at <= ?
-                        AND il.product_name {op} ?
+                    WHERE {where_clause} AND il.product_name {op} ?
                     ORDER BY i.id DESC
                     """,
-                    (start_iso, end_iso, product_value),
+                    params,
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT
-                        id,
-                        invoice_type,
-                        created_at,
-                        total_lines,
-                        total_qty,
-                        total_amount,
-                        admin_id,
-                        admin_username
-                    FROM invoices
-                    WHERE created_at >= ? AND created_at <= ?
-                    ORDER BY id DESC
+                        i.id,
+                        i.invoice_type,
+                        i.created_at,
+                        i.total_lines,
+                        i.total_qty,
+                        i.total_amount,
+                        i.admin_id,
+                        i.admin_username
+                    FROM invoices i
+                    WHERE {where_clause}
+                    ORDER BY i.id DESC
                     """,
-                    (start_iso, end_iso),
+                    params,
                 ).fetchall()
         return [
             InvoiceSummary(

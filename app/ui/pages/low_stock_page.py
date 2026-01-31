@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QTableWidget,
@@ -89,7 +90,10 @@ class LowStockPage(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header_view = self.table.horizontalHeader()
+        header_view.setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, self.table.columnCount()):
+            header_view.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setDefaultSectionSize(32)
         table_layout.addWidget(self.table)
         layout.addWidget(table_card)
