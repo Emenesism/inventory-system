@@ -78,6 +78,16 @@ class SalesImportController(QObject):
             self._logger.exception("Failed to preview sales import")
             return
 
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        is_manager = bool(admin and admin.role == "manager")
+        editable = is_manager or admin is None
+        self.page.set_edit_mode(
+            editable, self.inventory_service.get_product_names()
+        )
         self.page.set_preview(preview_rows, summary)
         self.toast.show("Preview ready", "success")
 
@@ -106,16 +116,35 @@ class SalesImportController(QObject):
             self.toast.show("No valid rows to apply", "error")
             return
 
-        proceed = dialogs.ask_yes_no(
-            self.page,
-            "Apply Sales Updates",
-            f"Apply {ok_count} updates? {error_count} rows will be skipped.",
-        )
-        if not proceed:
-            return
+        self.page.flush_pending_edits()
 
         try:
             inventory_df = self.inventory_service.get_dataframe()
+            preview_lines = [
+                SalesManualLine(
+                    product_name=row.resolved_name or row.product_name,
+                    quantity=row.quantity_sold,
+                    price=row.sell_price,
+                )
+                for row in self.page.preview_rows
+                if row.status == "OK"
+            ]
+            preview_data = self._build_sales_preview_data(
+                preview_lines, inventory_df, error_count
+            )
+            preview_dialog = SalesInvoicePreviewDialog(self.page, preview_data)
+            if preview_dialog.exec() != QDialog.Accepted:
+                self.toast.show("Sales import canceled", "info")
+                return
+        except Exception:  # noqa: BLE001
+            self._logger.exception("Failed to prepare sales import preview")
+            dialogs.show_error(
+                self.page, "Sales Import", "Failed to build invoice preview."
+            )
+            self.toast.show("Sales preview failed", "error")
+            return
+
+        try:
             updated_df = self.sales_service.apply(
                 self.page.preview_rows, inventory_df
             )

@@ -21,8 +21,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.utils.numeric import format_amount
-
 
 @dataclass(frozen=True)
 class SalesInvoicePreviewLine:
@@ -108,10 +106,8 @@ class SalesInvoicePreviewDialog(QDialog):
         lines_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lines_layout.addWidget(lines_title, 0, Qt.AlignRight)
 
-        self.lines_table = QTableWidget(len(data.lines) + 1, 4)
-        self.lines_table.setHorizontalHeaderLabels(
-            ["شرح کالا", "تعداد", "قیمت فروش", "جمع خط"]
-        )
+        self.lines_table = QTableWidget(len(data.lines) + 1, 2)
+        self.lines_table.setHorizontalHeaderLabels(["شرح کالا", "تعداد"])
         self.lines_table.setAlternatingRowColors(True)
         self.lines_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.lines_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -136,18 +132,10 @@ class SalesInvoicePreviewDialog(QDialog):
         lines_header.setDefaultAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lines_header.setSectionResizeMode(0, QHeaderView.Stretch)
         lines_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        lines_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        lines_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
         for row_idx, line in enumerate(data.lines):
             self._set_item(self.lines_table, row_idx, 0, line.product_name)
             self._set_item(self.lines_table, row_idx, 1, str(line.quantity))
-            self._set_item(
-                self.lines_table, row_idx, 2, format_amount(line.price)
-            )
-            self._set_item(
-                self.lines_table, row_idx, 3, format_amount(line.line_total)
-            )
 
         totals_row = len(data.lines)
         self._set_item(self.lines_table, totals_row, 0, "جمع کل")
@@ -156,13 +144,6 @@ class SalesInvoicePreviewDialog(QDialog):
             totals_row,
             1,
             str(data.total_quantity),
-        )
-        self._set_item(self.lines_table, totals_row, 2, "")
-        self._set_item(
-            self.lines_table,
-            totals_row,
-            3,
-            format_amount(data.total_amount),
         )
 
         self._fit_table_height(self.lines_table)
