@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
+    QAbstractItemDelegate,
     QAbstractItemView,
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -105,6 +107,10 @@ class InvoiceEditDialog(QDialog):
         layout.addWidget(self.error_label)
 
         button_row = QHBoxLayout()
+        self.add_button = QPushButton("Add Line")
+        self.add_button.clicked.connect(self._append_empty_row)
+        button_row.addWidget(self.add_button)
+
         self.remove_button = QPushButton("Remove Line")
         self.remove_button.clicked.connect(self._remove_selected_line)
         button_row.addWidget(self.remove_button)
@@ -118,6 +124,9 @@ class InvoiceEditDialog(QDialog):
         layout.addLayout(button_row)
 
         self._populate(lines)
+        self._delegate = _EnterMoveDelegate(self._handle_enter, self.table)
+        self.table.setItemDelegate(self._delegate)
+        self.table.installEventFilter(self)
         self.table.itemChanged.connect(self._on_item_changed)
         self._update_validation_state()
 
@@ -162,6 +171,72 @@ class InvoiceEditDialog(QDialog):
         self.table.removeRow(row)
         self._recalculate_summary()
         self._update_validation_state()
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if obj is self.table and event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self._handle_enter()
+                return True
+            if key == Qt.Key_Delete:
+                if self.table.state() != QAbstractItemView.EditingState:
+                    if self.table.currentRow() >= 0:
+                        self._remove_selected_line()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _handle_enter(self) -> None:
+        row = self.table.currentRow()
+        col = self.table.currentColumn()
+        if col < 0:
+            col = 0
+        if row < 0:
+            new_row = self._append_empty_row()
+            self.table.setCurrentCell(new_row, col)
+            self.table.editItem(self.table.item(new_row, col))
+            return
+        if row < self.table.rowCount() - 1:
+            self.table.setCurrentCell(row + 1, col)
+            self.table.editItem(self.table.item(row + 1, col))
+            return
+        new_row = self._append_empty_row()
+        self.table.setCurrentCell(new_row, col)
+        self.table.editItem(self.table.item(new_row, col))
+
+    def _append_empty_row(self) -> int:
+        self._updating = True
+        self.table.blockSignals(True)
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+
+        product_item = QTableWidgetItem("")
+        product_item.setData(
+            Qt.UserRole,
+            {
+                "original_product": "",
+                "cost_price": 0.0,
+            },
+        )
+        self.table.setItem(row, 0, product_item)
+
+        price_item = QTableWidgetItem("")
+        price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row, 1, price_item)
+
+        qty_item = QTableWidgetItem("")
+        qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row, 2, qty_item)
+
+        total_item = QTableWidgetItem("")
+        total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        total_item.setFlags(total_item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, 3, total_item)
+
+        self.table.blockSignals(False)
+        self._updating = False
+        self._recalculate_summary()
+        self._update_validation_state()
+        return row
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._updating:
@@ -324,3 +399,21 @@ class InvoiceEditDialog(QDialog):
         if float(value).is_integer():
             return str(int(value))
         return str(value)
+
+
+class _EnterMoveDelegate(QStyledItemDelegate):
+    def __init__(self, on_enter, parent=None) -> None:  # noqa: ANN001
+        super().__init__(parent)
+        self._on_enter = on_enter
+
+    def eventFilter(self, editor, event) -> bool:  # noqa: ANN001, N802
+        if event.type() == QEvent.KeyPress and event.key() in (
+            Qt.Key_Return,
+            Qt.Key_Enter,
+        ):
+            self.commitData.emit(editor)
+            self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
+            if self._on_enter:
+                self._on_enter()
+            return True
+        return super().eventFilter(editor, event)

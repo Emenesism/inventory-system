@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
                 ["quantity", "avg_buy_price"]
             )
             self.invoices_page.set_price_visibility(False)
-            self.invoices_page.set_edit_enabled(True)
+            self.invoices_page.set_edit_enabled(False)
             self.actions_page.set_accessible(False)
             self.reports_page.set_accessible(False)
         else:

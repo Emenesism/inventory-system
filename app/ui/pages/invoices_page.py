@@ -134,14 +134,15 @@ class InvoicesPage(QWidget):
             ]
         )
         header_view = self.invoices_table.horizontalHeader()
-        header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(0, QHeaderView.Stretch)
         header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header_view.setSectionResizeMode(6, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        self.invoices_table.setColumnWidth(7, 90)
         self.invoices_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoices_table.setAlternatingRowColors(True)
         if hasattr(self.invoices_table, "setUniformRowHeights"):
@@ -238,8 +239,6 @@ class InvoicesPage(QWidget):
                 header_parts.append(
                     f"Total {self._format_amount(inv.total_amount)}"
                 )
-            else:
-                header_parts.append("Total hidden")
             header = " | ".join(header_parts)
         else:
             header = "Invoice details"
@@ -250,7 +249,10 @@ class InvoicesPage(QWidget):
             self.lines_table.setItem(
                 row_idx, 0, QTableWidgetItem(line.product_name)
             )
-            price_item = QTableWidgetItem(self._format_amount(line.price))
+            price_text = (
+                self._format_amount(line.price) if self._show_prices else ""
+            )
+            price_item = QTableWidgetItem(price_text)
             price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.lines_table.setItem(row_idx, 1, price_item)
 
@@ -258,7 +260,12 @@ class InvoicesPage(QWidget):
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.lines_table.setItem(row_idx, 2, qty_item)
 
-            total_item = QTableWidgetItem(self._format_amount(line.line_total))
+            total_text = (
+                self._format_amount(line.line_total)
+                if self._show_prices
+                else ""
+            )
+            total_item = QTableWidgetItem(total_text)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.lines_table.setItem(row_idx, 3, total_item)
 
@@ -373,9 +380,9 @@ class InvoicesPage(QWidget):
             self._show_selected_details()
 
     def _apply_price_visibility(self) -> None:
-        self.invoices_table.setColumnHidden(6, not self._show_prices)
-        self.lines_table.setColumnHidden(1, not self._show_prices)
-        self.lines_table.setColumnHidden(3, not self._show_prices)
+        self.invoices_table.setColumnHidden(6, False)
+        self.lines_table.setColumnHidden(1, False)
+        self.lines_table.setColumnHidden(3, False)
 
     def _set_total_amount_label(self) -> None:
         if self._show_prices:
@@ -383,7 +390,7 @@ class InvoicesPage(QWidget):
                 f"Total amount: {self._format_amount(self._total_amount)}"
             )
         else:
-            self.total_amount_label.setText("Total amount: Hidden")
+            self.total_amount_label.setText("Total amount: ")
 
     def set_edit_enabled(self, enabled: bool) -> None:
         self._can_edit = bool(enabled)
@@ -396,8 +403,9 @@ class InvoicesPage(QWidget):
         edit_allowed = False
         if has_selection:
             summary = self._selected_invoice_summary()
-            edit_allowed = (
-                summary is not None and summary.invoice_type == "purchase"
+            edit_allowed = summary is not None and (
+                summary.invoice_type == "purchase"
+                or summary.invoice_type.startswith("sales")
             )
         self.edit_button.setEnabled(self._can_edit and edit_allowed)
         self.delete_button.setEnabled(self._can_edit and has_selection)
@@ -435,13 +443,6 @@ class InvoicesPage(QWidget):
         invoice = self.invoice_service.get_invoice(invoice_id)
         if invoice is None:
             dialogs.show_error(self, "Invoices", "Invoice not found.")
-            return
-        if invoice.invoice_type != "purchase":
-            dialogs.show_info(
-                self,
-                "Edit Invoice",
-                "Only purchase invoices can be edited.",
-            )
             return
         lines = self.invoice_service.get_invoice_lines(invoice_id)
         if not lines:
@@ -497,9 +498,14 @@ class InvoicesPage(QWidget):
             )
             before_block = self._format_lines_for_log(lines, "قبل")
             after_block = self._format_lines_for_log(new_lines, "بعد")
+            title = (
+                "ویرایش فاکتور فروش"
+                if invoice.invoice_type.startswith("sales")
+                else "ویرایش فاکتور خرید"
+            )
             self._action_log_service.log_action(
                 "invoice_edit",
-                "ویرایش فاکتور خرید",
+                title,
                 (
                     f"شماره فاکتور: {invoice.invoice_id}\n"
                     f"تعداد ردیف‌ها: {len(lines)} → {len(new_lines)}\n"
