@@ -626,11 +626,7 @@ class BasalamPage(QWidget):
     def _build_export_payload(self, df):
         import pandas as pd
 
-        columns = (
-            [COL_PRODUCT]
-            + PROPERTY_TITLES
-            + [COL_RECIPIENT, COL_QUANTITY, COL_TOTAL_QUANTITY]
-        )
+        columns = [COL_RECIPIENT, COL_PRODUCT, COL_QUANTITY, COL_TOTAL_QUANTITY]
         if df is None or df.empty:
             return pd.DataFrame(columns=columns), []
 
@@ -645,9 +641,7 @@ class BasalamPage(QWidget):
         recipient_col = COL_RECIPIENT
         quantity_col = COL_QUANTITY
 
-        grouped_rows: dict[
-            str, list[tuple[str, object, object, dict[str, object]]]
-        ] = {}
+        grouped_rows: dict[str, list[tuple[str, object, object]]] = {}
         product_order: list[str] = []
 
         totals: dict[str, int] = {}
@@ -657,7 +651,7 @@ class BasalamPage(QWidget):
             product_value = row.get(product_col, "")
             if product_value is None or pd.isna(product_value):
                 product_value = ""
-            product = str(product_value).strip()
+            product = self._strip_property_details(str(product_value).strip())
 
             recipient_value = row.get(recipient_col, "")
             if recipient_value is None or pd.isna(recipient_value):
@@ -670,10 +664,7 @@ class BasalamPage(QWidget):
             if product not in grouped_rows:
                 grouped_rows[product] = []
                 product_order.append(product)
-            props = {title: row.get(title, "") for title in PROPERTY_TITLES}
-            grouped_rows[product].append(
-                (recipient, quantity, quantity_value, props)
-            )
+            grouped_rows[product].append((recipient, quantity, quantity_value))
 
             numeric_quantity = self._numeric_quantity(quantity_value)
             if numeric_quantity is not None:
@@ -691,17 +682,11 @@ class BasalamPage(QWidget):
                 if has_numeric and total_quantity is not None
                 else ""
             )
-            for idx, (recipient, quantity, _raw_value, props) in enumerate(
-                quantities
-            ):
+            for idx, (recipient, quantity, _raw_value) in enumerate(quantities):
                 export_rows.append(
                     {
-                        COL_PRODUCT: product,
-                        **{
-                            title: props.get(title, "")
-                            for title in PROPERTY_TITLES
-                        },
                         COL_RECIPIENT: recipient,
+                        COL_PRODUCT: product,
                         COL_QUANTITY: quantity,
                         COL_TOTAL_QUANTITY: total_cell if idx == 0 else "",
                     }
@@ -709,6 +694,23 @@ class BasalamPage(QWidget):
             group_sizes.append(len(quantities))
 
         return pd.DataFrame(export_rows, columns=columns), group_sizes
+
+    @staticmethod
+    def _strip_property_details(name: str) -> str:
+        if not isinstance(name, str):
+            return ""
+        parts = [part.strip() for part in name.split(" | ")]
+        cleaned: list[str] = []
+        for part in parts:
+            if " : " in part:
+                left = part.split(" : ", 1)[0].strip()
+                if left in PROPERTY_TITLES:
+                    continue
+            if part:
+                cleaned.append(part)
+        if cleaned:
+            return " | ".join(cleaned)
+        return name.strip()
 
     @staticmethod
     def _apply_export_merges(
