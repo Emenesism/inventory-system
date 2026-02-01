@@ -25,6 +25,7 @@ from app.core.logging_setup import LOG_DIR
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
+from app.services.bale_backup_restore import restore_latest_backup_async
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
@@ -246,6 +247,11 @@ class MainWindow(QMainWindow):
                 f"کاربر: {admin.username}",
                 admin=admin,
             )
+        restore_latest_backup_async(
+            config=self.config,
+            ui_parent=self,
+            on_restored=self._after_backup_restore,
+        )
 
     def _get_current_admin(self) -> AdminUser | None:
         return self._current_admin
@@ -267,6 +273,20 @@ class MainWindow(QMainWindow):
             self.invoices_page.set_edit_enabled(True)
             self.actions_page.set_accessible(True)
             self.reports_page.set_accessible(True)
+
+    def _after_backup_restore(self) -> None:
+        try:
+            if self.inventory_service.store.path or self.config.inventory_file:
+                self.inventory_service.load()
+        except Exception:  # noqa: BLE001
+            self._logger.exception(
+                "Failed to reload inventory after backup restore"
+            )
+        if self.inventory_service.is_loaded():
+            self.refresh_inventory_views()
+        else:
+            self.disable_inventory_features("Inventory not loaded")
+        self.refresh_history_views()
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if not self._lock_open and event.type() in (
@@ -434,21 +454,18 @@ class MainWindow(QMainWindow):
         self.header.set_status(status)
 
     def _update_status(self) -> None:
+        backup_label = (self.config.bale_last_backup_name or "").strip()
         if not self.inventory_service.is_loaded():
-            self.header.set_status("No inventory loaded")
+            if backup_label:
+                self.header.set_status(f"{backup_label} | No inventory loaded")
+            else:
+                self.header.set_status("No inventory loaded")
             return
         df = self.inventory_service.get_dataframe()
-        file_name = (
-            Path(self.inventory_service.store.path).name
-            if self.inventory_service.store.path
-            else ""
-        )
-        file_name = (
-            Path(self.inventory_service.store.path).name
-            if self.inventory_service.store.path
-            else ""
-        )
-        self.header.set_status(f"{file_name} | {len(df)} products")
+        if backup_label:
+            self.header.set_status(f"{backup_label} | {len(df)} products")
+        else:
+            self.header.set_status(f"{len(df)} products")
 
     def _switch_page(self, name: str) -> None:
         pages = {

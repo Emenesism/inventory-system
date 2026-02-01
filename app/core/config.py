@@ -17,7 +17,9 @@ class AppConfig:
     inventory_key: str | None = None
     access_token: str | None = None
     bot_token: str | None = None
+    bot_token_for_sending: str | None = None
     channel_id: str | None = None
+    bale_last_backup_name: str | None = None
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -36,7 +38,9 @@ class AppConfig:
             inventory_key=data.get("inventory_key"),
             access_token=data.get("access_token"),
             bot_token=data.get("bot_token"),
+            bot_token_for_sending=data.get("bot_token_for_sending"),
             channel_id=data.get("channel_id"),
+            bale_last_backup_name=data.get("bale_last_backup_name"),
         )
 
     def save(self) -> None:
@@ -49,6 +53,8 @@ class AppConfig:
             "inventory_key": self.inventory_key,
             "access_token": self.access_token,
             "bot_token": self.bot_token,
+            "bot_token_for_sending": self.bot_token_for_sending,
             "channel_id": self.channel_id,
+            "bale_last_backup_name": self.bale_last_backup_name,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

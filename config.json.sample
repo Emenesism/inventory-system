@@ -8,4 +8,6 @@
   "access_token": "",
   "bot_token" : "",
   "channel_id" : "",
+  "bot_token_for_sending" : ""
+  "bale_last_backup_name": null
 }
