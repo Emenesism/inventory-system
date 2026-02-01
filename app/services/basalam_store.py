@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.core.paths import app_dir
+from app.services.backup_sender import send_backup
 
 
 class BasalamIdStore:
@@ -60,7 +61,9 @@ class BasalamIdStore:
             timespec="seconds"
         )
         rows = [(item_id, timestamp) for item_id in ids]
+        changes = 0
         with self._connect() as conn:
+            before = conn.total_changes
             conn.executemany(
                 """
                 INSERT OR IGNORE INTO basalam_order_ids (id, saved_at)
@@ -68,6 +71,9 @@ class BasalamIdStore:
                 """,
                 rows,
             )
+            changes = conn.total_changes - before
+        if changes > 0:
+            send_backup(reason="basalam_ids")
 
 
 def _chunked(items: list[str], size: int) -> list[list[str]]:

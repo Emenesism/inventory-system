@@ -391,10 +391,12 @@ class BasalamPage(QWidget):
         progress_row = QHBoxLayout()
         self.progress_label = QLabel("")
         self.progress_label.setProperty("textRole", "muted")
-        self.progress_label.hide()
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.hide()
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMinimumHeight(12)
+        self.progress_bar.setTextVisible(False)
+        self.progress_label.setText("آماده دریافت سفارشات.")
         progress_row.addWidget(self.progress_label)
         progress_row.addWidget(self.progress_bar, 1)
         layout.addLayout(progress_row)
@@ -552,7 +554,9 @@ class BasalamPage(QWidget):
         )
 
     def _on_progress(self, total_count: int) -> None:
-        self.progress_label.setText(f"Loading... fetched {total_count} orders")
+        self.progress_label.setText(
+            f"در حال دریافت سفارشات... {total_count} مورد دریافت شد."
+        )
 
     def _on_worker_error(self, message: str) -> None:
         self._logger.error("Basalam worker error: %s", message)
@@ -602,13 +606,12 @@ class BasalamPage(QWidget):
             self.fetch_button.setEnabled(False)
             self.export_button.setEnabled(False)
             self.progress_bar.setRange(0, 0)
-            self.progress_label.setText("Loading...")
-            self.progress_bar.show()
-            self.progress_label.show()
+            self.progress_label.setText("در حال دریافت سفارشات...")
         else:
             self.fetch_button.setEnabled(True)
-            self.progress_bar.hide()
-            self.progress_label.hide()
+            self.progress_bar.setRange(0, 1)
+            self.progress_bar.setValue(0)
+            self.progress_label.setText("آماده دریافت سفارشات.")
 
     def _records_to_dataframe(self, records):
         import pandas as pd

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.action_log_service import ActionLogService
+from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.ui.widgets.invoice_batch_export_dialog import InvoiceBatchExportDialog
@@ -648,22 +649,26 @@ class InvoicesPage(QWidget):
 
     def _save_inventory_and_update_db(self, updated_df, update_db) -> bool:
         backup_path = None
-        try:
-            backup_path = self.inventory_service.save(updated_df)
-        except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self, "Inventory", str(exc))
-            return False
-        try:
-            update_db()
-        except Exception as exc:  # noqa: BLE001
-            if backup_path and self.inventory_service.store.path is not None:
-                shutil.copy2(backup_path, self.inventory_service.store.path)
-                try:
-                    self.inventory_service.load()
-                except Exception:  # noqa: BLE001
-                    pass
-            dialogs.show_error(self, "Invoices", str(exc))
-            return False
+        with backup_batch("invoice_change"):
+            try:
+                backup_path = self.inventory_service.save(updated_df)
+            except Exception as exc:  # noqa: BLE001
+                dialogs.show_error(self, "Inventory", str(exc))
+                return False
+            try:
+                update_db()
+            except Exception as exc:  # noqa: BLE001
+                if (
+                    backup_path
+                    and self.inventory_service.store.path is not None
+                ):
+                    shutil.copy2(backup_path, self.inventory_service.store.path)
+                    try:
+                        self.inventory_service.load()
+                    except Exception:  # noqa: BLE001
+                        pass
+                dialogs.show_error(self, "Invoices", str(exc))
+                return False
         return True
 
     def _apply_invoice_change(self, invoice_type, old_lines, new_lines):

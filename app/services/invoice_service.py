@@ -8,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.core.paths import app_dir
+from app.services.backup_sender import send_backup
 from app.services.purchase_service import PurchaseLine
 
 
@@ -194,7 +195,8 @@ class InvoiceService:
                 """,
                 line_rows,
             )
-            return invoice_id
+        send_backup(reason="invoice_purchase_created")
+        return invoice_id
 
     def create_sales_invoice(
         self,
@@ -259,7 +261,8 @@ class InvoiceService:
                 """,
                 line_rows,
             )
-            return invoice_id
+        send_backup(reason="invoice_sales_created")
+        return invoice_id
 
     def list_invoices(
         self, limit: int = 200, offset: int = 0
@@ -455,11 +458,13 @@ class InvoiceService:
                 """,
                 (len(lines), total_qty, total_amount, invoice_id),
             )
+        send_backup(reason="invoice_updated")
 
     def delete_invoice(self, invoice_id: int) -> None:
         self._backup_db()
         with self._connect() as conn:
             conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        send_backup(reason="invoice_deleted")
 
     def count_invoices(self) -> int:
         with self._connect() as conn:

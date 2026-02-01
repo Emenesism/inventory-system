@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QDialog
 
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
+from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, SalesLine
 from app.services.sales_import_service import SalesImportService
@@ -144,60 +145,61 @@ class SalesImportController(QObject):
             self.toast.show("Sales preview failed", "error")
             return
 
-        try:
-            updated_df = self.sales_service.apply(
-                self.page.preview_rows, inventory_df
-            )
-            self.inventory_service.save(updated_df)
-            self.on_inventory_updated()
-        except InventoryFileError as exc:
-            dialogs.show_error(self.page, "Sales Import Error", str(exc))
-            self.toast.show("Sales import failed", "error")
-            self._logger.exception("Failed to apply sales import")
-            return
+        with backup_batch("sales_import"):
+            try:
+                updated_df = self.sales_service.apply(
+                    self.page.preview_rows, inventory_df
+                )
+                self.inventory_service.save(updated_df)
+                self.on_inventory_updated()
+            except InventoryFileError as exc:
+                dialogs.show_error(self.page, "Sales Import Error", str(exc))
+                self.toast.show("Sales import failed", "error")
+                self._logger.exception("Failed to apply sales import")
+                return
 
-        try:
-            sales_lines = [
-                SalesLine(
-                    product_name=row.resolved_name or row.product_name,
-                    price=row.sell_price,
-                    quantity=row.quantity_sold,
-                    cost_price=row.cost_price,
-                )
-                for row in self.page.preview_rows
-                if row.status == "OK"
-            ]
-            if sales_lines:
-                admin = (
-                    self._current_admin_provider()
-                    if self._current_admin_provider
-                    else None
-                )
-                invoice_id = self.invoice_service.create_sales_invoice(
-                    sales_lines,
-                    admin_id=admin.admin_id if admin else None,
-                    admin_username=admin.username if admin else None,
-                )
-                if self._action_log_service:
-                    total_qty = sum(line.quantity for line in sales_lines)
-                    total_amount = sum(
-                        line.price * line.quantity for line in sales_lines
+            try:
+                sales_lines = [
+                    SalesLine(
+                        product_name=row.resolved_name or row.product_name,
+                        price=row.sell_price,
+                        quantity=row.quantity_sold,
+                        cost_price=row.cost_price,
                     )
-                    details = (
-                        f"شماره فاکتور: {invoice_id}\n"
-                        f"تعداد ردیف‌ها: {len(sales_lines)}\n"
-                        f"تعداد کل: {total_qty}\n"
-                        f"مبلغ کل: {total_amount:,.0f}"
+                    for row in self.page.preview_rows
+                    if row.status == "OK"
+                ]
+                if sales_lines:
+                    admin = (
+                        self._current_admin_provider()
+                        if self._current_admin_provider
+                        else None
                     )
-                    self._action_log_service.log_action(
-                        "sales_import",
-                        "ثبت فاکتور فروش",
-                        details,
-                        admin=admin,
+                    invoice_id = self.invoice_service.create_sales_invoice(
+                        sales_lines,
+                        admin_id=admin.admin_id if admin else None,
+                        admin_username=admin.username if admin else None,
                     )
-                self.on_invoices_updated()
-        except Exception:  # noqa: BLE001
-            self._logger.exception("Failed to store sales invoice history")
+                    if self._action_log_service:
+                        total_qty = sum(line.quantity for line in sales_lines)
+                        total_amount = sum(
+                            line.price * line.quantity for line in sales_lines
+                        )
+                        details = (
+                            f"شماره فاکتور: {invoice_id}\n"
+                            f"تعداد ردیف‌ها: {len(sales_lines)}\n"
+                            f"تعداد کل: {total_qty}\n"
+                            f"مبلغ کل: {total_amount:,.0f}"
+                        )
+                        self._action_log_service.log_action(
+                            "sales_import",
+                            "ثبت فاکتور فروش",
+                            details,
+                            admin=admin,
+                        )
+                    self.on_invoices_updated()
+            except Exception:  # noqa: BLE001
+                self._logger.exception("Failed to store sales invoice history")
 
         self.page.reset_after_apply()
         self.toast.show("Sales import applied", "success")
@@ -504,65 +506,66 @@ class SalesImportController(QObject):
             self.toast.show("Manual sales invoice canceled", "info")
             return
 
-        try:
-            updated_df = inventory_df.copy()
-            for key, qty in aggregated.items():
-                idx = inventory_index.get(key)
-                if idx is None:
-                    continue
-                current_qty = int(updated_df.at[idx, "quantity"])
-                updated_df.at[idx, "quantity"] = int(current_qty - qty)
-            self.inventory_service.save(updated_df)
-            self.on_inventory_updated()
-        except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
-            self.toast.show("Manual sales invoice failed", "error")
-            self._logger.exception("Failed to apply manual sales invoice")
-            return
+        with backup_batch("sales_manual"):
+            try:
+                updated_df = inventory_df.copy()
+                for key, qty in aggregated.items():
+                    idx = inventory_index.get(key)
+                    if idx is None:
+                        continue
+                    current_qty = int(updated_df.at[idx, "quantity"])
+                    updated_df.at[idx, "quantity"] = int(current_qty - qty)
+                self.inventory_service.save(updated_df)
+                self.on_inventory_updated()
+            except Exception as exc:  # noqa: BLE001
+                dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
+                self.toast.show("Manual sales invoice failed", "error")
+                self._logger.exception("Failed to apply manual sales invoice")
+                return
 
-        try:
-            sales_lines = [
-                SalesLine(
-                    product_name=line.product_name,
-                    price=line.price,
-                    quantity=line.quantity,
-                    cost_price=float(
-                        cost_map.get(normalize_text(line.product_name), 0.0)
-                    ),
+            try:
+                sales_lines = [
+                    SalesLine(
+                        product_name=line.product_name,
+                        price=line.price,
+                        quantity=line.quantity,
+                        cost_price=float(
+                            cost_map.get(normalize_text(line.product_name), 0.0)
+                        ),
+                    )
+                    for line in priced_lines
+                ]
+                admin = (
+                    self._current_admin_provider()
+                    if self._current_admin_provider
+                    else None
                 )
-                for line in priced_lines
-            ]
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
-            invoice_id = self.invoice_service.create_sales_invoice(
-                sales_lines,
-                admin_id=admin.admin_id if admin else None,
-                admin_username=admin.username if admin else None,
-                invoice_type="sales_manual",
-            )
-            if self._action_log_service:
-                total_qty = sum(line.quantity for line in priced_lines)
-                total_amount = sum(
-                    line.price * line.quantity for line in priced_lines
+                invoice_id = self.invoice_service.create_sales_invoice(
+                    sales_lines,
+                    admin_id=admin.admin_id if admin else None,
+                    admin_username=admin.username if admin else None,
+                    invoice_type="sales_manual",
                 )
-                details = (
-                    f"شماره فاکتور: {invoice_id}\n"
-                    f"تعداد ردیف‌ها: {len(valid_lines)}\n"
-                    f"تعداد کل: {total_qty}\n"
-                    f"مبلغ کل: {total_amount:,.0f}"
-                )
-                self._action_log_service.log_action(
-                    "sales_manual_invoice",
-                    "ثبت فاکتور فروش دستی",
-                    details,
-                    admin=admin,
-                )
-            self.on_invoices_updated()
-        except Exception:  # noqa: BLE001
-            self._logger.exception("Failed to store manual sales invoice")
+                if self._action_log_service:
+                    total_qty = sum(line.quantity for line in priced_lines)
+                    total_amount = sum(
+                        line.price * line.quantity for line in priced_lines
+                    )
+                    details = (
+                        f"شماره فاکتور: {invoice_id}\n"
+                        f"تعداد ردیف‌ها: {len(valid_lines)}\n"
+                        f"تعداد کل: {total_qty}\n"
+                        f"مبلغ کل: {total_amount:,.0f}"
+                    )
+                    self._action_log_service.log_action(
+                        "sales_manual_invoice",
+                        "ثبت فاکتور فروش دستی",
+                        details,
+                        admin=admin,
+                    )
+                self.on_invoices_updated()
+            except Exception:  # noqa: BLE001
+                self._logger.exception("Failed to store manual sales invoice")
 
         if invalid:
             self.toast.show(

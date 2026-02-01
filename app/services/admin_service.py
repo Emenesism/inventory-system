@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.core.paths import app_dir
+from app.services.backup_sender import send_backup
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class AdminService:
             )
 
     def _ensure_default_admin(self) -> None:
+        created = False
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT id FROM admins WHERE username = ?",
@@ -71,6 +73,9 @@ class AdminService:
                 """,
                 ("reza", password_hash, "manager", 1, now),
             )
+            created = True
+        if created:
+            send_backup(reason="admin_default_created")
 
     @staticmethod
     def _hash_password(password: str) -> str:
@@ -187,6 +192,7 @@ class AdminService:
             except sqlite3.IntegrityError as exc:  # noqa: BLE001
                 raise ValueError("Username already exists.") from exc
             admin_id = int(cursor.lastrowid)
+        send_backup(reason="admin_created")
         return AdminUser(
             admin_id=admin_id,
             username=username,
@@ -203,6 +209,7 @@ class AdminService:
                 "UPDATE admins SET password_hash = ? WHERE id = ?",
                 (password_hash, admin_id),
             )
+        send_backup(reason="admin_password_updated")
 
     def update_auto_lock(self, admin_id: int, minutes: int) -> None:
         auto_lock = self._validate_auto_lock(int(minutes))
@@ -211,10 +218,12 @@ class AdminService:
                 "UPDATE admins SET auto_lock_minutes = ? WHERE id = ?",
                 (auto_lock, admin_id),
             )
+        send_backup(reason="admin_auto_lock_updated")
 
     def delete_admin(self, admin_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM admins WHERE id = ?", (admin_id,))
+        send_backup(reason="admin_deleted")
 
     def get_admin_by_id(self, admin_id: int) -> AdminUser | None:
         with self._connect() as conn:

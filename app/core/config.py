@@ -16,6 +16,8 @@ class AppConfig:
     passcode: str = "1111"
     inventory_key: str | None = None
     access_token: str | None = None
+    bot_token: str | None = None
+    channel_id: str | None = None
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -33,6 +35,8 @@ class AppConfig:
             passcode=str(data.get("passcode", "1111")),
             inventory_key=data.get("inventory_key"),
             access_token=data.get("access_token"),
+            bot_token=data.get("bot_token"),
+            channel_id=data.get("channel_id"),
         )
 
     def save(self) -> None:
@@ -44,5 +48,7 @@ class AppConfig:
             "passcode": self.passcode,
             "inventory_key": self.inventory_key,
             "access_token": self.access_token,
+            "bot_token": self.bot_token,
+            "channel_id": self.channel_id,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

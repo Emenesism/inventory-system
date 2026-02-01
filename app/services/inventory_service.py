@@ -8,6 +8,7 @@ import pandas as pd
 from app.core.config import AppConfig
 from app.data.inventory_store import InventoryStore
 from app.models.errors import InventoryFileError
+from app.services.backup_sender import send_backup
 from app.utils.text import normalize_text
 
 
@@ -38,6 +39,7 @@ class InventoryService:
         backup_path = self.store.backup(backup_dir=backup_dir)
         self.store.save(df)
         self._rebuild_index(df)
+        send_backup(reason="inventory_saved", config=self.config)
         if backup_path:
             self._logger.info(
                 "Inventory saved. Backup created at %s", backup_path

@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QDialog
 
 from app.services.action_log_service import ActionLogService
+from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseLine, PurchaseService
@@ -97,50 +98,53 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("Purchase invoice canceled", "info")
             return
 
-        try:
-            updated_df, summary, errors = self.purchase_service.apply_purchases(
-                valid_lines, inventory_df, allow_create=False
-            )
-            self.inventory_service.save(updated_df)
-            self.on_inventory_updated()
-        except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Purchase Invoice", str(exc))
-            self.toast.show("Purchase invoice failed", "error")
-            self._logger.exception("Failed to apply purchase invoice")
-            return
+        with backup_batch("purchase_invoice"):
+            try:
+                updated_df, summary, errors = (
+                    self.purchase_service.apply_purchases(
+                        valid_lines, inventory_df, allow_create=False
+                    )
+                )
+                self.inventory_service.save(updated_df)
+                self.on_inventory_updated()
+            except Exception as exc:  # noqa: BLE001
+                dialogs.show_error(self.page, "Purchase Invoice", str(exc))
+                self.toast.show("Purchase invoice failed", "error")
+                self._logger.exception("Failed to apply purchase invoice")
+                return
 
-        try:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
-            invoice_id = self.invoice_service.create_purchase_invoice(
-                valid_lines,
-                admin_id=admin.admin_id if admin else None,
-                admin_username=admin.username if admin else None,
-            )
-            if self._action_log_service:
-                total_qty = sum(line.quantity for line in valid_lines)
-                total_amount = sum(
-                    line.price * line.quantity for line in valid_lines
+            try:
+                admin = (
+                    self._current_admin_provider()
+                    if self._current_admin_provider
+                    else None
                 )
-                details = (
-                    f"شماره فاکتور: {invoice_id}\n"
-                    f"تعداد ردیف‌ها: {len(valid_lines)}\n"
-                    f"تعداد کل: {total_qty}\n"
-                    f"مبلغ کل: {total_amount:,.0f}"
+                invoice_id = self.invoice_service.create_purchase_invoice(
+                    valid_lines,
+                    admin_id=admin.admin_id if admin else None,
+                    admin_username=admin.username if admin else None,
                 )
-                self._action_log_service.log_action(
-                    "purchase_invoice",
-                    "ثبت فاکتور خرید",
-                    details,
-                    admin=admin,
-                )
-            self.on_invoices_updated()
-        except Exception as exc:  # noqa: BLE001
-            self.toast.show("Invoice saved, history not updated", "error")
-            self._logger.exception("Failed to store invoice history")
+                if self._action_log_service:
+                    total_qty = sum(line.quantity for line in valid_lines)
+                    total_amount = sum(
+                        line.price * line.quantity for line in valid_lines
+                    )
+                    details = (
+                        f"شماره فاکتور: {invoice_id}\n"
+                        f"تعداد ردیف‌ها: {len(valid_lines)}\n"
+                        f"تعداد کل: {total_qty}\n"
+                        f"مبلغ کل: {total_amount:,.0f}"
+                    )
+                    self._action_log_service.log_action(
+                        "purchase_invoice",
+                        "ثبت فاکتور خرید",
+                        details,
+                        admin=admin,
+                    )
+                self.on_invoices_updated()
+            except Exception as exc:  # noqa: BLE001
+                self.toast.show("Invoice saved, history not updated", "error")
+                self._logger.exception("Failed to store invoice history")
 
         message = f"Updated {summary.updated} items, created {summary.created} new items."
         if invalid:
