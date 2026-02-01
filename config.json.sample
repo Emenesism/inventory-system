@@ -5,5 +5,7 @@
   "backup_dir": null,
   "passcode": "1111",
   "inventory_key": null,
-  "access_token": ""
+  "access_token": "",
+  "bot_token" : "",
+  "channel_id" : "",
 }
