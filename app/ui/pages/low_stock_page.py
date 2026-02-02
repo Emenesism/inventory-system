@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEventLoop, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -139,9 +140,15 @@ class LowStockPage(QWidget):
             f"Total needed: {sum(item['needed'] for item in rows)}"
         )
 
+        sorting_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+
         self.table.setRowCount(len(rows))
         for row_idx, item in enumerate(rows):
-            self.table.setItem(row_idx, 0, QTableWidgetItem(item["product"]))
+            product_item = QTableWidgetItem(item["product"])
+            self.table.setItem(row_idx, 0, product_item)
 
             qty_item = QTableWidgetItem(str(item["quantity"]))
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -159,10 +166,28 @@ class LowStockPage(QWidget):
             avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 4, avg_item)
 
-            self.table.setItem(row_idx, 5, QTableWidgetItem(item["source"]))
+            source_item = QTableWidgetItem(item["source"])
+            self.table.setItem(row_idx, 5, source_item)
+
             self._apply_severity_color(
-                row_idx, int(item["quantity"]), int(item["alarm"])
+                [
+                    product_item,
+                    qty_item,
+                    min_item,
+                    needed_item,
+                    avg_item,
+                    source_item,
+                ],
+                int(item["quantity"]),
+                int(item["alarm"]),
             )
+
+            if row_idx % 200 == 0:
+                QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+
+        self.table.blockSignals(False)
+        self.table.setUpdatesEnabled(True)
+        self.table.setSortingEnabled(sorting_enabled)
 
     def _export(self) -> None:
         if not self._rows:
@@ -257,7 +282,9 @@ class LowStockPage(QWidget):
 
         wb.save(file_path)
 
-    def _apply_severity_color(self, row_idx: int, qty: int, alarm: int) -> None:
+    def _apply_severity_color(
+        self, items: list[QTableWidgetItem], qty: int, alarm: int
+    ) -> None:
         if alarm <= 0:
             return
         deficit = max(alarm - qty, 0)
@@ -271,10 +298,8 @@ class LowStockPage(QWidget):
         green = int(low[1] + (high[1] - low[1]) * severity)
         blue = int(low[2] + (high[2] - low[2]) * severity)
         brush = QBrush(QColor(red, green, blue))
-        for col in range(self.table.columnCount()):
-            item = self.table.item(row_idx, col)
-            if item is not None:
-                item.setBackground(brush)
+        for item in items:
+            item.setBackground(brush)
 
     @staticmethod
     def _parse_alarm(value: object) -> int:

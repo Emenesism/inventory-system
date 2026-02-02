@@ -715,11 +715,6 @@ class InvoicesPage(QWidget):
                 continue
             current_qty = int(df.at[idx, "quantity"])
             new_qty_total = current_qty + delta
-            if delta < 0 and new_qty_total < 0:
-                errors.append(
-                    f"Not enough stock for {df.at[idx, 'product_name']}."
-                )
-                continue
             df.at[idx, "quantity"] = int(new_qty_total)
             if delta != 0:
                 delta_map[df.at[idx, "product_name"]] = int(delta)

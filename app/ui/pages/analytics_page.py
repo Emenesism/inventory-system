@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import isfinite
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -21,6 +23,8 @@ from app.utils.numeric import format_amount
 
 
 class AnalyticsPage(QWidget):
+    _PROGRESS_MAX = 2_147_483_647
+
     def __init__(
         self,
         invoice_service: InvoiceService,
@@ -104,7 +108,10 @@ class AnalyticsPage(QWidget):
         )
         self.invoice_count_label.setText(f"Invoices: {total_invoices}")
 
-        max_sales = max((item["sales_total"] for item in summary), default=0)
+        safe_sales = [
+            self._safe_progress_value(item["sales_total"]) for item in summary
+        ]
+        max_sales = max(safe_sales, default=0)
         self.monthly_table.setRowCount(len(summary))
         for row_idx, item in enumerate(summary):
             self.monthly_table.setItem(
@@ -135,10 +142,24 @@ class AnalyticsPage(QWidget):
 
             bar = QProgressBar()
             bar.setRange(0, max_sales if max_sales > 0 else 1)
-            bar.setValue(int(item["sales_total"]))
+            bar.setValue(self._safe_progress_value(item["sales_total"]))
             bar.setTextVisible(False)
             self.monthly_table.setCellWidget(row_idx, 5, bar)
 
     @staticmethod
     def _format_amount(value: float) -> str:
         return format_amount(value)
+
+    @classmethod
+    def _safe_progress_value(cls, value: float) -> int:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return 0
+        if not isfinite(numeric):
+            return cls._PROGRESS_MAX if numeric > 0 else 0
+        if numeric <= 0:
+            return 0
+        if numeric >= cls._PROGRESS_MAX:
+            return cls._PROGRESS_MAX
+        return int(numeric)
