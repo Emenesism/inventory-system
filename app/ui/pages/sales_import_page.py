@@ -210,7 +210,7 @@ class SalesImportPage(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["Product", "Quantity Sold", "Status", "Message"]
         )
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
@@ -243,7 +243,7 @@ class SalesImportPage(QWidget):
         else:
             self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
             self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-            self.table.setSortingEnabled(True)
+            self.table.setSortingEnabled(False)
             self.table.verticalHeader().setDefaultSectionSize(32)
             self.table.setItemDelegateForColumn(0, None)
             self.table.setItemDelegateForColumn(1, None)
@@ -262,44 +262,15 @@ class SalesImportPage(QWidget):
     def set_preview(
         self, rows: list[SalesPreviewRow], summary: SalesPreviewSummary
     ) -> None:
-        self.preview_rows = rows
+        self.preview_rows = list(rows)
         self._pending_rows.clear()
         self._edit_timer.stop()
         self.export_button.setEnabled(bool(rows))
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
-
-        was_sorting = self.table.isSortingEnabled()
-        self._suppress_item_updates = True
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(rows))
-        for row_idx, row in enumerate(rows):
-            name_item = QTableWidgetItem(row.product_name)
-            name_item.setData(Qt.UserRole, row_idx)
-            if self._edit_enabled:
-                name_item.setFlags(name_item.flags() | Qt.ItemIsEditable)
-            else:
-                name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row_idx, 0, name_item)
-
-            qty_item = QTableWidgetItem(str(row.quantity_sold))
-            if self._edit_enabled:
-                qty_item.setFlags(qty_item.flags() | Qt.ItemIsEditable)
-            else:
-                qty_item.setFlags(qty_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row_idx, 1, qty_item)
-
-            status_item = QTableWidgetItem(row.status)
-            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row_idx, 2, status_item)
-
-            message_item = QTableWidgetItem(row.message)
-            message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row_idx, 3, message_item)
-
-        self._suppress_item_updates = False
-        self.table.setSortingEnabled(was_sorting)
+        self._sort_preview_rows()
+        self._rebuild_table()
         header = self.table.horizontalHeader()
         if self._edit_enabled:
             header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -360,40 +331,8 @@ class SalesImportPage(QWidget):
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
-
-        was_sorting = self.table.isSortingEnabled()
-        self.table.setSortingEnabled(False)
-        row_map: dict[int, int] = {}
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, 0)
-            if item is None:
-                continue
-            idx = item.data(Qt.UserRole)
-            if isinstance(idx, int):
-                row_map[idx] = row
-
-        self._suppress_item_updates = True
-        for preview_idx in row_indices:
-            table_row = row_map.get(preview_idx)
-            if table_row is None or preview_idx >= len(self.preview_rows):
-                continue
-            preview_row = self.preview_rows[preview_idx]
-
-            status_item = self.table.item(table_row, 2)
-            if status_item is None:
-                status_item = QTableWidgetItem()
-                self.table.setItem(table_row, 2, status_item)
-            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
-            status_item.setText(preview_row.status)
-
-            message_item = self.table.item(table_row, 3)
-            if message_item is None:
-                message_item = QTableWidgetItem()
-                self.table.setItem(table_row, 3, message_item)
-            message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
-            message_item.setText(preview_row.message)
-        self._suppress_item_updates = False
-        self.table.setSortingEnabled(was_sorting)
+        self._sort_preview_rows()
+        self._rebuild_table()
 
     def _emit_pending_updates(self) -> None:
         if not self._pending_rows:
@@ -458,6 +397,52 @@ class SalesImportPage(QWidget):
         self._pending_rows.add(idx)
         self._edit_timer.start()
 
+    def _sort_preview_rows(self) -> None:
+        def status_rank(row: SalesPreviewRow) -> int:
+            value = str(row.status or "").strip().lower()
+            if value == "error":
+                return 0
+            if value == "ok":
+                return 1
+            return 2
+
+        self.preview_rows.sort(key=status_rank)
+
+    def _rebuild_table(self) -> None:
+        if not self.preview_rows:
+            self.table.setRowCount(0)
+            return
+        was_sorting = self.table.isSortingEnabled()
+        self._suppress_item_updates = True
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(self.preview_rows))
+        for row_idx, row in enumerate(self.preview_rows):
+            name_item = QTableWidgetItem(row.product_name)
+            name_item.setData(Qt.UserRole, row_idx)
+            if self._edit_enabled:
+                name_item.setFlags(name_item.flags() | Qt.ItemIsEditable)
+            else:
+                name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 0, name_item)
+
+            qty_item = QTableWidgetItem(str(row.quantity_sold))
+            if self._edit_enabled:
+                qty_item.setFlags(qty_item.flags() | Qt.ItemIsEditable)
+            else:
+                qty_item.setFlags(qty_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 1, qty_item)
+
+            status_item = QTableWidgetItem(row.status)
+            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 2, status_item)
+
+            message_item = QTableWidgetItem(row.message)
+            message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, 3, message_item)
+
+        self._suppress_item_updates = False
+        self.table.setSortingEnabled(was_sorting)
+
     def _handle_enter(self) -> None:
         row = self.table.currentRow()
         col = self.table.currentColumn()
@@ -476,7 +461,6 @@ class SalesImportPage(QWidget):
             self.table.editItem(item)
 
     def _add_row(self) -> None:
-        preview_idx = len(self.preview_rows)
         new_row = SalesPreviewRow(
             product_name="",
             quantity_sold=1,
@@ -488,31 +472,15 @@ class SalesImportPage(QWidget):
         )
         self.preview_rows.append(new_row)
         self.export_button.setEnabled(True)
-
-        was_sorting = self.table.isSortingEnabled()
-        self.table.setSortingEnabled(False)
-        row_pos = self.table.rowCount()
-        self.table.insertRow(row_pos)
-
-        name_item = QTableWidgetItem(new_row.product_name)
-        name_item.setData(Qt.UserRole, preview_idx)
-        name_item.setFlags(name_item.flags() | Qt.ItemIsEditable)
-        self.table.setItem(row_pos, 0, name_item)
-
-        qty_item = QTableWidgetItem(str(new_row.quantity_sold))
-        qty_item.setFlags(qty_item.flags() | Qt.ItemIsEditable)
-        self.table.setItem(row_pos, 1, qty_item)
-
-        status_item = QTableWidgetItem(new_row.status)
-        status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
-        self.table.setItem(row_pos, 2, status_item)
-
-        message_item = QTableWidgetItem(new_row.message)
-        message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
-        self.table.setItem(row_pos, 3, message_item)
-
-        self.table.setSortingEnabled(was_sorting)
-        self._queue_refresh(preview_idx)
+        self._sort_preview_rows()
+        self._rebuild_table()
+        preview_idx = None
+        for idx, row in enumerate(self.preview_rows):
+            if row is new_row:
+                preview_idx = idx
+                break
+        if preview_idx is not None:
+            self._queue_refresh(preview_idx)
 
     def _delete_selected_rows(self) -> None:
         selected_rows = sorted(
@@ -536,16 +504,15 @@ class SalesImportPage(QWidget):
             if 0 <= idx < len(self.preview_rows):
                 self.preview_rows.pop(idx)
 
-        for row in selected_rows:
-            self.table.removeRow(row)
-
-        self._reindex_after_removal(removed)
         self.export_button.setEnabled(bool(self.preview_rows))
         if not self.preview_rows:
             self.total_label.setText("Total: 0")
             self.success_label.setText("Success: 0")
             self.errors_label.setText("Errors: 0")
+            self.table.setRowCount(0)
             return
+        self._sort_preview_rows()
+        self._rebuild_table()
         self._refresh_all_rows()
 
     def _reindex_after_removal(self, removed: list[int]) -> None:

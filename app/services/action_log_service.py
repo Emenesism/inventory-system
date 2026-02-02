@@ -34,29 +34,32 @@ class ActionLogService:
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
+    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                admin_id INTEGER,
+                admin_username TEXT,
+                action_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                details TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_actions_created_at "
+            "ON actions(created_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_actions_type "
+            "ON actions(action_type)"
+        )
+
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS actions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at TEXT NOT NULL,
-                    admin_id INTEGER,
-                    admin_username TEXT,
-                    action_type TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    details TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_actions_created_at "
-                "ON actions(created_at)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_actions_type "
-                "ON actions(action_type)"
-            )
+            self._ensure_schema(conn)
 
     def log_action(
         self,
@@ -69,6 +72,7 @@ class ActionLogService:
             timespec="seconds"
         )
         with self._connect() as conn:
+            self._ensure_schema(conn)
             conn.execute(
                 """
                 INSERT INTO actions (
@@ -97,6 +101,7 @@ class ActionLogService:
         search: str | None = None,
     ) -> list[ActionEntry]:
         with self._connect() as conn:
+            self._ensure_schema(conn)
             if search:
                 like = f"%{search}%"
                 rows = conn.execute(
@@ -150,6 +155,7 @@ class ActionLogService:
 
     def count_actions(self, search: str | None = None) -> int:
         with self._connect() as conn:
+            self._ensure_schema(conn)
             if search:
                 like = f"%{search}%"
                 row = conn.execute(

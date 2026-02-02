@@ -5,6 +5,61 @@ from pathlib import Path
 from app.utils.dates import to_jalali_datetime
 
 
+def _aggregate_invoice_lines(lines) -> list[dict[str, float | int | str]]:
+    from collections import OrderedDict
+
+    aggregated: "OrderedDict[str, dict[str, float | int | str]]" = OrderedDict()
+    for line in lines:
+        name = str(getattr(line, "product_name", "")).strip()
+        if not name:
+            continue
+        qty_raw = getattr(line, "quantity", 0)
+        try:
+            qty = int(float(qty_raw))
+        except (TypeError, ValueError):
+            qty = 0
+        price_raw = getattr(line, "price", 0.0)
+        try:
+            price = float(price_raw)
+        except (TypeError, ValueError):
+            price = 0.0
+        line_total_raw = getattr(line, "line_total", None)
+        try:
+            line_total = (
+                float(line_total_raw)
+                if line_total_raw is not None
+                else price * qty
+            )
+        except (TypeError, ValueError):
+            line_total = price * qty
+
+        entry = aggregated.get(name)
+        if entry is None:
+            aggregated[name] = {
+                "product_name": name,
+                "quantity": qty,
+                "total_amount": line_total,
+            }
+        else:
+            entry["quantity"] = int(entry["quantity"]) + qty
+            entry["total_amount"] = float(entry["total_amount"]) + line_total
+
+    results: list[dict[str, float | int | str]] = []
+    for entry in aggregated.values():
+        quantity = int(entry["quantity"])
+        total_amount = float(entry["total_amount"])
+        unit_price = total_amount / quantity if quantity else 0.0
+        results.append(
+            {
+                "product_name": entry["product_name"],
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "total_amount": total_amount,
+            }
+        )
+    return results
+
+
 def _ensure_sheet_direction(path: str | Path, right_to_left: bool) -> None:
     try:
         from openpyxl import load_workbook
@@ -133,6 +188,8 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
     thin = Side(border_style="thin", color="C7CED6")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
+    hide_prices = str(invoice.invoice_type or "").startswith("sales")
+
     # Column widths
     ws.column_dimensions["A"].width = 6
     ws.column_dimensions["B"].width = 38
@@ -187,72 +244,135 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
 
     # Table header
     header_row = 6
-    headers = ["ردیف", "شرح کالا", "تعداد", "مبلغ واحد", "مبلغ کل"]
-    for col_idx, title in enumerate(headers, start=1):
-        cell = ws.cell(row=header_row, column=col_idx, value=title)
+    row_height = 22
+    if hide_prices:
+        ws.cell(row=header_row, column=1, value="ردیف")
+        ws.merge_cells(
+            start_row=header_row,
+            start_column=2,
+            end_row=header_row,
+            end_column=4,
+        )
+        ws.cell(row=header_row, column=2, value="شرح کالا")
+        ws.cell(row=header_row, column=5, value="تعداد")
+        header_columns = range(1, 6)
+    else:
+        headers = ["ردیف", "شرح کالا", "تعداد", "مبلغ واحد", "مبلغ کل"]
+        for col_idx, title in enumerate(headers, start=1):
+            ws.cell(row=header_row, column=col_idx, value=title)
+        header_columns = range(1, 6)
+
+    for col_idx in header_columns:
+        cell = ws.cell(row=header_row, column=col_idx)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
+    ws.row_dimensions[header_row].height = row_height
 
     # Table rows
     total_qty = 0
     total_amount = 0.0
-    for idx, line in enumerate(lines, start=1):
+    merged_lines = _aggregate_invoice_lines(lines)
+    for idx, line in enumerate(merged_lines, start=1):
         row = header_row + idx
-        qty = int(line.quantity)
-        line_total = float(line.price) * qty
+        qty = int(line["quantity"])
+        line_total = float(line["total_amount"])
         total_qty += qty
         total_amount += line_total
 
-        values = [
-            idx,
-            line.product_name,
-            qty,
-            float(line.price),
-            line_total,
-        ]
-        for col_idx, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col_idx, value=value)
+        if hide_prices:
+            ws.merge_cells(
+                start_row=row, start_column=2, end_row=row, end_column=4
+            )
+            ws.cell(row=row, column=1, value=idx)
+            ws.cell(row=row, column=2, value=line["product_name"])
+            ws.cell(row=row, column=5, value=qty)
+            row_columns = range(1, 6)
+        else:
+            values = [
+                idx,
+                line["product_name"],
+                qty,
+                float(line["unit_price"]),
+                line_total,
+            ]
+            for col_idx, value in enumerate(values, start=1):
+                ws.cell(row=row, column=col_idx, value=value)
+            row_columns = range(1, 6)
+
+        for col_idx in row_columns:
+            cell = ws.cell(row=row, column=col_idx)
             cell.font = body_font
             cell.border = border
-            if col_idx in (1, 3):
-                cell.alignment = Alignment(
-                    horizontal="center", vertical="center"
-                )
-            elif col_idx in (4, 5):
-                cell.alignment = Alignment(
-                    horizontal="center", vertical="center"
-                )
-                cell.number_format = "#,##0"
+            if hide_prices:
+                if col_idx in (1, 5):
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
+                else:
+                    cell.alignment = Alignment(
+                        horizontal="right", vertical="center"
+                    )
             else:
-                cell.alignment = Alignment(
-                    horizontal="right", vertical="center"
-                )
+                if col_idx in (1, 3):
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
+                elif col_idx in (4, 5):
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
+                    cell.number_format = "#,##0"
+                else:
+                    cell.alignment = Alignment(
+                        horizontal="right", vertical="center"
+                    )
         if idx % 2 == 0:
-            for col_idx in range(1, 6):
+            for col_idx in row_columns:
                 ws.cell(row=row, column=col_idx).fill = stripe_fill
+        ws.row_dimensions[row].height = row_height
 
     # Totals row
-    total_row = header_row + len(lines) + 1
-    ws.cell(row=total_row, column=2, value="جمع کل").font = header_font
-    ws.cell(row=total_row, column=2).alignment = Alignment(
-        horizontal="right", vertical="center"
-    )
-    ws.cell(row=total_row, column=3, value=total_qty).font = header_font
-    ws.cell(row=total_row, column=3).alignment = Alignment(
-        horizontal="center", vertical="center"
-    )
-    total_cell = ws.cell(row=total_row, column=5, value=total_amount)
-    total_cell.font = header_font
-    total_cell.alignment = Alignment(horizontal="center", vertical="center")
-    total_cell.number_format = "#,##0"
-    for col_idx in range(1, 6):
+    total_row = header_row + len(merged_lines) + 1
+    if hide_prices:
+        ws.merge_cells(
+            start_row=total_row,
+            start_column=2,
+            end_row=total_row,
+            end_column=4,
+        )
+        ws.cell(row=total_row, column=2, value="جمع کل").font = header_font
+        ws.cell(row=total_row, column=2).alignment = Alignment(
+            horizontal="right", vertical="center"
+        )
+        ws.cell(row=total_row, column=5, value=total_qty).font = header_font
+        ws.cell(row=total_row, column=5).alignment = Alignment(
+            horizontal="center", vertical="center"
+        )
+        total_columns = range(1, 6)
+    else:
+        ws.cell(row=total_row, column=2, value="جمع کل").font = header_font
+        ws.cell(row=total_row, column=2).alignment = Alignment(
+            horizontal="right", vertical="center"
+        )
+        ws.cell(row=total_row, column=3, value=total_qty).font = header_font
+        ws.cell(row=total_row, column=3).alignment = Alignment(
+            horizontal="center", vertical="center"
+        )
+        total_cell = ws.cell(row=total_row, column=5, value=total_amount)
+        total_cell.font = header_font
+        total_cell.alignment = Alignment(horizontal="center", vertical="center")
+        total_cell.number_format = "#,##0"
+        total_columns = range(1, 6)
+
+    for col_idx in total_columns:
         cell = ws.cell(row=total_row, column=col_idx)
         cell.border = border
         cell.fill = PatternFill(
             start_color="EEF2FF", end_color="EEF2FF", fill_type="solid"
         )
+    ws.row_dimensions[total_row].height = row_height
 
 
 def export_invoice_excel(file_path: str | Path, invoice, lines) -> None:
