@@ -98,14 +98,22 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("Purchase invoice canceled", "info")
             return
 
-        with backup_batch("purchase_invoice"):
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
+        with backup_batch("purchase_invoice", admin_username=admin_username):
             try:
                 updated_df, summary, errors = (
                     self.purchase_service.apply_purchases(
                         valid_lines, inventory_df, allow_create=False
                     )
                 )
-                self.inventory_service.save(updated_df)
+                self.inventory_service.save(
+                    updated_df, admin_username=admin_username
+                )
                 self.on_inventory_updated()
             except Exception as exc:  # noqa: BLE001
                 dialogs.show_error(self.page, "Purchase Invoice", str(exc))
@@ -114,15 +122,10 @@ class PurchaseInvoiceController(QObject):
                 return
 
             try:
-                admin = (
-                    self._current_admin_provider()
-                    if self._current_admin_provider
-                    else None
-                )
                 invoice_id = self.invoice_service.create_purchase_invoice(
                     valid_lines,
                     admin_id=admin.admin_id if admin else None,
-                    admin_username=admin.username if admin else None,
+                    admin_username=admin_username,
                 )
                 if self._action_log_service:
                     total_qty = sum(line.quantity for line in valid_lines)

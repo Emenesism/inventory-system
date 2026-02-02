@@ -162,6 +162,7 @@ class AdminService:
         password: str,
         role: str,
         auto_lock_minutes: int = 1,
+        admin_username: str | None = None,
     ) -> AdminUser:
         username = username.strip()
         if not username:
@@ -192,7 +193,7 @@ class AdminService:
             except sqlite3.IntegrityError as exc:  # noqa: BLE001
                 raise ValueError("Username already exists.") from exc
             admin_id = int(cursor.lastrowid)
-        send_backup(reason="admin_created")
+        send_backup(reason="admin_created", admin_username=admin_username)
         return AdminUser(
             admin_id=admin_id,
             username=username,
@@ -200,7 +201,12 @@ class AdminService:
             auto_lock_minutes=auto_lock,
         )
 
-    def update_password(self, admin_id: int, new_password: str) -> None:
+    def update_password(
+        self,
+        admin_id: int,
+        new_password: str,
+        admin_username: str | None = None,
+    ) -> None:
         if not new_password:
             raise ValueError("New password is required.")
         password_hash = self._hash_password(new_password)
@@ -209,21 +215,32 @@ class AdminService:
                 "UPDATE admins SET password_hash = ? WHERE id = ?",
                 (password_hash, admin_id),
             )
-        send_backup(reason="admin_password_updated")
+        send_backup(
+            reason="admin_password_updated", admin_username=admin_username
+        )
 
-    def update_auto_lock(self, admin_id: int, minutes: int) -> None:
+    def update_auto_lock(
+        self,
+        admin_id: int,
+        minutes: int,
+        admin_username: str | None = None,
+    ) -> None:
         auto_lock = self._validate_auto_lock(int(minutes))
         with self._connect() as conn:
             conn.execute(
                 "UPDATE admins SET auto_lock_minutes = ? WHERE id = ?",
                 (auto_lock, admin_id),
             )
-        send_backup(reason="admin_auto_lock_updated")
+        send_backup(
+            reason="admin_auto_lock_updated", admin_username=admin_username
+        )
 
-    def delete_admin(self, admin_id: int) -> None:
+    def delete_admin(
+        self, admin_id: int, admin_username: str | None = None
+    ) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM admins WHERE id = ?", (admin_id,))
-        send_backup(reason="admin_deleted")
+        send_backup(reason="admin_deleted", admin_username=admin_username)
 
     def get_admin_by_id(self, admin_id: int) -> AdminUser | None:
         with self._connect() as conn:

@@ -55,8 +55,14 @@ class InventoryController(QObject):
             old_df = self.inventory_service.get_dataframe().copy()
         except Exception:  # noqa: BLE001
             old_df = None
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         try:
-            self.inventory_service.save(df)
+            self.inventory_service.save(df, admin_username=admin_username)
         except InventoryFileError as exc:
             dialogs.show_error(self.page, "Inventory Error", str(exc))
             self.toast.show("Inventory save failed", "error")
@@ -66,11 +72,6 @@ class InventoryController(QObject):
             details = self._build_inventory_diff(old_df, df)
             if not details:
                 details = "تغییر مشخصی یافت نشد، اما ذخیره انجام شد."
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             self.action_log_service.log_action(
                 "inventory_edit",
                 "ویرایش دستی موجودی",

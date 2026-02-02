@@ -195,7 +195,10 @@ class InvoiceService:
                 """,
                 line_rows,
             )
-        send_backup(reason="invoice_purchase_created")
+        send_backup(
+            reason="invoice_purchase_created",
+            admin_username=admin_username,
+        )
         return invoice_id
 
     def create_sales_invoice(
@@ -261,7 +264,10 @@ class InvoiceService:
                 """,
                 line_rows,
             )
-        send_backup(reason="invoice_sales_created")
+        send_backup(
+            reason="invoice_sales_created",
+            admin_username=admin_username,
+        )
         return invoice_id
 
     def list_invoices(
@@ -413,6 +419,7 @@ class InvoiceService:
         invoice_id: int,
         invoice_type: str,
         lines: list[InvoiceLine],
+        admin_username: str | None = None,
     ) -> None:
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
@@ -458,13 +465,15 @@ class InvoiceService:
                 """,
                 (len(lines), total_qty, total_amount, invoice_id),
             )
-        send_backup(reason="invoice_updated")
+        send_backup(reason="invoice_updated", admin_username=admin_username)
 
-    def delete_invoice(self, invoice_id: int) -> None:
+    def delete_invoice(
+        self, invoice_id: int, admin_username: str | None = None
+    ) -> None:
         self._backup_db()
         with self._connect() as conn:
             conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
-        send_backup(reason="invoice_deleted")
+        send_backup(reason="invoice_deleted", admin_username=admin_username)
 
     def count_invoices(self) -> int:
         with self._connect() as conn:

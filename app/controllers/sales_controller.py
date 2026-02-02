@@ -145,12 +145,20 @@ class SalesImportController(QObject):
             self.toast.show("Sales preview failed", "error")
             return
 
-        with backup_batch("sales_import"):
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
+        with backup_batch("sales_import", admin_username=admin_username):
             try:
                 updated_df = self.sales_service.apply(
                     self.page.preview_rows, inventory_df
                 )
-                self.inventory_service.save(updated_df)
+                self.inventory_service.save(
+                    updated_df, admin_username=admin_username
+                )
                 self.on_inventory_updated()
             except InventoryFileError as exc:
                 dialogs.show_error(self.page, "Sales Import Error", str(exc))
@@ -170,15 +178,10 @@ class SalesImportController(QObject):
                     if row.status == "OK"
                 ]
                 if sales_lines:
-                    admin = (
-                        self._current_admin_provider()
-                        if self._current_admin_provider
-                        else None
-                    )
                     invoice_id = self.invoice_service.create_sales_invoice(
                         sales_lines,
                         admin_id=admin.admin_id if admin else None,
-                        admin_username=admin.username if admin else None,
+                        admin_username=admin_username,
                     )
                     if self._action_log_service:
                         total_qty = sum(line.quantity for line in sales_lines)
@@ -506,7 +509,13 @@ class SalesImportController(QObject):
             self.toast.show("Manual sales invoice canceled", "info")
             return
 
-        with backup_batch("sales_manual"):
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
+        with backup_batch("sales_manual", admin_username=admin_username):
             try:
                 updated_df = inventory_df.copy()
                 for key, qty in aggregated.items():
@@ -515,7 +524,9 @@ class SalesImportController(QObject):
                         continue
                     current_qty = int(updated_df.at[idx, "quantity"])
                     updated_df.at[idx, "quantity"] = int(current_qty - qty)
-                self.inventory_service.save(updated_df)
+                self.inventory_service.save(
+                    updated_df, admin_username=admin_username
+                )
                 self.on_inventory_updated()
             except Exception as exc:  # noqa: BLE001
                 dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
@@ -535,15 +546,10 @@ class SalesImportController(QObject):
                     )
                     for line in priced_lines
                 ]
-                admin = (
-                    self._current_admin_provider()
-                    if self._current_admin_provider
-                    else None
-                )
                 invoice_id = self.invoice_service.create_sales_invoice(
                     sales_lines,
                     admin_id=admin.admin_id if admin else None,
-                    admin_username=admin.username if admin else None,
+                    admin_username=admin_username,
                     invoice_type="sales_manual",
                 )
                 if self._action_log_service:

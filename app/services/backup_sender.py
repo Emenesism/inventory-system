@@ -60,6 +60,13 @@ def _format_reason(reason: str | None) -> str | None:
     return "، ".join(labels) if labels else None
 
 
+def _normalize_admin_username(admin_username: str | None) -> str | None:
+    if not admin_username:
+        return None
+    value = str(admin_username).strip()
+    return value or None
+
+
 def _get_backup_state() -> threading.local:
     if not hasattr(_backup_state, "depth"):
         _backup_state.depth = 0
@@ -68,6 +75,7 @@ def _get_backup_state() -> threading.local:
         _backup_state.config = None
         _backup_state.db_path = None
         _backup_state.stock_path = None
+        _backup_state.admin_username = None
     return _backup_state
 
 
@@ -77,6 +85,7 @@ def _update_backup_state(
     config: AppConfig | None,
     db_path: Path | None,
     stock_path: Path | None,
+    admin_username: str | None,
 ) -> None:
     if reason:
         state.reasons.add(str(reason))
@@ -86,14 +95,18 @@ def _update_backup_state(
         state.db_path = db_path
     if stock_path is not None:
         state.stock_path = stock_path
+    admin_username = _normalize_admin_username(admin_username)
+    if admin_username is not None:
+        state.admin_username = admin_username
 
 
 @contextmanager
-def backup_batch(reason: str | None = None):
+def backup_batch(
+    reason: str | None = None, admin_username: str | None = None
+):
     state = _get_backup_state()
     state.depth += 1
-    if reason:
-        state.reasons.add(str(reason))
+    _update_backup_state(state, reason, None, None, None, admin_username)
     try:
         yield
     finally:
@@ -109,12 +122,14 @@ def backup_batch(reason: str | None = None):
                     config=state.config,
                     db_path=state.db_path,
                     stock_path=state.stock_path,
+                    admin_username=state.admin_username,
                 )
             state.pending = False
             state.reasons = set()
             state.config = None
             state.db_path = None
             state.stock_path = None
+            state.admin_username = None
 
 
 class BackupSender:
@@ -134,6 +149,7 @@ class BackupSender:
         reason: str | None = None,
         on_status=None,
         raise_errors: bool = False,
+        admin_username: str | None = None,
     ) -> bool:
         token = (self.config.bot_token or "").strip()
         chat_id = (self.config.channel_id or "").strip()
@@ -157,7 +173,9 @@ class BackupSender:
                     return False
                 if on_status:
                     on_status("در حال ارسال نسخه پشتیبان به کانال...")
-                caption = self._build_caption(reason)
+                caption = self._build_caption(
+                    reason, admin_username=admin_username
+                )
                 client = BaleBotClient(token=token)
                 client.send_document(
                     chat_id=chat_id,
@@ -230,14 +248,19 @@ class BackupSender:
         return app_dir() / DEFAULT_STOCK_NAME
 
     @staticmethod
-    def _build_caption(reason: str | None) -> str:
+    def _build_caption(
+        reason: str | None, admin_username: str | None = None
+    ) -> str:
         timestamp = _jalali_timestamp()
         reason_text = _format_reason(reason)
+        admin_username = _normalize_admin_username(admin_username)
+        lines = ["نسخه پشتیبان خودکار"]
+        if admin_username:
+            lines.append(f"کاربر: {admin_username}")
         if reason_text:
-            return (
-                f"نسخه پشتیبان خودکار\nدلیل: {reason_text}\nزمان: {timestamp}"
-            )
-        return f"نسخه پشتیبان خودکار\nزمان: {timestamp}"
+            lines.append(f"دلیل: {reason_text}")
+        lines.append(f"زمان: {timestamp}")
+        return "\n".join(lines)
 
 
 def _jalali_date_stamp() -> str:
@@ -258,11 +281,15 @@ def send_backup(
     stock_path: Path | None = None,
     async_mode: bool | None = None,
     ui_parent=None,
+    admin_username: str | None = None,
 ) -> None:
     state = _get_backup_state()
+    admin_username = _normalize_admin_username(admin_username)
     if state.depth > 0:
         state.pending = True
-        _update_backup_state(state, reason, config, db_path, stock_path)
+        _update_backup_state(
+            state, reason, config, db_path, stock_path, admin_username
+        )
         return
     _dispatch_backup(
         reason=reason,
@@ -271,6 +298,7 @@ def send_backup(
         stock_path=stock_path,
         async_mode=async_mode,
         ui_parent=ui_parent,
+        admin_username=admin_username,
     )
 
 
@@ -279,10 +307,11 @@ def _send_backup_now(
     config: AppConfig | None = None,
     db_path: Path | None = None,
     stock_path: Path | None = None,
+    admin_username: str | None = None,
 ) -> None:
     BackupSender(
         config=config, db_path=db_path, stock_path=stock_path
-    ).send_backup(reason=reason)
+    ).send_backup(reason=reason, admin_username=admin_username)
 
 
 def _can_use_qt() -> bool:
@@ -304,7 +333,9 @@ def _dispatch_backup(
     stock_path: Path | None = None,
     async_mode: bool | None = None,
     ui_parent=None,
+    admin_username: str | None = None,
 ) -> None:
+    admin_username = _normalize_admin_username(admin_username)
     if async_mode is None:
         if _schedule_async_on_ui_thread(
             reason=reason,
@@ -312,6 +343,7 @@ def _dispatch_backup(
             db_path=db_path,
             stock_path=stock_path,
             ui_parent=ui_parent,
+            admin_username=admin_username,
         ):
             return
         async_mode = _can_use_qt()
@@ -322,6 +354,7 @@ def _dispatch_backup(
             db_path=db_path,
             stock_path=stock_path,
             ui_parent=ui_parent,
+            admin_username=admin_username,
         )
     else:
         _send_backup_now(
@@ -329,6 +362,7 @@ def _dispatch_backup(
             config=config,
             db_path=db_path,
             stock_path=stock_path,
+            admin_username=admin_username,
         )
 
 
@@ -374,6 +408,7 @@ def _schedule_async_on_ui_thread(
     db_path: Path | None,
     stock_path: Path | None,
     ui_parent=None,
+    admin_username: str | None = None,
 ) -> bool:
     try:
         from PySide6.QtCore import QMetaObject, QObject, Qt, QThread, Slot
@@ -406,6 +441,7 @@ def _schedule_async_on_ui_thread(
             stock_path=stock_path,
             async_mode=True,
             ui_parent=ui_parent,
+            admin_username=admin_username,
         )
 
     invoker = _UiInvoker(_invoke, parent=app)
@@ -420,6 +456,7 @@ def _send_backup_async_ui(
     db_path: Path | None,
     stock_path: Path | None,
     ui_parent=None,
+    admin_username: str | None = None,
 ) -> None:
     try:
         from PySide6.QtCore import QObject, QThread, Signal, Slot
@@ -434,6 +471,7 @@ def _send_backup_async_ui(
             config=config,
             db_path=db_path,
             stock_path=stock_path,
+            admin_username=admin_username,
         )
         return
 
@@ -444,6 +482,7 @@ def _send_backup_async_ui(
             config=config,
             db_path=db_path,
             stock_path=stock_path,
+            admin_username=admin_username,
         )
         return
 
@@ -471,6 +510,7 @@ def _send_backup_async_ui(
                     reason=reason,
                     on_status=self.status.emit,
                     raise_errors=True,
+                    admin_username=admin_username,
                 )
                 if sent:
                     self.finished.emit(True, "نسخه پشتیبان ارسال شد.")

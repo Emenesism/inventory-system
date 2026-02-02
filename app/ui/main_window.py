@@ -420,7 +420,10 @@ class MainWindow(QMainWindow):
         try:
             df = self.inventory_service.get_dataframe().copy()
             self.inventory_service.store.set_path(target_path)
-            self.inventory_service.save(df)
+            admin_username = (
+                self._current_admin.username if self._current_admin else None
+            )
+            self.inventory_service.save(df, admin_username=admin_username)
             self.inventory_service.set_inventory_path(target_path)
             self._update_status()
             self.toast.show("Inventory encrypted", "success")

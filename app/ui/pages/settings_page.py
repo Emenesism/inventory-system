@@ -270,15 +270,18 @@ class SettingsPage(QWidget):
         if authenticated is None:
             dialogs.show_error(self, "Password", "Current password is wrong.")
             return
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         self.admin_service.update_password(
-            self.current_admin.admin_id, new_password
+            self.current_admin.admin_id,
+            new_password,
+            admin_username=admin_username,
         )
         if self.action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             self.action_log_service.log_action(
                 "password_change",
                 "تغییر رمز عبور",
@@ -294,9 +297,17 @@ class SettingsPage(QWidget):
         if self.current_admin is None:
             return
         minutes = int(self.auto_lock_spin.value())
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         try:
             self.admin_service.update_auto_lock(
-                self.current_admin.admin_id, minutes
+                self.current_admin.admin_id,
+                minutes,
+                admin_username=admin_username,
             )
         except ValueError as exc:
             dialogs.show_error(self, "Auto lock", str(exc))
@@ -307,11 +318,6 @@ class SettingsPage(QWidget):
         if self.on_admin_updated and self.current_admin:
             self.on_admin_updated(self.current_admin)
         if self.action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             self.action_log_service.log_action(
                 "auto_lock_update",
                 "تغییر قفل خودکار",
@@ -327,12 +333,19 @@ class SettingsPage(QWidget):
         password = self.new_admin_password.text()
         role = self.new_admin_role.currentText()
         auto_lock = int(self.new_admin_lock.value())
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         try:
             self.admin_service.create_admin(
                 username=username,
                 password=password,
                 role=role,
                 auto_lock_minutes=auto_lock,
+                admin_username=admin_username,
             )
         except ValueError as exc:
             dialogs.show_error(self, "Admin", str(exc))
@@ -343,11 +356,6 @@ class SettingsPage(QWidget):
         self.new_admin_lock.setValue(1)
         self._refresh_admins()
         if self.action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             self.action_log_service.log_action(
                 "admin_create",
                 "ایجاد ادمین جدید",
@@ -391,14 +399,17 @@ class SettingsPage(QWidget):
             return
         if not dialogs.ask_yes_no(self, "Admin", f"Delete admin '{username}'?"):
             return
-        self.admin_service.delete_admin(int(admin_id))
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
+        self.admin_service.delete_admin(
+            int(admin_id), admin_username=admin_username
+        )
         self._refresh_admins()
         if self.action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             self.action_log_service.log_action(
                 "admin_delete",
                 "حذف ادمین",

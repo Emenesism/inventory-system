@@ -31,7 +31,9 @@ class InventoryService:
         self._rebuild_index(df)
         return df
 
-    def save(self, df: pd.DataFrame) -> Path | None:
+    def save(
+        self, df: pd.DataFrame, admin_username: str | None = None
+    ) -> Path | None:
         self._sync_passphrase()
         backup_dir = (
             Path(self.config.backup_dir) if self.config.backup_dir else None
@@ -39,7 +41,11 @@ class InventoryService:
         backup_path = self.store.backup(backup_dir=backup_dir)
         self.store.save(df)
         self._rebuild_index(df)
-        send_backup(reason="inventory_saved", config=self.config)
+        send_backup(
+            reason="inventory_saved",
+            config=self.config,
+            admin_username=admin_username,
+        )
         if backup_path:
             self._logger.info(
                 "Inventory saved. Backup created at %s", backup_path

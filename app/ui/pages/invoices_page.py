@@ -484,19 +484,24 @@ class InvoicesPage(QWidget):
         )
         if not confirm:
             return
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         if not self._save_inventory_and_update_db(
             updated_df,
             lambda: self.invoice_service.update_invoice_lines(
-                invoice.invoice_id, invoice.invoice_type, new_lines
+                invoice.invoice_id,
+                invoice.invoice_type,
+                new_lines,
+                admin_username=admin_username,
             ),
+            admin_username=admin_username,
         ):
             return
         if self._action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             before_block = self._format_lines_for_log(lines, "قبل")
             after_block = self._format_lines_for_log(new_lines, "بعد")
             title = (
@@ -558,17 +563,21 @@ class InvoicesPage(QWidget):
         )
         if not confirm:
             return
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else None
+        )
+        admin_username = admin.username if admin else None
         if not self._save_inventory_and_update_db(
             updated_df,
-            lambda: self.invoice_service.delete_invoice(invoice.invoice_id),
+            lambda: self.invoice_service.delete_invoice(
+                invoice.invoice_id, admin_username=admin_username
+            ),
+            admin_username=admin_username,
         ):
             return
         if self._action_log_service:
-            admin = (
-                self._current_admin_provider()
-                if self._current_admin_provider
-                else None
-            )
             title = (
                 "حذف فاکتور فروش"
                 if invoice.invoice_type.startswith("sales")
@@ -647,11 +656,15 @@ class InvoicesPage(QWidget):
         else:
             self.refresh()
 
-    def _save_inventory_and_update_db(self, updated_df, update_db) -> bool:
+    def _save_inventory_and_update_db(
+        self, updated_df, update_db, admin_username: str | None = None
+    ) -> bool:
         backup_path = None
-        with backup_batch("invoice_change"):
+        with backup_batch("invoice_change", admin_username=admin_username):
             try:
-                backup_path = self.inventory_service.save(updated_df)
+                backup_path = self.inventory_service.save(
+                    updated_df, admin_username=admin_username
+                )
             except Exception as exc:  # noqa: BLE001
                 dialogs.show_error(self, "Inventory", str(exc))
                 return False
