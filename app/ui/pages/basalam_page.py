@@ -55,7 +55,7 @@ PROPERTY_TITLES = [
     "نوع پلاک",
     "فونت",
     "رنگ دوخت",
-    "مدل سمت جلد",
+    "سمت جلد",
     "جنس زیره",
 ]
 
@@ -73,9 +73,9 @@ PROPERTY_TITLE_MAP = {
     normalize_text("font"): "فونت",
     normalize_text("رنگ دوخت"): "رنگ دوخت",
     normalize_text("stitch color"): "رنگ دوخت",
-    normalize_text("مدل سمت جلد"): "مدل سمت جلد",
-    normalize_text("سمت جلد"): "مدل سمت جلد",
-    normalize_text("cover side model"): "مدل سمت جلد",
+    normalize_text("مدل سمت جلد"): "سمت جلد",
+    normalize_text("سمت جلد"): "سمت جلد",
+    normalize_text("cover side model"): "سمت جلد",
     normalize_text("جنس زیره"): "جنس زیره",
     normalize_text("sole material"): "جنس زیره",
 }
