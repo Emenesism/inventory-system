@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -99,7 +99,18 @@ class SalesManualInvoiceDialog(QDialog):
         if event.type() == QEvent.KeyPress:
             key = event.key()
             if key in (Qt.Key_Return, Qt.Key_Enter):
-                self.add_row()
+                if isinstance(obj, QLineEdit):
+                    completer = obj.completer()
+                    if completer and completer.popup().isVisible():
+                        return False
+                row, col = self._resolve_cell_position(obj)
+                if row < 0:
+                    self.add_row()
+                    return True
+                if row >= self.table.rowCount() - 1:
+                    self.add_row(focus_column=col if col >= 0 else 0)
+                else:
+                    self._focus_cell(row + 1, col if col >= 0 else 0)
                 return True
             if key == Qt.Key_Delete:
                 self.remove_selected()
@@ -109,7 +120,7 @@ class SalesManualInvoiceDialog(QDialog):
     def set_product_provider(self, provider: Callable[[], list[str]]) -> None:
         self.product_provider = provider
 
-    def add_row(self) -> None:
+    def add_row(self, focus_column: int | None = 0) -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
 
@@ -130,7 +141,8 @@ class SalesManualInvoiceDialog(QDialog):
 
         self.table.setCellWidget(row, 0, product_input)
         self.table.setCellWidget(row, 1, quantity_input)
-        product_input.setFocus()
+        if focus_column is not None:
+            self._focus_cell(row, focus_column)
 
     def remove_selected(self) -> None:
         rows = sorted(
@@ -139,6 +151,30 @@ class SalesManualInvoiceDialog(QDialog):
         )
         for row in rows:
             self.table.removeRow(row)
+
+    def _resolve_cell_position(self, widget) -> tuple[int, int]:
+        if widget is self.table:
+            return self.table.currentRow(), self.table.currentColumn()
+        try:
+            pos = widget.mapTo(self.table.viewport(), QPoint(1, 1))
+            index = self.table.indexAt(pos)
+            if index.isValid():
+                return index.row(), index.column()
+        except Exception:  # noqa: BLE001
+            pass
+        return self.table.currentRow(), self.table.currentColumn()
+
+    def _focus_cell(self, row: int, col: int) -> None:
+        if row < 0 or col < 0:
+            return
+        if row >= self.table.rowCount():
+            return
+        if col >= self.table.columnCount():
+            col = 0
+        self.table.setCurrentCell(row, col)
+        widget = self.table.cellWidget(row, col)
+        if widget is not None:
+            widget.setFocus()
 
     def collect_lines(self) -> list[SalesManualLine]:
         lines: list[SalesManualLine] = []
