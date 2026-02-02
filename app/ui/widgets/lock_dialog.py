@@ -25,10 +25,8 @@ class LockDialog(QDialog):
         self._admin_service = admin_service
         self.authenticated_admin: AdminUser | None = None
         self.setWindowTitle("Locked")
-        self.setModal(True)
-        self.setWindowFlags(
-            Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-        )
+        self.setWindowModality(Qt.WindowModal)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setObjectName("LockDialog")
 
