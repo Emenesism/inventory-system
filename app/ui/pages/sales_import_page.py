@@ -127,6 +127,11 @@ class SalesImportPage(QWidget):
         self._edit_timer.setInterval(350)
         self._edit_timer.timeout.connect(self._emit_pending_updates)
         self._edit_enabled = False
+        self._deferred_refresh = False
+        self._deferred_timer = QTimer(self)
+        self._deferred_timer.setSingleShot(True)
+        self._deferred_timer.setInterval(200)
+        self._deferred_timer.timeout.connect(self._apply_deferred_refresh)
         self._product_names: list[str] = []
         self._product_delegate = ProductNameDelegate(self)
         self._quantity_delegate = QuantityDelegate(self)
@@ -268,6 +273,8 @@ class SalesImportPage(QWidget):
         self.preview_rows = list(rows)
         self._pending_rows.clear()
         self._edit_timer.stop()
+        self._deferred_refresh = False
+        self._deferred_timer.stop()
         self.export_button.setEnabled(bool(rows))
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
@@ -297,6 +304,8 @@ class SalesImportPage(QWidget):
         self.preview_rows = []
         self._pending_rows.clear()
         self._edit_timer.stop()
+        self._deferred_refresh = False
+        self._deferred_timer.stop()
         self.export_button.setEnabled(False)
         self.file_input.clear()
         self._sales_invoice_type = None
@@ -370,6 +379,11 @@ class SalesImportPage(QWidget):
         self.total_label.setText(f"Total: {summary.total}")
         self.success_label.setText(f"Success: {summary.success}")
         self.errors_label.setText(f"Errors: {summary.errors}")
+        if self._is_editing():
+            self._update_status_cells(row_indices)
+            self._deferred_refresh = True
+            self._deferred_timer.start()
+            return
         self._sort_preview_rows()
         self._rebuild_table()
 
@@ -379,6 +393,48 @@ class SalesImportPage(QWidget):
         rows = sorted(self._pending_rows)
         self._pending_rows.clear()
         self.product_name_edited.emit(rows)
+
+    def _is_editing(self) -> bool:
+        return self.table.state() == QAbstractItemView.EditingState
+
+    def _apply_deferred_refresh(self) -> None:
+        if not self._deferred_refresh:
+            return
+        if self._is_editing():
+            self._deferred_timer.start()
+            return
+        self._deferred_refresh = False
+        self._sort_preview_rows()
+        self._rebuild_table()
+
+    def _update_status_cells(self, row_indices: list[int]) -> None:
+        if not row_indices or not self.preview_rows:
+            return
+        targets = set(row_indices)
+        self._suppress_item_updates = True
+        for row in range(self.table.rowCount()):
+            name_item = self.table.item(row, 0)
+            if name_item is None:
+                continue
+            idx = name_item.data(Qt.UserRole)
+            if not isinstance(idx, int) or idx not in targets:
+                continue
+            row_data = self.preview_rows[idx]
+
+            status_item = self.table.item(row, 2)
+            if status_item is None:
+                status_item = QTableWidgetItem()
+                status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+                self.table.setItem(row, 2, status_item)
+            status_item.setText(row_data.status)
+
+            message_item = self.table.item(row, 3)
+            if message_item is None:
+                message_item = QTableWidgetItem()
+                message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
+                self.table.setItem(row, 3, message_item)
+            message_item.setText(row_data.message)
+        self._suppress_item_updates = False
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._suppress_item_updates:
