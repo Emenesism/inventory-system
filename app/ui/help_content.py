@@ -10,7 +10,15 @@ class HelpContent(NamedTuple):
 
 def _wrap(body: str) -> str:
     return (
-        '<div dir="rtl" style="font-family: '"'"'Vazirmatn'"'"', '"'"'Segoe UI'"'"'; '
+        '<div dir="rtl" style="font-family: '
+        "'"
+        "Vazirmatn"
+        "'"
+        ", "
+        "'"
+        "Segoe UI"
+        "'"
+        "; "
         'font-size: 13px; line-height: 1.9; text-align: right;">'
         + body.strip()
         + "</div>"
@@ -349,8 +357,6 @@ HELP_CONTENT: dict[str, HelpContent] = {
                 <li><b>برچسب «Current user:»:</b> نام کاربر وارد شده.</li>
                 <li><b>فیلدهای «Current password»، «New password»، «Confirm password»:</b> برای تغییر رمز عبور.</li>
                 <li><b>دکمه «Update password»:</b> ثبت رمز جدید.</li>
-                <li><b>برچسب «Auto lock (minutes):»:</b> زمان قفل خودکار بر حسب دقیقه.</li>
-                <li><b>دکمه «Save»:</b> ذخیره زمان قفل خودکار.</li>
             </ul>
 
             <h3>مدیریت ادمین‌ها</h3>
@@ -358,7 +364,7 @@ HELP_CONTENT: dict[str, HelpContent] = {
                 <li><b>فیلد «Username» و «Password»:</b> تعریف ادمین جدید.</li>
                 <li><b>نقش‌های «employee» و «manager»:</b> سطح دسترسی ادمین.</li>
                 <li><b>دکمه «Create admin»:</b> ساخت ادمین جدید.</li>
-                <li><b>جدول ادمین‌ها:</b> ستون‌های «Username»، «Role»، «Auto lock (min)» را نمایش می‌دهد.</li>
+                <li><b>جدول ادمین‌ها:</b> ستون‌های «Username»، «Role» را نمایش می‌دهد.</li>
             </ul>
             """
         ),

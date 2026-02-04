@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
         self._idle_timer = QTimer(self)
         self._idle_timer.setInterval(1000)
         self._idle_timer.timeout.connect(self._check_idle)
-        self._idle_timer.start()
+        # Auto-lock disabled per settings.
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
@@ -301,11 +301,7 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _check_idle(self) -> None:
-        if self._lock_open or self._current_admin is None:
-            return
-        timeout_minutes = max(1, self._current_admin.auto_lock_minutes)
-        if time.monotonic() - self._last_activity >= timeout_minutes * 60:
-            self._show_lock()
+        return
 
     def initialize_inventory(self) -> None:
         config_path = (

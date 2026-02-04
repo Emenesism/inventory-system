@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -143,19 +142,6 @@ class SettingsPage(QWidget):
         pass_button_row.addWidget(update_password_button)
         account_layout.addLayout(pass_button_row)
 
-        lock_row = QHBoxLayout()
-        lock_label = QLabel("Auto lock (minutes):")
-        lock_row.addWidget(lock_label)
-        self.auto_lock_spin = QSpinBox()
-        self.auto_lock_spin.setRange(1, 60)
-        self.auto_lock_spin.setValue(1)
-        lock_row.addWidget(self.auto_lock_spin)
-        save_lock_button = QPushButton("Save")
-        save_lock_button.clicked.connect(self._save_auto_lock)
-        lock_row.addWidget(save_lock_button)
-        lock_row.addStretch(1)
-        account_layout.addLayout(lock_row)
-
         layout.addWidget(account_card)
 
         self.admin_card = QFrame()
@@ -182,20 +168,13 @@ class SettingsPage(QWidget):
         self.new_admin_role.addItems(["employee", "manager"])
         create_row.addWidget(self.new_admin_role)
 
-        self.new_admin_lock = QSpinBox()
-        self.new_admin_lock.setRange(1, 60)
-        self.new_admin_lock.setValue(1)
-        create_row.addWidget(self.new_admin_lock)
-
         create_button = QPushButton("Create admin")
         create_button.clicked.connect(self._create_admin)
         create_row.addWidget(create_button)
         admin_layout.addLayout(create_row)
 
-        self.admin_table = QTableWidget(0, 3)
-        self.admin_table.setHorizontalHeaderLabels(
-            ["Username", "Role", "Auto lock (min)"]
-        )
+        self.admin_table = QTableWidget(0, 2)
+        self.admin_table.setHorizontalHeaderLabels(["Username", "Role"])
         self.admin_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.admin_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.admin_table.horizontalHeader().setStretchLastSection(True)
@@ -237,11 +216,9 @@ class SettingsPage(QWidget):
         self.current_admin = admin
         if admin is None:
             self.user_value.setText("-")
-            self.auto_lock_spin.setValue(1)
             self.admin_card.hide()
             return
         self.user_value.setText(f"{admin.username} ({admin.role})")
-        self.auto_lock_spin.setValue(max(1, admin.auto_lock_minutes))
         if admin.role == "manager":
             self.admin_card.show()
             self._refresh_admins()
@@ -293,46 +270,12 @@ class SettingsPage(QWidget):
         self.new_password_input.clear()
         self.confirm_password_input.clear()
 
-    def _save_auto_lock(self) -> None:
-        if self.current_admin is None:
-            return
-        minutes = int(self.auto_lock_spin.value())
-        admin = (
-            self._current_admin_provider()
-            if self._current_admin_provider
-            else None
-        )
-        admin_username = admin.username if admin else None
-        try:
-            self.admin_service.update_auto_lock(
-                self.current_admin.admin_id,
-                minutes,
-                admin_username=admin_username,
-            )
-        except ValueError as exc:
-            dialogs.show_error(self, "Auto lock", str(exc))
-            return
-        self.current_admin = self.admin_service.get_admin_by_id(
-            self.current_admin.admin_id
-        )
-        if self.on_admin_updated and self.current_admin:
-            self.on_admin_updated(self.current_admin)
-        if self.action_log_service:
-            self.action_log_service.log_action(
-                "auto_lock_update",
-                "تغییر قفل خودکار",
-                f"کاربر: {self.current_admin.username}\nدقیقه: {minutes}",
-                admin=admin,
-            )
-        dialogs.show_info(self, "Auto lock", "Auto lock updated.")
-
     def _create_admin(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
             return
         username = self.new_admin_username.text()
         password = self.new_admin_password.text()
         role = self.new_admin_role.currentText()
-        auto_lock = int(self.new_admin_lock.value())
         admin = (
             self._current_admin_provider()
             if self._current_admin_provider
@@ -344,7 +287,6 @@ class SettingsPage(QWidget):
                 username=username,
                 password=password,
                 role=role,
-                auto_lock_minutes=auto_lock,
                 admin_username=admin_username,
             )
         except ValueError as exc:
@@ -353,7 +295,6 @@ class SettingsPage(QWidget):
         self.new_admin_username.clear()
         self.new_admin_password.clear()
         self.new_admin_role.setCurrentIndex(0)
-        self.new_admin_lock.setValue(1)
         self._refresh_admins()
         if self.action_log_service:
             self.action_log_service.log_action(
@@ -372,11 +313,6 @@ class SettingsPage(QWidget):
             username_item.setData(Qt.UserRole, admin.admin_id)
             self.admin_table.setItem(row_idx, 0, username_item)
             self.admin_table.setItem(row_idx, 1, QTableWidgetItem(admin.role))
-            self.admin_table.setItem(
-                row_idx,
-                2,
-                QTableWidgetItem(str(admin.auto_lock_minutes)),
-            )
 
     def _delete_selected_admin(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
