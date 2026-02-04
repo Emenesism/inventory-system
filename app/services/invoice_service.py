@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.db_lock import db_connection, db_lock
 from app.core.paths import app_dir
 from app.services.backup_sender import send_backup
 from app.services.purchase_service import PurchaseLine
@@ -53,11 +54,8 @@ class InvoiceService:
         self.backup_dir = backup_dir
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    def _connect(self):
+        return db_connection(self.db_path, row_factory=sqlite3.Row)
 
     def _backup_db(self) -> None:
         if not self.db_path.exists():
@@ -66,7 +64,8 @@ class InvoiceService:
         backup_name = f"invoices_backup_{timestamp}{self.db_path.suffix}"
         target_dir = self.backup_dir if self.backup_dir else self.db_path.parent
         backup_path = target_dir / backup_name
-        shutil.copy2(self.db_path, backup_path)
+        with db_lock():
+            shutil.copy2(self.db_path, backup_path)
 
     def set_backup_dir(self, backup_dir: Path | None) -> None:
         self.backup_dir = backup_dir

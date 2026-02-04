@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.db_lock import db_connection
 from app.core.paths import app_dir
 from app.services.backup_sender import send_backup
 
@@ -16,10 +17,8 @@ class BasalamIdStore:
         self.db_path = db_path
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    def _connect(self):
+        return db_connection(self.db_path, timeout=30)
 
     def _init_db(self) -> None:
         with self._connect() as conn:

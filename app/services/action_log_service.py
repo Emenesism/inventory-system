@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.db_lock import db_connection
 from app.core.paths import app_dir
 from app.services.admin_service import AdminUser
 
@@ -28,11 +29,8 @@ class ActionLogService:
         self.db_path = db_path
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    def _connect(self):
+        return db_connection(self.db_path, row_factory=sqlite3.Row)
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute(

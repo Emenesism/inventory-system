@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from app.core.db_lock import db_connection
 from app.core.paths import app_dir
 from app.services.backup_sender import send_backup
 
@@ -29,11 +30,8 @@ class AdminService:
         self._init_db()
         self._ensure_default_admin()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    def _connect(self):
+        return db_connection(self.db_path, row_factory=sqlite3.Row)
 
     def _init_db(self) -> None:
         with self._connect() as conn:

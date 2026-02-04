@@ -10,6 +10,7 @@ from typing import Any, Iterable
 import requests
 
 from app.core.config import AppConfig
+from app.core.db_lock import db_lock
 from app.core.paths import app_dir
 from app.services.bale_bot_service import BaleBotClient
 
@@ -83,12 +84,16 @@ class BaleBackupRestorer:
         if db_bytes:
             if on_status:
                 on_status("در حال جایگزینی پایگاه داده...")
-            self._atomic_replace(self.db_path, db_bytes)
-
         if stock_bytes:
             if on_status:
                 on_status("در حال جایگزینی فایل موجودی...")
-            self._atomic_replace(self.stock_path, stock_bytes)
+
+        if db_bytes or stock_bytes:
+            with db_lock():
+                if db_bytes:
+                    self._atomic_replace(self.db_path, db_bytes)
+                if stock_bytes:
+                    self._atomic_replace(self.stock_path, stock_bytes)
 
         if backup_name:
             self._store_backup_name(backup_name)

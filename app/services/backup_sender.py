@@ -12,6 +12,7 @@ from pathlib import Path
 import requests
 
 from app.core.config import AppConfig
+from app.core.db_lock import db_connection
 from app.core.paths import app_dir
 from app.services.bale_bot_service import (
     REQUEST_FORMAT_MULTIPART,
@@ -101,9 +102,7 @@ def _update_backup_state(
 
 
 @contextmanager
-def backup_batch(
-    reason: str | None = None, admin_username: str | None = None
-):
+def backup_batch(reason: str | None = None, admin_username: str | None = None):
     state = _get_backup_state()
     state.depth += 1
     _update_backup_state(state, reason, None, None, None, admin_username)
@@ -236,7 +235,7 @@ class BackupSender:
 
     def _snapshot_db(self, target_path: Path) -> None:
         try:
-            with sqlite3.connect(self.db_path) as source:
+            with db_connection(self.db_path, foreign_keys=False) as source:
                 with sqlite3.connect(target_path) as dest:
                     source.backup(dest)
         except sqlite3.Error as exc:
