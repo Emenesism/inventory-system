@@ -745,28 +745,10 @@ class InvoicesPage(QWidget):
             current_qty = int(df.at[idx, "quantity"])
             current_avg = float(df.at[idx, "avg_buy_price"])
             total_cost = current_avg * current_qty
-            if old_qty > current_qty:
-                errors.append(
-                    f"Not enough stock to reverse purchase for {df.at[idx, 'product_name']}."
-                )
-                continue
             remaining_qty = current_qty - old_qty
             remaining_cost = total_cost - float(old_cost)
-            if remaining_cost < -0.01:
-                errors.append(
-                    f"Stock value too low to reverse purchase for {df.at[idx, 'product_name']}."
-                )
-                continue
-            if remaining_qty <= 0:
-                remaining_qty = 0
-                remaining_cost = 0.0
             new_qty_total = remaining_qty + new_qty
             new_cost_total = remaining_cost + float(new_cost)
-            if new_qty_total < 0:
-                errors.append(
-                    f"Invalid quantity for {df.at[idx, 'product_name']}."
-                )
-                continue
             new_avg = new_cost_total / new_qty_total if new_qty_total else 0.0
             df.at[idx, "quantity"] = int(new_qty_total)
             df.at[idx, "avg_buy_price"] = round(float(new_avg), 4)

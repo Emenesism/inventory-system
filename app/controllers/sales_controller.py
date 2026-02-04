@@ -466,26 +466,6 @@ class SalesImportController(QObject):
             key = normalize_text(line.product_name)
             aggregated[key] = aggregated.get(key, 0) + line.quantity
 
-        insufficient: list[str] = []
-        for key, qty in aggregated.items():
-            idx = inventory_index.get(key)
-            if idx is None:
-                continue
-            current_qty = int(inventory_df.at[idx, "quantity"])
-            if current_qty - qty < 0:
-                insufficient.append(
-                    f"{inventory_df.at[idx, 'product_name']} "
-                    f"(available {current_qty})"
-                )
-        if insufficient:
-            dialogs.show_error(
-                dialog,
-                "Manual Sales Invoice",
-                "Insufficient stock:\n\n" + "\n".join(insufficient),
-            )
-            self.toast.show("Insufficient stock", "error")
-            return
-
         cost_map = {
             normalize_text(name): float(inventory_df.at[idx, "avg_buy_price"])
             for idx, name in inventory_df["product_name"].items()
