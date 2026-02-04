@@ -227,16 +227,20 @@ class InvoicesPage(QWidget):
             (inv for inv in self.invoices if inv.invoice_id == invoice_id),
             None,
         )
+        invoice_type = inv.invoice_type if inv else ""
+        show_price = self._should_show_prices(invoice_type)
+        self.lines_table.setColumnHidden(1, not show_price)
+        self.lines_table.setColumnHidden(3, not show_price)
         if inv:
             header_parts = [
                 f"شماره فاکتور {inv.invoice_id}",
-                self._format_type(inv.invoice_type),
+                self._format_type(invoice_type),
                 to_jalali_datetime(inv.created_at),
             ]
             header_parts.append(
                 f"Admin {self._format_admin(inv.admin_id, inv.admin_username)}"
             )
-            if self._show_prices:
+            if show_price:
                 header_parts.append(
                     f"Total {self._format_amount(inv.total_amount)}"
                 )
@@ -250,9 +254,7 @@ class InvoicesPage(QWidget):
             self.lines_table.setItem(
                 row_idx, 0, QTableWidgetItem(line.product_name)
             )
-            price_text = (
-                self._format_amount(line.price) if self._show_prices else ""
-            )
+            price_text = self._format_amount(line.price) if show_price else ""
             price_item = QTableWidgetItem(price_text)
             price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.lines_table.setItem(row_idx, 1, price_item)
@@ -262,9 +264,7 @@ class InvoicesPage(QWidget):
             self.lines_table.setItem(row_idx, 2, qty_item)
 
             total_text = (
-                self._format_amount(line.line_total)
-                if self._show_prices
-                else ""
+                self._format_amount(line.line_total) if show_price else ""
             )
             total_item = QTableWidgetItem(total_text)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -324,10 +324,9 @@ class InvoicesPage(QWidget):
             )
             self.invoices_table.setItem(row_idx, 5, admin_item)
 
+            show_price = self._should_show_prices(invoice.invoice_type)
             total_value = (
-                self._format_amount(invoice.total_amount)
-                if self._show_prices
-                else ""
+                self._format_amount(invoice.total_amount) if show_price else ""
             )
             total_item = QTableWidgetItem(total_value)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -396,6 +395,11 @@ class InvoicesPage(QWidget):
             )
         else:
             self.total_amount_label.setText("Total amount: ")
+
+    def _should_show_prices(self, invoice_type: str) -> bool:
+        if invoice_type.startswith("sales"):
+            return False
+        return self._show_prices
 
     def set_edit_enabled(self, enabled: bool) -> None:
         self._can_edit = bool(enabled)
