@@ -118,7 +118,10 @@ class DataFrameTableModel(QAbstractTableModel):
         if column_name == "quantity":
             try:
                 text_value = normalize_numeric_text(str(value))
-                numeric = int(text_value)
+                if text_value == "":
+                    numeric = 0
+                else:
+                    numeric = int(text_value)
                 if numeric < 0:
                     return False
             except (TypeError, ValueError):
@@ -127,7 +130,10 @@ class DataFrameTableModel(QAbstractTableModel):
         elif column_name in {"avg_buy_price", "last_buy_price"}:
             try:
                 text_value = normalize_numeric_text(str(value))
-                numeric = float(text_value)
+                if text_value == "":
+                    numeric = 0.0
+                else:
+                    numeric = float(text_value)
                 if numeric < 0:
                     return False
             except (TypeError, ValueError):

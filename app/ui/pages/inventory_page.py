@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.utils import dialogs
 from app.utils.search import NormalizedFilterProxyModel
 from app.utils.table_models import DataFrameTableModel
 
@@ -59,6 +61,20 @@ class InventoryPage(QWidget):
         self.save_button = QPushButton("Save Changes")
         self.save_button.clicked.connect(self.save_requested.emit)
         header.addWidget(self.save_button)
+
+        self.add_row_button = QPushButton("Add Row")
+        self.add_row_button.clicked.connect(self.add_row)
+        header.addWidget(self.add_row_button)
+
+        self.delete_row_button = QPushButton("Delete Selected")
+        self.delete_row_button.setStyleSheet(
+            "QPushButton { background: #DC2626; }"
+            "QPushButton:hover { background: #B91C1C; }"
+            "QPushButton:disabled { background: #9CA3AF; }"
+        )
+        self.delete_row_button.clicked.connect(self.delete_selected_rows)
+        self.delete_row_button.setEnabled(False)
+        header.addWidget(self.delete_row_button)
 
         self.export_button = QPushButton("Export")
         self.export_button.clicked.connect(self.export_requested.emit)
@@ -121,6 +137,7 @@ class InventoryPage(QWidget):
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self.table.setModel(self._proxy)
+        self._wire_selection_model()
         if filter_text:
             self._model.set_lazy_loading(False)
             self._proxy.set_filter_text(filter_text)
@@ -161,8 +178,94 @@ class InventoryPage(QWidget):
         self.search_input.setEnabled(enabled)
         self.reload_button.setEnabled(enabled)
         self.save_button.setEnabled(enabled)
+        self.add_row_button.setEnabled(enabled)
+        self.delete_row_button.setEnabled(enabled and self._has_selection())
         self.export_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
+
+    def add_row(self) -> None:
+        if not self._model:
+            return
+        df = self._model.dataframe()
+        new_row: dict[str, object] = {}
+        for col in df.columns:
+            if col == "product_name":
+                new_row[col] = ""
+            elif col in {"quantity"}:
+                new_row[col] = 0
+            elif col in {"avg_buy_price", "last_buy_price"}:
+                new_row[col] = 0.0
+            else:
+                new_row[col] = ""
+
+        lazy_enabled = self._model.rowCount() < len(df)
+        if lazy_enabled:
+            df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
+            target_row = 0
+        else:
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            target_row = len(df) - 1
+
+        self._model.set_dataframe(df)
+        if self._proxy is None:
+            return
+
+        def focus_row() -> bool:
+            source_index = self._model.index(target_row, 0)
+            proxy_index = self._proxy.mapFromSource(source_index)
+            if not proxy_index.isValid():
+                return False
+            self.table.scrollTo(proxy_index)
+            self.table.setCurrentIndex(proxy_index)
+            self.table.edit(proxy_index)
+            return True
+
+        if not focus_row():
+            self.search_input.clear()
+            self._apply_filter()
+            focus_row()
+
+    def delete_selected_rows(self) -> None:
+        if not self._model or not self._proxy:
+            return
+        selected_rows = sorted(
+            {
+                self._proxy.mapToSource(index).row()
+                for index in self.table.selectedIndexes()
+                if index.isValid()
+            },
+            reverse=True,
+        )
+        selected_rows = [row for row in selected_rows if row >= 0]
+        if not selected_rows:
+            return
+        if not dialogs.ask_yes_no(
+            self,
+            "Delete Rows",
+            f"Delete {len(selected_rows)} selected row(s)?",
+        ):
+            return
+
+        df = self._model.dataframe()
+        df = df.drop(df.index[selected_rows]).reset_index(drop=True)
+        self._model.set_dataframe(df)
+        self._update_delete_button()
+
+    def _has_selection(self) -> bool:
+        return bool(self.table.selectedIndexes())
+
+    def _update_delete_button(self) -> None:
+        enabled = self.table.isEnabled() and self._has_selection()
+        self.delete_row_button.setEnabled(enabled)
+
+    def _wire_selection_model(self) -> None:
+        selection_model = self.table.selectionModel()
+        if selection_model is None:
+            return
+        selection_model.selectionChanged.connect(
+            lambda *_: self._update_delete_button()
+        )
+        self._update_delete_button()
 
     def _queue_filter(self, text: str) -> None:
         self._pending_filter = text
