@@ -285,13 +285,7 @@ class InvoiceBatchExportDialog(QDialog):
                 row_idx,
                 2,
                 QTableWidgetItem(
-                    (
-                        "Sales Manual"
-                        if invoice.invoice_type == "sales_manual"
-                        else "Sales"
-                    )
-                    if invoice.invoice_type.startswith("sales")
-                    else "Purchase"
+                    self._format_invoice_type(invoice.invoice_type)
                 ),
             )
             lines_item = QTableWidgetItem(str(invoice.total_lines))
@@ -304,6 +298,20 @@ class InvoiceBatchExportDialog(QDialog):
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 5, total_item)
         self.summary_label.setText(f"Invoices: {len(self._invoices)}")
+
+    @staticmethod
+    def _format_invoice_type(value: str) -> str:
+        if value == "purchase":
+            return "Purchase"
+        if value == "sales_manual":
+            return "Sales Manual"
+        if value == "sales_basalam":
+            return "Sales Basalam"
+        if value == "sales_site":
+            return "Sales Site"
+        if value.startswith("sales"):
+            return "Sales"
+        return value.title()
 
     def _setup_product_completer(self) -> None:
         if not self.inventory_service or not self.inventory_service.is_loaded():

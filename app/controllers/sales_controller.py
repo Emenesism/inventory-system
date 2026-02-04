@@ -178,10 +178,12 @@ class SalesImportController(QObject):
                     if row.status == "OK"
                 ]
                 if sales_lines:
+                    invoice_type = self.page.get_sales_invoice_type()
                     invoice_id = self.invoice_service.create_sales_invoice(
                         sales_lines,
                         admin_id=admin.admin_id if admin else None,
                         admin_username=admin_username,
+                        invoice_type=invoice_type,
                     )
                     if self._action_log_service:
                         total_qty = sum(line.quantity for line in sales_lines)

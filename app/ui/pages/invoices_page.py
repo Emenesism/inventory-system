@@ -357,6 +357,10 @@ class InvoicesPage(QWidget):
             return "Purchase"
         if value == "sales_manual":
             return "Sales Manual"
+        if value == "sales_basalam":
+            return "Sales Basalam"
+        if value == "sales_site":
+            return "Sales Site"
         if value.startswith("sales"):
             return "Sales"
         return value.title()

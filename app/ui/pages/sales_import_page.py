@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -129,6 +130,7 @@ class SalesImportPage(QWidget):
         self._product_names: list[str] = []
         self._product_delegate = ProductNameDelegate(self)
         self._quantity_delegate = QuantityDelegate(self)
+        self._sales_invoice_type: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -151,6 +153,7 @@ class SalesImportPage(QWidget):
         self.file_input.setPlaceholderText(
             "Select sales Excel/CSV file (Product Name, Quantity)..."
         )
+        self.file_input.textEdited.connect(self._on_file_text_edited)
         file_layout.addWidget(self.file_input, 1)
 
         self.browse_button = QPushButton("Browse")
@@ -296,6 +299,7 @@ class SalesImportPage(QWidget):
         self._edit_timer.stop()
         self.export_button.setEnabled(False)
         self.file_input.clear()
+        self._sales_invoice_type = None
         self.total_label.setText("Total: 0")
         self.success_label.setText("Success: 0")
         self.errors_label.setText("Errors: 0")
@@ -303,8 +307,11 @@ class SalesImportPage(QWidget):
 
     def _emit_preview(self) -> None:
         path = self.file_input.text().strip()
-        if path:
-            self.preview_requested.emit(path)
+        if not path:
+            return
+        if not self._ensure_sales_type():
+            return
+        self.preview_requested.emit(path)
 
     def _browse_file(self) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -316,8 +323,40 @@ class SalesImportPage(QWidget):
             "Excel Files (*.xlsx *.xlsm);;CSV Files (*.csv)",
         )
         if file_path:
+            self._sales_invoice_type = None
+            if not self._ensure_sales_type():
+                return
             self.file_input.setText(file_path)
             self.preview_requested.emit(file_path)
+
+    def _on_file_text_edited(self, _text: str) -> None:
+        self._sales_invoice_type = None
+
+    def get_sales_invoice_type(self) -> str:
+        return self._sales_invoice_type or "sales"
+
+    def _ensure_sales_type(self) -> bool:
+        if self._sales_invoice_type:
+            return True
+        items = ["Basalam", "Site"]
+        selection, ok = QInputDialog.getItem(
+            self,
+            "Sales Source",
+            "Select sales source for this file:",
+            items,
+            0,
+            False,
+        )
+        if not ok:
+            return False
+        normalized = str(selection).strip().lower()
+        if normalized == "basalam":
+            self._sales_invoice_type = "sales_basalam"
+        elif normalized == "site":
+            self._sales_invoice_type = "sales_site"
+        else:
+            self._sales_invoice_type = "sales"
+        return True
 
     def flush_pending_edits(self) -> None:
         if not self._pending_rows:
