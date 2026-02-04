@@ -25,7 +25,33 @@ from app.utils.numeric import format_amount, normalize_numeric_text
 
 class PriceSpinBox(QSpinBox):
     def textFromValue(self, value: int) -> str:  # noqa: N802
+        if value == 0:
+            return ""
         return format_amount(value)
+
+    def valueFromText(self, text: str) -> int:  # noqa: N802
+        normalized = normalize_numeric_text(text)
+        if not normalized:
+            return 0
+        try:
+            return int(float(normalized))
+        except ValueError:
+            return 0
+
+    def validate(self, text: str, pos: int):  # noqa: ANN001, N802
+        normalized = normalize_numeric_text(text)
+        if normalized == "":
+            return (QValidator.Intermediate, text, pos)
+        if normalized.replace(".", "", 1).isdigit():
+            return (QValidator.Acceptable, text, pos)
+        return (QValidator.Invalid, text, pos)
+
+
+class QuantitySpinBox(QSpinBox):
+    def textFromValue(self, value: int) -> str:  # noqa: N802
+        if value == 0:
+            return ""
+        return str(value)
 
     def valueFromText(self, text: str) -> int:  # noqa: N802
         normalized = normalize_numeric_text(text)
@@ -78,7 +104,7 @@ class PurchaseInvoicePage(QWidget):
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Buy Price", "Quantity"]
+            ["Product", "Quantity", "Buy Price"]
         )
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -139,31 +165,30 @@ class PurchaseInvoicePage(QWidget):
         )
         product_input.installEventFilter(self)
 
+        quantity_input = QuantitySpinBox()
+        quantity_input.setRange(0, 1_000_000)
+        quantity_input.setSingleStep(1)
+        quantity_input.setValue(0)
+        quantity_input.installEventFilter(self)
+
         price_input = PriceSpinBox()
-        price_input.setRange(1, 1_000_000_000)
+        price_input.setRange(0, 1_000_000_000)
         price_input.setSingleStep(100)
-        price_input.setValue(1)
+        price_input.setValue(0)
         price_input.setGroupSeparatorShown(True)
         price_input.installEventFilter(self)
 
-        quantity_input = QSpinBox()
-        quantity_input.setRange(1, 1_000_000)
-        quantity_input.setValue(1)
-        quantity_input.installEventFilter(self)
-
         self.table.setCellWidget(row, 0, product_input)
-        self.table.setCellWidget(row, 1, price_input)
-        self.table.setCellWidget(row, 2, quantity_input)
+        self.table.setCellWidget(row, 1, quantity_input)
+        self.table.setCellWidget(row, 2, price_input)
         product_input.setFocus()
 
     def _advance_row(self) -> None:
         row = self.table.currentRow()
-        col = self.table.currentColumn()
         if row < 0:
             self.add_row()
             return
-        if col < 0:
-            col = 0
+        col = 0
         if row < self.table.rowCount() - 1:
             next_row = row + 1
             self.table.setCurrentCell(next_row, col)
@@ -190,8 +215,8 @@ class PurchaseInvoicePage(QWidget):
         lines: list[PurchaseLine] = []
         for row in range(self.table.rowCount()):
             product_widget = self.table.cellWidget(row, 0)
-            price_widget = self.table.cellWidget(row, 1)
-            qty_widget = self.table.cellWidget(row, 2)
+            qty_widget = self.table.cellWidget(row, 1)
+            price_widget = self.table.cellWidget(row, 2)
             if not isinstance(product_widget, QLineEdit):
                 continue
             product_name = product_widget.text().strip()
