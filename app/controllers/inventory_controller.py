@@ -166,6 +166,7 @@ class InventoryController(QObject):
                     label = {
                         "quantity": "تعداد",
                         "avg_buy_price": "میانگین قیمت خرید",
+                        "last_buy_price": "آخرین قیمت خرید",
                         "alarm": "آلارم",
                         "source": "منبع",
                     }.get(col, col)

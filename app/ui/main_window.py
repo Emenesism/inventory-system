@@ -261,7 +261,7 @@ class MainWindow(QMainWindow):
             return
         if admin.role == "employee":
             self.inventory_page.set_blocked_columns(
-                ["quantity", "avg_buy_price"]
+                ["quantity", "avg_buy_price", "last_buy_price"]
             )
             self.invoices_page.set_price_visibility(False)
             self.invoices_page.set_edit_enabled(False)

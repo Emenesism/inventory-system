@@ -55,7 +55,10 @@ class DataFrameTableModel(QAbstractTableModel):
                 value = int(value)
             elif isinstance(value, np.floating):
                 value = float(value)
-            if column_name in {"quantity", "avg_buy_price"} and value == 0:
+            if (
+                column_name in {"quantity", "avg_buy_price", "last_buy_price"}
+                and value == 0
+            ):
                 return ""
             if is_price_column(column_name):
                 return format_amount(value)
@@ -121,7 +124,7 @@ class DataFrameTableModel(QAbstractTableModel):
             except (TypeError, ValueError):
                 return False
             self._full_dataframe.iat[index.row(), index.column()] = numeric
-        elif column_name == "avg_buy_price":
+        elif column_name in {"avg_buy_price", "last_buy_price"}:
             try:
                 text_value = normalize_numeric_text(str(value))
                 numeric = float(text_value)

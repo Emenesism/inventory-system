@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 import pandas as pd
 
 
@@ -27,6 +28,8 @@ class PurchaseService:
         allow_create: bool = True,
     ) -> tuple[pd.DataFrame, PurchaseSummary, list[str]]:
         updated_df = inventory_df.copy()
+        if "last_buy_price" not in updated_df.columns:
+            updated_df["last_buy_price"] = 0.0
         name_to_index = {
             str(name).strip().lower(): idx
             for idx, name in updated_df["product_name"].items()
@@ -44,10 +47,13 @@ class PurchaseService:
                 old_avg = float(updated_df.at[idx, "avg_buy_price"])
 
                 new_qty = old_qty + line.quantity
-                new_avg = (old_avg * old_qty + line.price * line.quantity) / new_qty
+                new_avg = (
+                    old_avg * old_qty + line.price * line.quantity
+                ) / new_qty
 
                 updated_df.at[idx, "quantity"] = new_qty
                 updated_df.at[idx, "avg_buy_price"] = round(new_avg, 4)
+                updated_df.at[idx, "last_buy_price"] = round(line.price, 4)
                 updated += 1
             else:
                 if not allow_create:
@@ -57,8 +63,11 @@ class PurchaseService:
                     "product_name": line.product_name,
                     "quantity": line.quantity,
                     "avg_buy_price": round(line.price, 4),
+                    "last_buy_price": round(line.price, 4),
                 }
-                updated_df = pd.concat([updated_df, pd.DataFrame([new_row])], ignore_index=True)
+                updated_df = pd.concat(
+                    [updated_df, pd.DataFrame([new_row])], ignore_index=True
+                )
                 name_to_index[key] = updated_df.index[-1]
                 created += 1
 

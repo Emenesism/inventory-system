@@ -725,6 +725,13 @@ class InvoicesPage(QWidget):
     def _apply_purchase_change(self, df, old_lines, new_lines):
         old_map = self._aggregate_lines(old_lines, include_cost=True)
         new_map = self._aggregate_lines(new_lines, include_cost=True)
+        if "last_buy_price" not in df.columns:
+            df["last_buy_price"] = 0.0
+        latest_price_map: dict[str, float] = {}
+        for line in new_lines:
+            latest_price_map[normalize_text(line.product_name)] = float(
+                line.price
+            )
         inventory_index = {
             normalize_text(name): idx
             for idx, name in df["product_name"].items()
@@ -752,6 +759,9 @@ class InvoicesPage(QWidget):
             new_avg = new_cost_total / new_qty_total if new_qty_total else 0.0
             df.at[idx, "quantity"] = int(new_qty_total)
             df.at[idx, "avg_buy_price"] = round(float(new_avg), 4)
+            last_price = latest_price_map.get(key)
+            if last_price is not None:
+                df.at[idx, "last_buy_price"] = round(float(last_price), 4)
             delta = new_qty - old_qty
             if delta != 0:
                 delta_map[df.at[idx, "product_name"]] = int(delta)

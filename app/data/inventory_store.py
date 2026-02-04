@@ -21,10 +21,12 @@ class InventoryStore:
     passphrase: str = "1111"
 
     REQUIRED_COLUMNS = ["product_name", "quantity", "avg_buy_price"]
+    OPTIONAL_COLUMNS = ["last_buy_price"]
     COLUMN_ORDER = [
         "product_name",
         "quantity",
         "avg_buy_price",
+        "last_buy_price",
         "alarm",
         "source",
     ]
@@ -34,6 +36,10 @@ class InventoryStore:
         "قیمت خرید": "avg_buy_price",
         "قيمت خريد": "avg_buy_price",
         "میانگین قیمت خرید": "avg_buy_price",
+        "آخرین قیمت خرید": "last_buy_price",
+        "آخرين قيمت خريد": "last_buy_price",
+        "Last Buy Price": "last_buy_price",
+        "last buy price": "last_buy_price",
         "آلارم": "alarm",
         "منبع": "source",
     }
@@ -60,6 +66,7 @@ class InventoryStore:
             ) from exc
 
         df = self._normalize_columns(df)
+        df = self._ensure_optional_columns(df)
         self._validate(df)
         df = self._reorder_columns(df)
         self.dataframe = df
@@ -112,6 +119,13 @@ class InventoryStore:
         for required in self.REQUIRED_COLUMNS:
             if required in lower_map:
                 rename_map[lower_map[required]] = required
+        alias_map = {
+            "last buy price": "last_buy_price",
+            "last_buy_price": "last_buy_price",
+        }
+        for alias, target in alias_map.items():
+            if alias in lower_map and target not in rename_map.values():
+                rename_map[lower_map[alias]] = target
         for persian_name, target in self.PERSIAN_COLUMN_MAP.items():
             if (
                 persian_name in normalized_map
@@ -145,6 +159,19 @@ class InventoryStore:
 
         avg_buy = pd.to_numeric(df["avg_buy_price"], errors="coerce").fillna(0)
         df["avg_buy_price"] = avg_buy.astype(float)
+
+        if "last_buy_price" in df.columns:
+            last_buy = pd.to_numeric(
+                df["last_buy_price"], errors="coerce"
+            ).fillna(0)
+            df["last_buy_price"] = last_buy.astype(float)
+
+    def _ensure_optional_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        for column in self.OPTIONAL_COLUMNS:
+            if column not in df.columns:
+                df[column] = 0.0
+        return df
 
     def _reorder_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         preferred = [col for col in self.COLUMN_ORDER if col in df.columns]
