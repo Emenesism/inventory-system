@@ -144,11 +144,15 @@ class InventoryStore:
                 f"Inventory file missing required columns: {', '.join(missing)}"
             )
 
-        if df["product_name"].isna().any():
-            raise InventoryFileError("Inventory file has blank product names.")
+        # Drop rows with blank product names (common after Excel formatting).
+        name_series = df["product_name"]
+        blank_mask = name_series.isna() | (
+            name_series.astype(str).str.strip() == ""
+        )
+        if blank_mask.any():
+            df.drop(df.index[blank_mask], inplace=True)
+            df.reset_index(drop=True, inplace=True)
         df["product_name"] = df["product_name"].astype(str).str.strip()
-        if (df["product_name"] == "").any():
-            raise InventoryFileError("Inventory file has blank product names.")
 
         quantity = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
         if (quantity % 1 != 0).any():
