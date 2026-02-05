@@ -515,4 +515,30 @@ class MainWindow(QMainWindow):
             event.isAccepted(),
             event.spontaneous(),
         )
+        self._shutdown_background_threads()
         super().closeEvent(event)
+
+    def _shutdown_background_threads(self) -> None:
+        threads = [
+            ("backup", getattr(self, "_backup_thread", None)),
+            ("restore", getattr(self, "_backup_restore_thread", None)),
+        ]
+        for name, thread in threads:
+            if thread is None:
+                continue
+            try:
+                if thread.isRunning():
+                    self._logger.warning(
+                        "Waiting for %s thread to finish...", name
+                    )
+                    thread.quit()
+                    if not thread.wait(5000):
+                        self._logger.warning(
+                            "%s thread still running; terminating.", name
+                        )
+                        thread.terminate()
+                        thread.wait(1000)
+            except Exception:  # noqa: BLE001
+                self._logger.exception(
+                    "Failed to stop %s thread cleanly.", name
+                )

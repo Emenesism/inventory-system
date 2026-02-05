@@ -100,7 +100,9 @@ class LockDialog(QDialog):
 
     def _close_app(self) -> None:
         app = QApplication.instance()
+        QDialog.reject(self)
         if app is not None:
+            app.closeAllWindows()
             app.quit()
 
     def reject(self) -> None:
