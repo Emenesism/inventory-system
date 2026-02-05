@@ -16,6 +16,7 @@ if __package__ is None:
 from app.core.config import AppConfig
 from app.core.logging_setup import setup_logging
 from app.data.inventory_store import InventoryStore
+from app.services.bale_backup_restore import BaleBackupRestorer
 from app.services.inventory_service import InventoryService
 from app.ui.main_window import MainWindow
 
@@ -32,6 +33,7 @@ def main() -> int:
     _log_app_lifecycle(app)
 
     config = AppConfig.load()
+    BaleBackupRestorer(config=config).apply_pending_restore()
     store = InventoryStore()
     inventory_service = InventoryService(store, config)
 

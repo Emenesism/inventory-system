@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -31,10 +33,16 @@ class BaleBackupRestorer:
         self.db_path = db_path or (app_dir() / DEFAULT_DB_NAME)
         self.stock_path = stock_path or self._resolve_stock_path()
         self._logger = logging.getLogger(self.__class__.__name__)
+        self.restart_required = False
+        self.missing_files: list[str] = []
+        self.pending_files: list[str] = []
 
     def restore_latest_backup(
         self, on_status=None, raise_errors: bool = False
     ) -> bool:
+        self.restart_required = False
+        self.missing_files = []
+        self.pending_files = []
         token = (self.config.bot_token or "").strip()
         channel_id = (self.config.channel_id or "").strip()
         if not token or not channel_id:
@@ -89,11 +97,28 @@ class BaleBackupRestorer:
                 on_status("در حال جایگزینی فایل موجودی...")
 
         if db_bytes or stock_bytes:
+            if db_bytes and not self.db_path.exists():
+                self.missing_files.append(self.db_path.name)
+            if stock_bytes and not self.stock_path.exists():
+                self.missing_files.append(self.stock_path.name)
             with db_lock():
                 if db_bytes:
-                    self._atomic_replace(self.db_path, db_bytes)
+                    replaced = self._atomic_replace(self.db_path, db_bytes)
+                    if not replaced:
+                        self.pending_files.append(self.db_path.name)
                 if stock_bytes:
-                    self._atomic_replace(self.stock_path, stock_bytes)
+                    replaced = self._atomic_replace(
+                        self.stock_path, stock_bytes
+                    )
+                    if not replaced:
+                        self.pending_files.append(self.stock_path.name)
+            if self.missing_files or self.pending_files:
+                self.restart_required = True
+                self._logger.info(
+                    "Backup restored with restart required (missing=%s, pending=%s).",
+                    ", ".join(self.missing_files) or "-",
+                    ", ".join(self.pending_files) or "-",
+                )
 
         if backup_name:
             self._store_backup_name(backup_name)
@@ -101,6 +126,52 @@ class BaleBackupRestorer:
         if on_status:
             on_status("پاکسازی فایل‌های موقت...")
         return True
+
+    def restart_message(self) -> str | None:
+        if not self.restart_required:
+            return None
+        parts: list[str] = []
+        if self.missing_files:
+            missing_text = self._format_file_list(self.missing_files)
+            parts.append(f"{missing_text} وجود نداشت و بازیابی شد")
+        if self.pending_files:
+            pending_text = self._format_file_list(self.pending_files)
+            parts.append(
+                f"{pending_text} در حال استفاده بود و در صف اعمال قرار گرفت"
+            )
+        if not parts:
+            return None
+        return " و ".join(parts) + ". لطفا برنامه را ببندید و دوباره اجرا کنید."
+
+    @staticmethod
+    def _format_file_list(files: list[str]) -> str:
+        if len(files) == 1:
+            return f"فایل {files[0]}"
+        return "فایل‌های " + " و ".join(files)
+
+    @staticmethod
+    def _pending_restore_path(path: Path) -> Path:
+        return path.with_name(f"{path.name}.restore")
+
+    def apply_pending_restore(self) -> list[str]:
+        restored: list[str] = []
+        for path in (self.db_path, self.stock_path):
+            pending_path = self._pending_restore_path(path)
+            if not pending_path.exists():
+                continue
+            try:
+                pending_path.replace(path)
+                restored.append(path.name)
+            except OSError:
+                self._logger.exception(
+                    "Failed to apply pending restore for %s", path
+                )
+        if restored:
+            self._logger.info(
+                "Applied pending restore files at startup: %s",
+                ", ".join(restored),
+            )
+        return restored
 
     def _fetch_latest_update(
         self, client: BaleBotClient
@@ -192,7 +263,7 @@ class BaleBackupRestorer:
         return db_bytes, stock_bytes
 
     @staticmethod
-    def _atomic_replace(path: Path, data: bytes) -> None:
+    def _atomic_replace(path: Path, data: bytes) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             prefix=f"{path.stem}_",
@@ -202,7 +273,32 @@ class BaleBackupRestorer:
         ) as handle:
             handle.write(data)
             temp_name = handle.name
-        Path(temp_name).replace(path)
+        temp_path = Path(temp_name)
+        last_exc: Exception | None = None
+        for _ in range(4):
+            try:
+                temp_path.replace(path)
+                return True
+            except (PermissionError, OSError) as exc:
+                last_exc = exc
+                time.sleep(0.2)
+        pending_path = BaleBackupRestorer._pending_restore_path(path)
+        try:
+            if pending_path.exists():
+                try:
+                    pending_path.unlink()
+                except OSError:
+                    pass
+            temp_path.replace(pending_path)
+        except Exception:
+            try:
+                os.remove(temp_name)
+            except FileNotFoundError:
+                pass
+            if last_exc:
+                raise last_exc
+            raise
+        return False
 
 
 def _message_matches_channel(message: dict[str, Any], channel_id: str) -> bool:
@@ -276,9 +372,13 @@ def restore_latest_backup_async(
                     on_status=self.status.emit, raise_errors=True
                 )
                 if restored:
-                    self.finished.emit(
-                        True, True, "بازیابی نسخه پشتیبان انجام شد."
-                    )
+                    restart_message = restorer.restart_message()
+                    if restart_message:
+                        self.finished.emit(True, False, restart_message)
+                    else:
+                        self.finished.emit(
+                            True, True, "بازیابی نسخه پشتیبان انجام شد."
+                        )
                 else:
                     self.finished.emit(
                         True, False, "نسخه پشتیبان جدیدی یافت نشد."
