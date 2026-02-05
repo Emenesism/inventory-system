@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import sqlite3
 import tempfile
 import threading
+import time
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime
@@ -24,6 +27,7 @@ DEFAULT_DB_NAME = "invoices.db"
 DEFAULT_STOCK_NAME = "stock.dat"
 
 _backup_state = threading.local()
+_logger = logging.getLogger(__name__)
 
 _REASON_LABELS = {
     "purchase_invoice": "ثبت فاکتور خرید",
@@ -66,6 +70,29 @@ def _normalize_admin_username(admin_username: str | None) -> str | None:
         return None
     value = str(admin_username).strip()
     return value or None
+
+
+def _safe_rmtree(path: Path, retries: int = 4, delay: float = 0.25) -> None:
+    last_exc: Exception | None = None
+    for _ in range(retries):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except (PermissionError, OSError) as exc:
+            last_exc = exc
+            time.sleep(delay)
+    _logger.warning("Temp backup cleanup failed for %s: %s", path, last_exc)
+    try:
+        if path.exists():
+            marker = path.with_name(f"{path.name}.stale")
+            try:
+                os.replace(path, marker)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 
 def _get_backup_state() -> threading.local:
@@ -158,31 +185,25 @@ class BackupSender:
                 raise RuntimeError("تنظیمات ربات یا کانال ناقص است.")
             return False
 
+        temp_dir: Path | None = None
         try:
-            with tempfile.TemporaryDirectory(
-                prefix="armkala_backup_"
-            ) as temp_dir:
-                temp_path = Path(temp_dir)
-                zip_path = self._create_backup_zip(
-                    temp_path, on_status=on_status
-                )
-                if zip_path is None:
-                    if on_status:
-                        on_status("هیچ فایلی برای پشتیبان یافت نشد.")
-                    return False
+            temp_dir = Path(tempfile.mkdtemp(prefix="armkala_backup_"))
+            zip_path = self._create_backup_zip(temp_dir, on_status=on_status)
+            if zip_path is None:
                 if on_status:
-                    on_status("در حال ارسال نسخه پشتیبان به کانال...")
-                caption = self._build_caption(
-                    reason, admin_username=admin_username
-                )
-                client = BaleBotClient(token=token)
-                client.send_document(
-                    chat_id=chat_id,
-                    document=zip_path,
-                    caption=caption,
-                    request_format=REQUEST_FORMAT_MULTIPART,
-                )
-                return True
+                    on_status("هیچ فایلی برای پشتیبان یافت نشد.")
+                return False
+            if on_status:
+                on_status("در حال ارسال نسخه پشتیبان به کانال...")
+            caption = self._build_caption(reason, admin_username=admin_username)
+            client = BaleBotClient(token=token)
+            client.send_document(
+                chat_id=chat_id,
+                document=zip_path,
+                caption=caption,
+                request_format=REQUEST_FORMAT_MULTIPART,
+            )
+            return True
         except requests.RequestException as exc:
             self._logger.exception("Backup upload failed.")
             if raise_errors:
@@ -193,6 +214,9 @@ class BackupSender:
             if raise_errors:
                 raise
             return False
+        finally:
+            if temp_dir is not None:
+                _safe_rmtree(temp_dir)
 
     def _create_backup_zip(self, temp_dir: Path, on_status=None) -> Path | None:
         date_stamp = _jalali_date_stamp()
