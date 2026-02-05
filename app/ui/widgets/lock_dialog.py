@@ -25,6 +25,7 @@ class LockDialog(QDialog):
         super().__init__(parent)
         self._admin_service = admin_service
         self.authenticated_admin: AdminUser | None = None
+        self.close_requested = False
         self.setWindowTitle("Locked")
         self.setWindowModality(Qt.WindowModal)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
@@ -99,11 +100,8 @@ class LockDialog(QDialog):
         self.password_input.setFocus()
 
     def _close_app(self) -> None:
-        app = QApplication.instance()
+        self.close_requested = True
         QDialog.reject(self)
-        if app is not None:
-            app.closeAllWindows()
-            app.quit()
 
     def reject(self) -> None:
         return

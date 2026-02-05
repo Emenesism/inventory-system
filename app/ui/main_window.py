@@ -223,6 +223,12 @@ class MainWindow(QMainWindow):
         username = self._current_admin.username if self._current_admin else ""
         dialog = LockDialog(self.admin_service, self, username=username)
         dialog.exec()
+        if dialog.close_requested:
+            if self.centralWidget():
+                self.centralWidget().setGraphicsEffect(None)
+            self._lock_open = False
+            self.close()
+            return
         if dialog.authenticated_admin is not None:
             self._set_current_admin(dialog.authenticated_admin)
             self._last_activity = time.monotonic()
