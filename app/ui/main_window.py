@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -552,6 +553,12 @@ class MainWindow(QMainWindow):
     def _quit_app_from_lock(self) -> None:
         app = QApplication.instance()
         self.hide()
+        if app is not None:
+            app.closeAllWindows()
         self.close()
         if app is not None:
             QTimer.singleShot(0, app.quit)
+            QTimer.singleShot(3000, self._force_exit_if_stuck)
+
+    def _force_exit_if_stuck(self) -> None:
+        os._exit(0)
