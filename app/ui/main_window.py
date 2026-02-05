@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
             if self.centralWidget():
                 self.centralWidget().setGraphicsEffect(None)
             self._lock_open = False
-            self.close()
+            self._quit_app_from_lock()
             return
         if dialog.authenticated_admin is not None:
             self._set_current_admin(dialog.authenticated_admin)
@@ -548,3 +548,10 @@ class MainWindow(QMainWindow):
                 self._logger.exception(
                     "Failed to stop %s thread cleanly.", name
                 )
+
+    def _quit_app_from_lock(self) -> None:
+        app = QApplication.instance()
+        self.hide()
+        self.close()
+        if app is not None:
+            QTimer.singleShot(0, app.quit)
