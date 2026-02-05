@@ -762,9 +762,15 @@ class InvoicesPage(QWidget):
             total_cost = current_avg * current_qty
             remaining_qty = current_qty - old_qty
             remaining_cost = total_cost - float(old_cost)
+            avg_base_qty = remaining_qty if remaining_qty > 0 else 0
+            avg_base_cost = remaining_cost if remaining_qty > 0 else 0.0
+            avg_denominator = avg_base_qty + new_qty
+            new_avg = (
+                (avg_base_cost + float(new_cost)) / avg_denominator
+                if avg_denominator
+                else 0.0
+            )
             new_qty_total = remaining_qty + new_qty
-            new_cost_total = remaining_cost + float(new_cost)
-            new_avg = new_cost_total / new_qty_total if new_qty_total else 0.0
             df.at[idx, "quantity"] = int(new_qty_total)
             df.at[idx, "avg_buy_price"] = round(float(new_avg), 4)
             last_price = latest_price_map.get(key)

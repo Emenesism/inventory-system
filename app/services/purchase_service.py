@@ -46,14 +46,18 @@ class PurchaseService:
                 old_qty = int(updated_df.at[idx, "quantity"])
                 old_avg = float(updated_df.at[idx, "avg_buy_price"])
 
-                effective_qty = old_qty if old_qty > 0 else 0
-                effective_avg = old_avg if old_avg > 0 else float(line.price)
+                avg_base_qty = old_qty if old_qty > 0 else 0
+                avg_base_price = old_avg if old_avg > 0 else float(line.price)
+                avg_denominator = avg_base_qty + line.quantity
+                if avg_denominator:
+                    new_avg = (
+                        avg_base_price * avg_base_qty
+                        + line.price * line.quantity
+                    ) / avg_denominator
+                else:
+                    new_avg = 0.0
 
-                new_qty = effective_qty + line.quantity
-                new_avg = (
-                    effective_avg * effective_qty + line.price * line.quantity
-                ) / new_qty
-
+                new_qty = old_qty + line.quantity
                 updated_df.at[idx, "quantity"] = new_qty
                 updated_df.at[idx, "avg_buy_price"] = round(new_avg, 4)
                 updated_df.at[idx, "last_buy_price"] = round(line.price, 4)
