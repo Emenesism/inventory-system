@@ -43,33 +43,49 @@ class BaleBackupRestorer:
         self.restart_required = False
         self.missing_files = []
         self.pending_files = []
+        self._logger.info(
+            "Starting backup restore (db=%s, stock=%s).",
+            self.db_path,
+            self.stock_path,
+        )
         token = (self.config.bot_token or "").strip()
         channel_id = (self.config.channel_id or "").strip()
         if not token or not channel_id:
             if raise_errors:
                 raise RuntimeError("تنظیمات ربات یا کانال ناقص است.")
+            self._logger.warning(
+                "Backup restore skipped (missing bot_token/channel_id)."
+            )
             return False
 
         client = BaleBotClient(token=token)
         if on_status:
             on_status("در حال دریافت بروزرسانی‌ها از بله...")
         updates = self._fetch_latest_update(client)
+        self._logger.info("Fetched %d update(s) from Bale.", len(updates))
 
         if on_status:
             on_status("در حال بررسی پیام‌های کانال پشتیبان...")
         latest_message = self._latest_channel_message(updates, channel_id)
         if latest_message is None:
+            self._logger.warning("No backup message found for channel.")
             return False
 
         backup_name = self._extract_file_name(latest_message)
         file_id = self._extract_file_id(latest_message)
         if not file_id:
+            self._logger.warning("Latest channel message has no file_id.")
             return False
+        self._logger.info(
+            "Latest backup message found (name=%s).",
+            backup_name or "-",
+        )
 
         if on_status:
             on_status("در حال دریافت فایل پشتیبان...")
         file_path = self._get_file_path(client, file_id)
         if not file_path:
+            self._logger.warning("Backup file path not resolved from Bale.")
             return False
 
         download_url = client.build_file_url(file_path)
@@ -85,9 +101,16 @@ class BaleBackupRestorer:
         if on_status:
             on_status("در حال استخراج فایل پشتیبان...")
         payload = response.content
+        self._logger.info("Backup download size: %d bytes.", len(payload))
         db_bytes, stock_bytes = self._extract_files(payload)
         if not db_bytes and not stock_bytes:
+            self._logger.warning("Backup archive contained no known files.")
             return False
+        self._logger.info(
+            "Backup contents (db=%s, stock=%s).",
+            "yes" if db_bytes else "no",
+            "yes" if stock_bytes else "no",
+        )
 
         if db_bytes:
             if on_status:
@@ -101,6 +124,11 @@ class BaleBackupRestorer:
                 self.missing_files.append(self.db_path.name)
             if stock_bytes and not self.stock_path.exists():
                 self.missing_files.append(self.stock_path.name)
+            if self.missing_files:
+                self._logger.info(
+                    "Missing files before restore: %s",
+                    ", ".join(self.missing_files),
+                )
             with db_lock():
                 if db_bytes:
                     replaced = self._atomic_replace(self.db_path, db_bytes)
@@ -112,6 +140,11 @@ class BaleBackupRestorer:
                     )
                     if not replaced:
                         self.pending_files.append(self.stock_path.name)
+            if self.pending_files:
+                self._logger.warning(
+                    "Restore pending for locked files: %s",
+                    ", ".join(self.pending_files),
+                )
             if self.missing_files or self.pending_files:
                 self.restart_required = True
                 self._logger.info(
@@ -119,12 +152,15 @@ class BaleBackupRestorer:
                     ", ".join(self.missing_files) or "-",
                     ", ".join(self.pending_files) or "-",
                 )
+            else:
+                self._logger.info("Backup restored successfully in-place.")
 
         if backup_name:
             self._store_backup_name(backup_name)
 
         if on_status:
             on_status("پاکسازی فایل‌های موقت...")
+        self._logger.info("Backup restore finished.")
         return True
 
     def restart_message(self) -> str | None:
@@ -159,6 +195,11 @@ class BaleBackupRestorer:
             pending_path = self._pending_restore_path(path)
             if not pending_path.exists():
                 continue
+            self._logger.info(
+                "Applying pending restore file: %s -> %s",
+                pending_path,
+                path,
+            )
             try:
                 pending_path.replace(path)
                 restored.append(path.name)

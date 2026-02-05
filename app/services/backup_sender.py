@@ -177,6 +177,11 @@ class BackupSender:
         raise_errors: bool = False,
         admin_username: str | None = None,
     ) -> bool:
+        self._logger.info(
+            "Backup requested (reason=%s, admin=%s).",
+            reason or "-",
+            admin_username or "-",
+        )
         token = (self.config.bot_token or "").strip()
         chat_id = (self.config.channel_id or "").strip()
         if not token or not chat_id:
@@ -188,10 +193,12 @@ class BackupSender:
         temp_dir: Path | None = None
         try:
             temp_dir = Path(tempfile.mkdtemp(prefix="armkala_backup_"))
+            self._logger.info("Backup temp directory created: %s", temp_dir)
             zip_path = self._create_backup_zip(temp_dir, on_status=on_status)
             if zip_path is None:
                 if on_status:
                     on_status("هیچ فایلی برای پشتیبان یافت نشد.")
+                self._logger.warning("Backup zip not created (no files).")
                 return False
             if on_status:
                 on_status("در حال ارسال نسخه پشتیبان به کانال...")
@@ -202,6 +209,15 @@ class BackupSender:
                 document=zip_path,
                 caption=caption,
                 request_format=REQUEST_FORMAT_MULTIPART,
+            )
+            try:
+                size = zip_path.stat().st_size
+            except OSError:
+                size = 0
+            self._logger.info(
+                "Backup sent successfully (zip=%s, size=%d bytes).",
+                zip_path,
+                size,
             )
             return True
         except requests.RequestException as exc:
@@ -216,17 +232,27 @@ class BackupSender:
             return False
         finally:
             if temp_dir is not None:
+                self._logger.info(
+                    "Cleaning up backup temp directory: %s", temp_dir
+                )
                 _safe_rmtree(temp_dir)
 
     def _create_backup_zip(self, temp_dir: Path, on_status=None) -> Path | None:
         date_stamp = _jalali_date_stamp()
         zip_path = temp_dir / f"{date_stamp}.zip"
         db_snapshot = None
+        self._logger.info(
+            "Preparing backup zip at %s (db=%s, stock=%s).",
+            zip_path,
+            self.db_path,
+            self.stock_path,
+        )
 
         if self.db_path.exists():
             db_snapshot = temp_dir / DEFAULT_DB_NAME
             if on_status:
                 on_status("در حال تهیه نسخه پشتیبان از پایگاه داده...")
+            self._logger.info("Creating SQLite snapshot: %s", db_snapshot)
             self._snapshot_db(db_snapshot)
 
         stock_path = self.stock_path if self.stock_path else None
@@ -254,6 +280,7 @@ class BackupSender:
                     else stock_path.name
                 )
                 zip_file.write(stock_path, arcname=arcname)
+        self._logger.info("Backup zip created: %s", zip_path)
 
         return zip_path
 
@@ -262,6 +289,15 @@ class BackupSender:
             with db_connection(self.db_path, foreign_keys=False) as source:
                 with sqlite3.connect(target_path) as dest:
                     source.backup(dest)
+            try:
+                size = target_path.stat().st_size
+            except OSError:
+                size = 0
+            self._logger.info(
+                "SQLite snapshot created (path=%s, size=%d bytes).",
+                target_path,
+                size,
+            )
         except sqlite3.Error as exc:
             raise RuntimeError("SQLite backup failed.") from exc
 
