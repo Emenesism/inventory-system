@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -29,6 +30,7 @@ from app.utils import dialogs
 from app.utils.dates import to_jalali_datetime
 from app.utils.excel import export_invoice_excel
 from app.utils.numeric import format_amount
+from app.utils.pdf import export_invoice_pdf
 from app.utils.text import normalize_text
 
 
@@ -335,8 +337,8 @@ class InvoicesPage(QWidget):
             export_button = QPushButton("Export")
             export_button.setProperty("compact", True)
             export_button.clicked.connect(
-                lambda _=False, inv_id=invoice.invoice_id: self._export_invoice(
-                    inv_id
+                lambda _=False, inv_id=invoice.invoice_id, btn=export_button: (
+                    self._open_invoice_export_menu(btn, inv_id)
                 )
             )
             self.invoices_table.setCellWidget(row_idx, 7, export_button)
@@ -607,7 +609,19 @@ class InvoicesPage(QWidget):
             dialogs.show_info(self, "Invoices", "Invoice deleted.")
         self._after_invoice_change()
 
-    def _export_invoice(self, invoice_id: int) -> None:
+    def _open_invoice_export_menu(
+        self, button: QPushButton, invoice_id: int
+    ) -> None:
+        menu = QMenu(button)
+        excel_action = menu.addAction("Excel (.xlsx)")
+        pdf_action = menu.addAction("PDF (.pdf)")
+        action = menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+        if action == excel_action:
+            self._export_invoice(invoice_id, "excel")
+        elif action == pdf_action:
+            self._export_invoice(invoice_id, "pdf")
+
+    def _export_invoice(self, invoice_id: int, file_format: str) -> None:
         invoice = self.invoice_service.get_invoice(invoice_id)
         if invoice is None:
             dialogs.show_error(self, "Export Invoice", "Invoice not found.")
@@ -616,18 +630,36 @@ class InvoicesPage(QWidget):
         if not lines:
             dialogs.show_error(self, "Export Invoice", "Invoice has no lines.")
             return
-        default_name = f"invoice_{invoice.invoice_id}.xlsx"
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Invoice",
-            default_name,
-            "Excel Files (*.xlsx)",
-        )
-        if not file_path:
-            return
-        if not file_path.lower().endswith(".xlsx"):
-            file_path = f"{file_path}.xlsx"
-        export_invoice_excel(file_path, invoice, lines)
+
+        if file_format == "pdf":
+            default_name = f"invoice_{invoice.invoice_id}.pdf"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Invoice",
+                default_name,
+                "PDF Files (*.pdf)",
+            )
+            if not file_path:
+                return
+            if not file_path.lower().endswith(".pdf"):
+                file_path = f"{file_path}.pdf"
+            export_invoice_pdf(file_path, invoice, lines)
+            log_title = "خروجی PDF فاکتور"
+        else:
+            default_name = f"invoice_{invoice.invoice_id}.xlsx"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Invoice",
+                default_name,
+                "Excel Files (*.xlsx)",
+            )
+            if not file_path:
+                return
+            if not file_path.lower().endswith(".xlsx"):
+                file_path = f"{file_path}.xlsx"
+            export_invoice_excel(file_path, invoice, lines)
+            log_title = "خروجی اکسل فاکتور"
+
         if self._action_log_service:
             admin = (
                 self._current_admin_provider()
@@ -636,7 +668,7 @@ class InvoicesPage(QWidget):
             )
             self._action_log_service.log_action(
                 "invoice_export",
-                "خروجی اکسل فاکتور",
+                log_title,
                 f"شماره فاکتور: {invoice.invoice_id}\nمسیر: {file_path}",
                 admin=admin,
             )

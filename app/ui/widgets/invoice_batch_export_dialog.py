@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -35,6 +36,7 @@ from app.utils.dates import (
 )
 from app.utils.excel import export_invoices_excel
 from app.utils.numeric import format_amount
+from app.utils.pdf import export_invoices_pdf
 from app.utils.text import normalize_text
 
 
@@ -209,7 +211,7 @@ class InvoiceBatchExportDialog(QDialog):
         self.close_button.clicked.connect(self.reject)
         action_row.addWidget(self.close_button)
         self.export_button = QPushButton("Export")
-        self.export_button.clicked.connect(self._export)
+        self.export_button.clicked.connect(self._open_export_menu)
         action_row.addWidget(self.export_button)
         layout.addLayout(action_row)
 
@@ -371,25 +373,52 @@ class InvoiceBatchExportDialog(QDialog):
             return None, None, "Invoice ID range is invalid."
         return id_from, id_to, None
 
-    def _export(self) -> None:
+    def _open_export_menu(self) -> None:
+        menu = QMenu(self.export_button)
+        excel_action = menu.addAction("Excel (.xlsx)")
+        pdf_action = menu.addAction("PDF (.pdf)")
+        action = menu.exec(
+            self.export_button.mapToGlobal(
+                QPoint(0, self.export_button.height())
+            )
+        )
+        if action == excel_action:
+            self._export("excel")
+        elif action == pdf_action:
+            self._export("pdf")
+
+    def _export(self, file_format: str) -> None:
         if not self._invoices:
             dialogs.show_error(self, "Export", "No invoices to export.")
             return
+        if file_format == "pdf":
+            default_name = "invoices_export.pdf"
+            file_filter = "PDF Files (*.pdf)"
+        else:
+            default_name = "invoices_export.xlsx"
+            file_filter = "Excel Files (*.xlsx)"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Invoices",
-            "invoices_export.xlsx",
-            "Excel Files (*.xlsx)",
+            default_name,
+            file_filter,
         )
         if not file_path:
             return
-        if not file_path.lower().endswith(".xlsx"):
-            file_path = f"{file_path}.xlsx"
+        if file_format == "pdf":
+            if not file_path.lower().endswith(".pdf"):
+                file_path = f"{file_path}.pdf"
+        else:
+            if not file_path.lower().endswith(".xlsx"):
+                file_path = f"{file_path}.xlsx"
         invoices_with_lines = []
         for invoice in self._invoices:
             lines = self.invoice_service.get_invoice_lines(invoice.invoice_id)
             invoices_with_lines.append((invoice, lines))
-        export_invoices_excel(file_path, invoices_with_lines)
+        if file_format == "pdf":
+            export_invoices_pdf(file_path, invoices_with_lines)
+        else:
+            export_invoices_excel(file_path, invoices_with_lines)
         if self.action_log_service:
             admin = (
                 self._current_admin_provider()
@@ -420,6 +449,7 @@ class InvoiceBatchExportDialog(QDialog):
                     f"فیلتر کالا: {filter_text}\n"
                     f"نوع فیلتر: {filter_type}\n"
                     f"تعداد فاکتور: {len(invoices_with_lines)}\n"
+                    f"فرمت: {'PDF' if file_format == 'pdf' else 'Excel'}\n"
                     f"مسیر: {file_path}"
                 ),
                 admin=admin,
