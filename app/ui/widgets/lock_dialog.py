@@ -75,10 +75,14 @@ class LockDialog(QDialog):
         button_row = QHBoxLayout()
         close_button = QPushButton("Close app")
         close_button.clicked.connect(self._close_app)
+        close_button.setAutoDefault(False)
+        close_button.setDefault(False)
         button_row.addWidget(close_button)
         button_row.addStretch(1)
         unlock_button = QPushButton("Unlock")
         unlock_button.clicked.connect(self._try_unlock)
+        unlock_button.setDefault(True)
+        unlock_button.setAutoDefault(True)
         button_row.addWidget(unlock_button)
         card_layout.addLayout(button_row)
 
@@ -102,6 +106,12 @@ class LockDialog(QDialog):
     def _close_app(self) -> None:
         self.close_requested = True
         QDialog.reject(self)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self.close_requested:
+            super().closeEvent(event)
+            return
+        event.ignore()
 
     def reject(self) -> None:
         return
