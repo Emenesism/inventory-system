@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -71,6 +72,9 @@ class LockDialog(QDialog):
         card_layout.addWidget(self.error_label)
 
         button_row = QHBoxLayout()
+        close_button = QPushButton("Close app")
+        close_button.clicked.connect(self._close_app)
+        button_row.addWidget(close_button)
         button_row.addStretch(1)
         unlock_button = QPushButton("Unlock")
         unlock_button.clicked.connect(self._try_unlock)
@@ -93,6 +97,11 @@ class LockDialog(QDialog):
         self.error_label.setText("Wrong username or password.")
         self.password_input.selectAll()
         self.password_input.setFocus()
+
+    def _close_app(self) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def reject(self) -> None:
         return

@@ -57,7 +57,7 @@ class BackupProgressOverlay(QFrame):
         self.progress_bar.setValue(1 if success else 0)
         self.adjustSize()
         self._reposition()
-        self._close_timer.start(1500)
+        self._close_timer.start(5000)
 
     def _reposition(self) -> None:
         parent = self.parentWidget()
