@@ -225,6 +225,11 @@ class SettingsPage(QWidget):
         else:
             self.admin_card.hide()
 
+    def refresh_admins(self) -> None:
+        if self.current_admin is None or self.current_admin.role != "manager":
+            return
+        self._refresh_admins()
+
     def _update_password(self) -> None:
         if self.current_admin is None:
             return

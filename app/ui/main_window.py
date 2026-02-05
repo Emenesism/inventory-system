@@ -286,6 +286,12 @@ class MainWindow(QMainWindow):
             self.refresh_inventory_views()
         else:
             self.disable_inventory_features("Inventory not loaded")
+        try:
+            self.settings_page.refresh_admins()
+        except Exception:  # noqa: BLE001
+            self._logger.exception(
+                "Failed to reload admin list after backup restore"
+            )
         self.refresh_history_views()
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
