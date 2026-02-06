@@ -63,6 +63,7 @@ def _draw_invoice_pdf(
         export_dt.isoformat(timespec="seconds")
     ).split(" ")[0]
     invoice_date = to_jalali_datetime(invoice.created_at).split(" ")[0]
+    invoice_name = str(getattr(invoice, "invoice_name", "") or "").strip()
 
     merged_lines = _aggregate_invoice_lines(lines)
     total_qty = sum(int(line["quantity"]) for line in merged_lines)
@@ -71,6 +72,7 @@ def _draw_invoice_pdf(
     title_font = QFont("Vazirmatn", 18, QFont.Bold)
     header_font = QFont("Vazirmatn", 11, QFont.Bold)
     body_font = QFont("Vazirmatn", 11)
+    product_font = QFont("Vazirmatn", 10)
     label_font = QFont("Vazirmatn", 10, QFont.Bold)
 
     def _font_height(font: QFont) -> float:
@@ -138,8 +140,23 @@ def _draw_invoice_pdf(
             )
             y += band_height + section_gap
 
+            header_rows = [
+                (
+                    "تاریخ فاکتور:",
+                    invoice_date,
+                    "تاریخ خروجی:",
+                    export_date,
+                ),
+                (
+                    "شماره فاکتور:",
+                    str(invoice.invoice_id),
+                    "نوع:",
+                    invoice_type_text,
+                ),
+                ("نام فاکتور:", invoice_name, "", ""),
+            ]
             card_padding = max(6, int(row_height * 0.25))
-            card_height = info_row_height * 2 + card_padding * 2
+            card_height = info_row_height * len(header_rows) + card_padding * 2
             card_rect = QRectF(x0, y, content_width, card_height)
             painter.setPen(QPen(header_divider, 1))
             painter.setBrush(header_card_fill)
@@ -156,20 +173,7 @@ def _draw_invoice_pdf(
                 label_color,
                 text_color,
                 header_divider,
-                [
-                    (
-                        "تاریخ فاکتور:",
-                        invoice_date,
-                        "تاریخ خروجی:",
-                        export_date,
-                    ),
-                    (
-                        "شماره فاکتور:",
-                        str(invoice.invoice_id),
-                        "نوع:",
-                        invoice_type_text,
-                    ),
-                ],
+                header_rows,
                 cell_padding,
             )
             y += card_height + section_gap
@@ -207,6 +211,7 @@ def _draw_invoice_pdf(
                 col_lefts,
                 col_widths,
                 body_font,
+                product_font,
                 text_color,
                 border_color,
                 stripe_fill if (row_idx + 1) % 2 == 0 else None,
@@ -317,12 +322,13 @@ def _draw_header_info(
         start_y + row_height * len(rows),
     )
     if len(rows) > 1:
-        painter.drawLine(
-            x0 + padding,
-            start_y + row_height,
-            x0 + content_width - padding,
-            start_y + row_height,
-        )
+        for idx in range(1, len(rows)):
+            painter.drawLine(
+                x0 + padding,
+                start_y + row_height * idx,
+                x0 + content_width - padding,
+                start_y + row_height * idx,
+            )
 
     for row_idx, (label_a, value_a, label_b, value_b) in enumerate(rows):
         y = start_y + row_idx * row_height
@@ -453,6 +459,7 @@ def _draw_table_row(
     col_lefts: list[float],
     col_widths: list[float],
     body_font: QFont,
+    product_font: QFont,
     text_color: QColor,
     border_color: QColor,
     fill: QColor | None,
@@ -478,7 +485,7 @@ def _draw_table_row(
             painter,
             merged_rect,
             str(line["product_name"]),
-            body_font,
+            product_font,
             Qt.AlignRight,
             fill,
             border_color,
@@ -512,11 +519,12 @@ def _draw_table_row(
             Qt.AlignCenter,
         ]
         for idx, value in enumerate(values):
+            font = product_font if idx == 1 else body_font
             _draw_cell(
                 painter,
                 QRectF(col_lefts[idx], y, col_widths[idx], row_height),
                 value,
-                body_font,
+                font,
                 aligns[idx],
                 fill,
                 border_color,

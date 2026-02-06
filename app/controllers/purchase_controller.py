@@ -97,6 +97,7 @@ class PurchaseInvoiceController(QObject):
         if dialog.exec() != QDialog.Accepted:
             self.toast.show("Purchase invoice canceled", "info")
             return
+        invoice_name = dialog.invoice_name()
 
         admin = (
             self._current_admin_provider()
@@ -124,6 +125,7 @@ class PurchaseInvoiceController(QObject):
             try:
                 invoice_id = self.invoice_service.create_purchase_invoice(
                     valid_lines,
+                    invoice_name=invoice_name,
                     admin_id=admin.admin_id if admin else None,
                     admin_username=admin_username,
                 )

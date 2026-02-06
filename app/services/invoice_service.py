@@ -21,6 +21,7 @@ class InvoiceSummary:
     total_lines: int
     total_qty: int
     total_amount: float
+    invoice_name: str | None
     admin_id: int | None
     admin_username: str | None
 
@@ -52,10 +53,24 @@ class InvoiceService:
             db_path = app_dir() / "invoices.db"
         self.db_path = db_path
         self.backup_dir = backup_dir
+        self._schema_signature: tuple[int, int, int] | None = None
         self._init_db()
 
     def _connect(self):
         return db_connection(self.db_path, row_factory=sqlite3.Row)
+
+    def _db_signature(self) -> tuple[int, int, int] | None:
+        try:
+            stat = self.db_path.stat()
+        except FileNotFoundError:
+            return None
+        return (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+    def _ensure_schema(self) -> None:
+        current = self._db_signature()
+        if current != self._schema_signature:
+            self._init_db()
+            self._schema_signature = self._db_signature()
 
     def _backup_db(self) -> None:
         if not self.db_path.exists():
@@ -80,7 +95,8 @@ class InvoiceService:
                     created_at TEXT NOT NULL,
                     total_lines INTEGER NOT NULL,
                     total_qty INTEGER NOT NULL,
-                    total_amount REAL NOT NULL
+                    total_amount REAL NOT NULL,
+                    invoice_name TEXT
                 )
                 """
             )
@@ -117,6 +133,10 @@ class InvoiceService:
                     "PRAGMA table_info(invoices)"
                 ).fetchall()
             }
+            if "invoice_name" not in invoice_columns:
+                conn.execute(
+                    "ALTER TABLE invoices ADD COLUMN invoice_name TEXT"
+                )
             if "admin_id" not in invoice_columns:
                 conn.execute("ALTER TABLE invoices ADD COLUMN admin_id INTEGER")
             if "admin_username" not in invoice_columns:
@@ -131,13 +151,16 @@ class InvoiceService:
                 "CREATE INDEX IF NOT EXISTS idx_invoices_created_at "
                 "ON invoices(created_at)"
             )
+        self._schema_signature = self._db_signature()
 
     def create_purchase_invoice(
         self,
         lines: list[PurchaseLine],
+        invoice_name: str | None = None,
         admin_id: int | None = None,
         admin_username: str | None = None,
     ) -> int:
+        self._ensure_schema()
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
@@ -154,9 +177,10 @@ class InvoiceService:
                     total_lines,
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "purchase",
@@ -164,6 +188,7 @@ class InvoiceService:
                     len(lines),
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username,
                 ),
@@ -203,10 +228,12 @@ class InvoiceService:
     def create_sales_invoice(
         self,
         lines: list[SalesLine],
+        invoice_name: str | None = None,
         admin_id: int | None = None,
         admin_username: str | None = None,
         invoice_type: str = "sales",
     ) -> int:
+        self._ensure_schema()
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
         created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
@@ -223,9 +250,10 @@ class InvoiceService:
                     total_lines,
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     invoice_type,
@@ -233,6 +261,7 @@ class InvoiceService:
                     len(lines),
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username,
                 ),
@@ -272,6 +301,7 @@ class InvoiceService:
     def list_invoices(
         self, limit: int = 200, offset: int = 0
     ) -> list[InvoiceSummary]:
+        self._ensure_schema()
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -282,6 +312,7 @@ class InvoiceService:
                     total_lines,
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username
                 FROM invoices
@@ -299,6 +330,7 @@ class InvoiceService:
                 total_lines=row["total_lines"],
                 total_qty=row["total_qty"],
                 total_amount=row["total_amount"],
+                invoice_name=row["invoice_name"],
                 admin_id=row["admin_id"],
                 admin_username=row["admin_username"],
             )
@@ -314,6 +346,7 @@ class InvoiceService:
         id_from: int | None = None,
         id_to: int | None = None,
     ) -> list[InvoiceSummary]:
+        self._ensure_schema()
         with self._connect() as conn:
             conditions = ["i.created_at >= ?", "i.created_at <= ?"]
             params: list[object] = [start_iso, end_iso]
@@ -341,6 +374,7 @@ class InvoiceService:
                         i.total_lines,
                         i.total_qty,
                         i.total_amount,
+                        i.invoice_name,
                         i.admin_id,
                         i.admin_username
                     FROM invoices i
@@ -360,6 +394,7 @@ class InvoiceService:
                         i.total_lines,
                         i.total_qty,
                         i.total_amount,
+                        i.invoice_name,
                         i.admin_id,
                         i.admin_username
                     FROM invoices i
@@ -376,6 +411,7 @@ class InvoiceService:
                 total_lines=row["total_lines"],
                 total_qty=row["total_qty"],
                 total_amount=row["total_amount"],
+                invoice_name=row["invoice_name"],
                 admin_id=row["admin_id"],
                 admin_username=row["admin_username"],
             )
@@ -383,6 +419,7 @@ class InvoiceService:
         ]
 
     def get_invoice(self, invoice_id: int) -> InvoiceSummary | None:
+        self._ensure_schema()
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -393,6 +430,7 @@ class InvoiceService:
                     total_lines,
                     total_qty,
                     total_amount,
+                    invoice_name,
                     admin_id,
                     admin_username
                 FROM invoices
@@ -409,6 +447,7 @@ class InvoiceService:
             total_lines=row["total_lines"],
             total_qty=row["total_qty"],
             total_amount=row["total_amount"],
+            invoice_name=row["invoice_name"],
             admin_id=row["admin_id"],
             admin_username=row["admin_username"],
         )
@@ -418,8 +457,10 @@ class InvoiceService:
         invoice_id: int,
         invoice_type: str,
         lines: list[InvoiceLine],
+        invoice_name: str | None,
         admin_username: str | None = None,
     ) -> None:
+        self._ensure_schema()
         total_qty = sum(line.quantity for line in lines)
         total_amount = sum(line.price * line.quantity for line in lines)
         self._backup_db()
@@ -459,27 +500,45 @@ class InvoiceService:
             conn.execute(
                 """
                 UPDATE invoices
-                SET total_lines = ?, total_qty = ?, total_amount = ?
+                SET total_lines = ?, total_qty = ?, total_amount = ?, invoice_name = ?
                 WHERE id = ?
                 """,
-                (len(lines), total_qty, total_amount, invoice_id),
+                (len(lines), total_qty, total_amount, invoice_name, invoice_id),
+            )
+        send_backup(reason="invoice_updated", admin_username=admin_username)
+
+    def update_invoice_name(
+        self,
+        invoice_id: int,
+        invoice_name: str | None,
+        admin_username: str | None = None,
+    ) -> None:
+        self._ensure_schema()
+        self._backup_db()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE invoices SET invoice_name = ? WHERE id = ?",
+                (invoice_name, invoice_id),
             )
         send_backup(reason="invoice_updated", admin_username=admin_username)
 
     def delete_invoice(
         self, invoice_id: int, admin_username: str | None = None
     ) -> None:
+        self._ensure_schema()
         self._backup_db()
         with self._connect() as conn:
             conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
         send_backup(reason="invoice_deleted", admin_username=admin_username)
 
     def count_invoices(self) -> int:
+        self._ensure_schema()
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()
         return int(row[0] if row else 0)
 
     def get_invoice_stats(self) -> tuple[int, float]:
+        self._ensure_schema()
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM invoices"
@@ -489,6 +548,7 @@ class InvoiceService:
         return int(row[0]), float(row[1])
 
     def get_invoice_lines(self, invoice_id: int) -> list[InvoiceLine]:
+        self._ensure_schema()
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -511,6 +571,7 @@ class InvoiceService:
         ]
 
     def get_monthly_summary(self, limit: int = 12) -> list[dict[str, float]]:
+        self._ensure_schema()
         with self._connect() as conn:
             rows = conn.execute(
                 """

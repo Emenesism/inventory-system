@@ -123,11 +123,12 @@ class InvoicesPage(QWidget):
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.invoices_table = QTableWidget(0, 8)
+        self.invoices_table = QTableWidget(0, 9)
         self.invoices_table.setHorizontalHeaderLabels(
             [
                 "Date (IR)",
                 "شماره فاکتور",
+                "Name",
                 "Type",
                 "Lines",
                 "Quantity",
@@ -139,13 +140,14 @@ class InvoicesPage(QWidget):
         header_view = self.invoices_table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.Stretch)
         header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(2, QHeaderView.Stretch)
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        self.invoices_table.setColumnWidth(7, 90)
+        header_view.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        self.invoices_table.setColumnWidth(8, 90)
         self.invoices_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoices_table.setAlternatingRowColors(True)
         if hasattr(self.invoices_table, "setUniformRowHeights"):
@@ -239,6 +241,8 @@ class InvoicesPage(QWidget):
                 self._format_type(invoice_type),
                 to_jalali_datetime(inv.created_at),
             ]
+            if inv.invoice_name:
+                header_parts.insert(1, f"نام: {inv.invoice_name}")
             header_parts.append(
                 f"Admin {self._format_admin(inv.admin_id, inv.admin_username)}"
             )
@@ -311,20 +315,25 @@ class InvoicesPage(QWidget):
             self.invoices_table.setItem(
                 row_idx,
                 2,
+                QTableWidgetItem(invoice.invoice_name or ""),
+            )
+            self.invoices_table.setItem(
+                row_idx,
+                3,
                 QTableWidgetItem(self._format_type(invoice.invoice_type)),
             )
             lines_item = QTableWidgetItem(str(invoice.total_lines))
             lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 3, lines_item)
+            self.invoices_table.setItem(row_idx, 4, lines_item)
 
             qty_item = QTableWidgetItem(str(invoice.total_qty))
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 4, qty_item)
+            self.invoices_table.setItem(row_idx, 5, qty_item)
 
             admin_item = QTableWidgetItem(
                 self._format_admin(invoice.admin_id, invoice.admin_username)
             )
-            self.invoices_table.setItem(row_idx, 5, admin_item)
+            self.invoices_table.setItem(row_idx, 6, admin_item)
 
             show_price = self._should_show_prices(invoice.invoice_type)
             total_value = (
@@ -332,7 +341,7 @@ class InvoicesPage(QWidget):
             )
             total_item = QTableWidgetItem(total_value)
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 6, total_item)
+            self.invoices_table.setItem(row_idx, 7, total_item)
 
             export_button = QPushButton("Export")
             export_button.setProperty("compact", True)
@@ -341,7 +350,7 @@ class InvoicesPage(QWidget):
                     self._open_invoice_export_menu(btn, inv_id)
                 )
             )
-            self.invoices_table.setCellWidget(row_idx, 7, export_button)
+            self.invoices_table.setCellWidget(row_idx, 8, export_button)
 
         self.invoices.extend(batch)
         self._loaded_count += len(batch)
@@ -386,7 +395,7 @@ class InvoicesPage(QWidget):
             self._show_selected_details()
 
     def _apply_price_visibility(self) -> None:
-        self.invoices_table.setColumnHidden(6, False)
+        self.invoices_table.setColumnHidden(7, False)
         self.lines_table.setColumnHidden(1, False)
         self.lines_table.setColumnHidden(3, False)
 
@@ -474,6 +483,50 @@ class InvoicesPage(QWidget):
         if dialog.exec() != QDialog.Accepted or dialog.updated_lines is None:
             return
         new_lines = dialog.updated_lines
+        new_name = dialog.updated_name
+        name_changed = (new_name or None) != (invoice.invoice_name or None)
+        lines_changed = not self._lines_equal(lines, new_lines)
+        if not lines_changed and not name_changed:
+            return
+        if not lines_changed and name_changed:
+            admin = (
+                self._current_admin_provider()
+                if self._current_admin_provider
+                else None
+            )
+            admin_username = admin.username if admin else None
+            try:
+                self.invoice_service.update_invoice_name(
+                    invoice.invoice_id,
+                    new_name,
+                    admin_username=admin_username,
+                )
+            except Exception as exc:  # noqa: BLE001
+                dialogs.show_error(self, "Edit Invoice", str(exc))
+                return
+            if self._action_log_service:
+                title = (
+                    "ویرایش نام فاکتور فروش"
+                    if invoice.invoice_type.startswith("sales")
+                    else "ویرایش نام فاکتور خرید"
+                )
+                details = (
+                    f"شماره فاکتور: {invoice.invoice_id}\n"
+                    f"نام قبلی: {invoice.invoice_name or ''}\n"
+                    f"نام جدید: {new_name or ''}"
+                )
+                self._action_log_service.log_action(
+                    "invoice_edit",
+                    title,
+                    details,
+                    admin=admin,
+                )
+            if self.toast:
+                self.toast.show("Invoice updated", "success")
+            else:
+                dialogs.show_info(self, "Invoices", "Invoice updated.")
+            self._after_invoice_change()
+            return
         updated_df, delta_map, error = self._apply_invoice_change(
             invoice.invoice_type, lines, new_lines
         )
@@ -481,16 +534,23 @@ class InvoicesPage(QWidget):
             dialogs.show_error(self, "Edit Invoice", error)
             return
         impact_text = self._format_stock_impact(delta_map)
+        confirm_message = (
+            f"Save changes to invoice #{invoice.invoice_id}?\n"
+            f"Type: {self._format_type(invoice.invoice_type)}\n"
+            f"Date: {to_jalali_datetime(invoice.created_at)}\n"
+        )
+        if name_changed:
+            confirm_message += (
+                f"Name: {invoice.invoice_name or ''} → {new_name or ''}\n"
+            )
+        confirm_message += (
+            f"Lines: {len(lines)} → {len(new_lines)}\n"
+            f"Stock impact:\n{impact_text}"
+        )
         confirm = dialogs.ask_yes_no(
             self,
             "Edit Invoice",
-            (
-                f"Save changes to invoice #{invoice.invoice_id}?\n"
-                f"Type: {self._format_type(invoice.invoice_type)}\n"
-                f"Date: {to_jalali_datetime(invoice.created_at)}\n"
-                f"Lines: {len(lines)} → {len(new_lines)}\n"
-                f"Stock impact:\n{impact_text}"
-            ),
+            confirm_message,
         )
         if not confirm:
             return
@@ -506,6 +566,7 @@ class InvoicesPage(QWidget):
                 invoice.invoice_id,
                 invoice.invoice_type,
                 new_lines,
+                new_name,
                 admin_username=admin_username,
             ),
             admin_username=admin_username,
@@ -814,6 +875,21 @@ class InvoicesPage(QWidget):
         if errors:
             return None, {}, "\n".join(errors[:5])
         return df, delta_map, ""
+
+    @staticmethod
+    def _lines_equal(old_lines, new_lines) -> bool:
+        if len(old_lines) != len(new_lines):
+            return False
+        for old, new in zip(old_lines, new_lines):
+            if normalize_text(old.product_name) != normalize_text(
+                new.product_name
+            ):
+                return False
+            if int(old.quantity) != int(new.quantity):
+                return False
+            if abs(float(old.price) - float(new.price)) > 0.0001:
+                return False
+        return True
 
     @staticmethod
     def _aggregate_lines(lines, include_cost: bool):

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QStyledItemDelegate,
     QTableWidget,
@@ -37,6 +38,7 @@ class InvoiceEditDialog(QDialog):
             normalize_text(name): name for name in product_names
         }
         self.updated_lines: list[InvoiceLine] | None = None
+        self.updated_name: str | None = invoice.invoice_name
         self._updating = False
 
         self.setWindowTitle(f"Edit Invoice #{invoice.invoice_id}")
@@ -58,6 +60,16 @@ class InvoiceEditDialog(QDialog):
         )
         meta.setProperty("textRole", "muted")
         layout.addWidget(meta)
+
+        name_row = QHBoxLayout()
+        name_label = QLabel("Invoice Name:")
+        name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        name_row.addWidget(name_label)
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Optional")
+        self.name_input.setText(invoice.invoice_name or "")
+        name_row.addWidget(self.name_input, 1)
+        layout.addLayout(name_row)
 
         hint_text = (
             "Double-click to edit. Use Remove Line for mistakes, "
@@ -359,8 +371,13 @@ class InvoiceEditDialog(QDialog):
                 "Invoice must have at least one valid line.",
             )
             return
+        self.updated_name = self._normalized_name()
         self.updated_lines = lines
         self.accept()
+
+    def _normalized_name(self) -> str | None:
+        name = self.name_input.text().strip()
+        return name if name else None
 
     @staticmethod
     def _parse_price(text: str) -> float | None:

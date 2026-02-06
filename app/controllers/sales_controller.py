@@ -119,6 +119,7 @@ class SalesImportController(QObject):
 
         self.page.flush_pending_edits()
 
+        invoice_name = None
         try:
             inventory_df = self.inventory_service.get_dataframe()
             preview_lines = [
@@ -137,6 +138,7 @@ class SalesImportController(QObject):
             if preview_dialog.exec() != QDialog.Accepted:
                 self.toast.show("Sales import canceled", "info")
                 return
+            invoice_name = preview_dialog.invoice_name()
         except Exception:  # noqa: BLE001
             self._logger.exception("Failed to prepare sales import preview")
             dialogs.show_error(
@@ -181,6 +183,7 @@ class SalesImportController(QObject):
                     invoice_type = self.page.get_sales_invoice_type()
                     invoice_id = self.invoice_service.create_sales_invoice(
                         sales_lines,
+                        invoice_name=invoice_name,
                         admin_id=admin.admin_id if admin else None,
                         admin_username=admin_username,
                         invoice_type=invoice_type,
@@ -490,6 +493,7 @@ class SalesImportController(QObject):
         if preview_dialog.exec() != QDialog.Accepted:
             self.toast.show("Manual sales invoice canceled", "info")
             return
+        invoice_name = preview_dialog.invoice_name()
 
         admin = (
             self._current_admin_provider()
@@ -530,6 +534,7 @@ class SalesImportController(QObject):
                 ]
                 invoice_id = self.invoice_service.create_sales_invoice(
                     sales_lines,
+                    invoice_name=invoice_name,
                     admin_id=admin.admin_id if admin else None,
                     admin_username=admin_username,
                     invoice_type="sales_manual",

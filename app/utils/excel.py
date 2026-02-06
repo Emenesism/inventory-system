@@ -218,6 +218,7 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
         export_dt.isoformat(timespec="seconds")
     ).split(" ")[0]
     invoice_date = to_jalali_datetime(invoice.created_at).split(" ")[0]
+    invoice_name = str(getattr(invoice, "invoice_name", "") or "").strip()
 
     # Header info
     ws["A3"].value = "تاریخ فاکتور:"
@@ -235,11 +236,25 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
             "فروش" if invoice.invoice_type.startswith("sales") else "خرید"
         )
 
-    for cell in ("A3", "D3", "A4", "D4"):
+    ws["A5"].value = "نام فاکتور:"
+    ws["B5"].value = invoice_name
+
+    for cell in ("A3", "D3", "A4", "D4", "A5"):
         ws[cell].font = label_font
-    for cell in ("B3", "E3", "B4", "E4"):
+    for cell in ("B3", "E3", "B4", "E4", "B5"):
         ws[cell].font = body_font
-    for cell in ("A3", "B3", "D3", "E3", "A4", "B4", "D4", "E4"):
+    for cell in (
+        "A3",
+        "B3",
+        "D3",
+        "E3",
+        "A4",
+        "B4",
+        "D4",
+        "E4",
+        "A5",
+        "B5",
+    ):
         ws[cell].alignment = Alignment(horizontal="right", vertical="center")
 
     # Table header

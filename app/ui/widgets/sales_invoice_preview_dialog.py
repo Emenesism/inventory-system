@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -91,6 +92,24 @@ class SalesInvoicePreviewDialog(QDialog):
         subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtitle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         content_layout.addWidget(subtitle, 0, Qt.AlignRight)
+
+        name_card = QFrame()
+        name_card.setObjectName("Card")
+        name_layout = QHBoxLayout(name_card)
+        name_layout.setContentsMargins(16, 12, 16, 12)
+        name_layout.setSpacing(12)
+
+        name_label = QLabel("نام فاکتور:")
+        name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        name_layout.addWidget(name_label)
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("اختیاری")
+        self.name_input.setLayoutDirection(Qt.RightToLeft)
+        self.name_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        name_layout.addWidget(self.name_input, 1)
+
+        content_layout.addWidget(name_card)
 
         lines_card = QFrame()
         lines_card.setObjectName("Card")
@@ -172,6 +191,10 @@ class SalesInvoicePreviewDialog(QDialog):
         button_row.addWidget(cancel_button)
 
         layout.addLayout(button_row)
+
+    def invoice_name(self) -> str | None:
+        name = self.name_input.text().strip()
+        return name if name else None
 
     @staticmethod
     def _fit_table_height(table: QTableWidget) -> None:
