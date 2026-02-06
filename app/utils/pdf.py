@@ -6,7 +6,7 @@ from PySide6.QtCore import QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
-    QFontMetrics,
+    QFontMetricsF,
     QPageLayout,
     QPageSize,
     QPainter,
@@ -32,9 +32,7 @@ def export_invoices_pdf(file_path: str | Path, invoices_with_lines) -> None:
         printer.setOutputFileName(str(file_path))
         printer.setPageSize(QPageSize(QPageSize.A4))
         printer.setPageOrientation(QPageLayout.Portrait)
-        printer.setPageMargins(
-            QMarginsF(12, 12, 12, 12), QPageLayout.Millimeter
-        )
+        printer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Millimeter)
     except Exception:  # noqa: BLE001
         return
 
@@ -75,14 +73,13 @@ def _draw_invoice_pdf(
     body_font = QFont("Vazirmatn", 11)
     label_font = QFont("Vazirmatn", 10, QFont.Bold)
 
-    title_metrics = QFontMetrics(title_font)
-    header_metrics = QFontMetrics(header_font)
-    body_metrics = QFontMetrics(body_font)
+    def _font_height(font: QFont) -> float:
+        return QFontMetricsF(font, painter.device()).height()
 
-    title_height = max(32, int(title_metrics.height() * 1.6))
-    info_row_height = max(22, int(body_metrics.height() * 1.5))
-    header_row_height = max(24, int(header_metrics.height() * 1.6))
-    row_height = max(24, int(body_metrics.height() * 1.7))
+    title_height = max(36, int(_font_height(title_font) * 1.6))
+    info_row_height = max(22, int(_font_height(body_font) * 1.6))
+    header_row_height = max(24, int(_font_height(header_font) * 1.7))
+    row_height = max(24, int(_font_height(body_font) * 1.8))
     section_gap = max(8, int(row_height * 0.35))
     cell_padding = max(6, int(row_height * 0.25))
 
@@ -91,54 +88,91 @@ def _draw_invoice_pdf(
     total_fill = QColor("#EEF2FF")
     border_color = QColor("#C7CED6")
     text_color = QColor("#111827")
+    header_band_fill = QColor("#EEF2FF")
+    header_card_fill = QColor("#F8FAFC")
+    header_divider = QColor("#E2E8F0")
+    label_color = QColor("#6B7280")
 
     col_weights = [6, 38, 10, 14, 16]
 
-    page_rect = printer.pageRect()
-    x0 = float(page_rect.x())
-    y0 = float(page_rect.y())
-    content_width = float(page_rect.width())
-    content_height = float(page_rect.height())
+    page_layout = printer.pageLayout()
+    full_rect = page_layout.fullRectPixels(printer.resolution())
+    base_x = float(full_rect.x())
+    base_y = float(full_rect.y())
+    base_width = float(full_rect.width())
+    base_height = float(full_rect.height())
+    horizontal_scale = 0.95
+    content_width = base_width * horizontal_scale
+    content_height = base_height
+    x0 = base_x + (base_width - content_width) / 2
+    y0 = base_y
 
     col_widths = _scale_columns(content_width, col_weights)
     col_lefts = _column_lefts(x0, content_width, col_widths)
 
     painter.setPen(QPen(border_color, 1))
     painter.setRenderHint(QPainter.Antialiasing, False)
+    painter.setRenderHint(QPainter.TextAntialiasing, True)
 
     start_index = 0
     while start_index < len(merged_lines) or start_index == 0:
         y = y0
-        _draw_title(
-            painter,
-            QRectF(x0, y, content_width, title_height),
-            title_text,
-            title_font,
-            text_color,
-        )
-        y += title_height + section_gap
+        if start_index == 0:
+            band_height = title_height + max(6, int(title_height * 0.2))
+            band_rect = QRectF(x0, y, content_width, band_height)
+            painter.fillRect(band_rect, header_band_fill)
+            _draw_title(
+                painter,
+                band_rect,
+                title_text,
+                title_font,
+                text_color,
+            )
+            accent_y = band_rect.bottom() - max(2, int(band_height * 0.08))
+            painter.setPen(QPen(border_color, 2))
+            painter.drawLine(
+                x0 + content_width * 0.2,
+                accent_y,
+                x0 + content_width * 0.8,
+                accent_y,
+            )
+            y += band_height + section_gap
 
-        _draw_header_info(
-            painter,
-            y,
-            info_row_height,
-            col_lefts,
-            col_widths,
-            label_font,
-            body_font,
-            text_color,
-            [
-                ("تاریخ فاکتور:", invoice_date, "تاریخ خروجی:", export_date),
-                (
-                    "شماره فاکتور:",
-                    str(invoice.invoice_id),
-                    "نوع:",
-                    invoice_type_text,
-                ),
-            ],
-            cell_padding,
-        )
-        y += info_row_height * 2 + section_gap
+            card_padding = max(6, int(row_height * 0.25))
+            card_height = info_row_height * 2 + card_padding * 2
+            card_rect = QRectF(x0, y, content_width, card_height)
+            painter.setPen(QPen(header_divider, 1))
+            painter.setBrush(header_card_fill)
+            painter.drawRoundedRect(card_rect, 6, 6)
+            painter.setBrush(Qt.NoBrush)
+            _draw_header_info(
+                painter,
+                y + card_padding,
+                info_row_height,
+                x0,
+                content_width,
+                label_font,
+                body_font,
+                label_color,
+                text_color,
+                header_divider,
+                [
+                    (
+                        "تاریخ فاکتور:",
+                        invoice_date,
+                        "تاریخ خروجی:",
+                        export_date,
+                    ),
+                    (
+                        "شماره فاکتور:",
+                        str(invoice.invoice_id),
+                        "نوع:",
+                        invoice_type_text,
+                    ),
+                ],
+                cell_padding,
+            )
+            y += card_height + section_gap
 
         y = _draw_table_header(
             painter,
@@ -255,50 +289,87 @@ def _draw_header_info(
     painter: QPainter,
     start_y: float,
     row_height: float,
-    col_lefts: list[float],
-    col_widths: list[float],
+    x0: float,
+    content_width: float,
     label_font: QFont,
     body_font: QFont,
-    text_color: QColor,
+    label_color: QColor,
+    value_color: QColor,
+    divider_color: QColor,
     rows: list[tuple[str, str, str, str]],
     padding: int,
 ) -> None:
+    center_gap = max(12, int(row_height * 0.4))
+    group_width = (content_width - center_gap) / 2
+    label_ratio = 0.38
+    label_width = group_width * label_ratio
+    value_width = group_width - label_width
+
+    left_group_left = x0
+    right_group_left = x0 + group_width + center_gap
+    center_x = x0 + group_width + (center_gap / 2)
+
+    painter.setPen(QPen(divider_color, 1))
+    painter.drawLine(
+        center_x,
+        start_y,
+        center_x,
+        start_y + row_height * len(rows),
+    )
+    if len(rows) > 1:
+        painter.drawLine(
+            x0 + padding,
+            start_y + row_height,
+            x0 + content_width - padding,
+            start_y + row_height,
+        )
+
     for row_idx, (label_a, value_a, label_b, value_b) in enumerate(rows):
         y = start_y + row_idx * row_height
         _draw_text(
             painter,
-            QRectF(col_lefts[0], y, col_widths[0], row_height),
+            QRectF(
+                right_group_left + group_width - label_width,
+                y,
+                label_width,
+                row_height,
+            ),
             label_a,
             label_font,
             Qt.AlignRight,
-            text_color,
+            label_color,
             padding,
         )
         _draw_text(
             painter,
-            QRectF(col_lefts[1], y, col_widths[1], row_height),
+            QRectF(right_group_left, y, value_width, row_height),
             value_a,
             body_font,
             Qt.AlignRight,
-            text_color,
+            value_color,
             padding,
         )
         _draw_text(
             painter,
-            QRectF(col_lefts[3], y, col_widths[3], row_height),
+            QRectF(
+                left_group_left + group_width - label_width,
+                y,
+                label_width,
+                row_height,
+            ),
             label_b,
             label_font,
             Qt.AlignRight,
-            text_color,
+            label_color,
             padding,
         )
         _draw_text(
             painter,
-            QRectF(col_lefts[4], y, col_widths[4], row_height),
+            QRectF(left_group_left, y, value_width, row_height),
             value_b,
             body_font,
             Qt.AlignRight,
-            text_color,
+            value_color,
             padding,
         )
 
