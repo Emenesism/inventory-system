@@ -82,6 +82,19 @@ class InvoiceEditDialog(QDialog):
         hint.setProperty("size", "small")
         layout.addWidget(hint)
 
+        search_row = QHBoxLayout()
+        search_label = QLabel("Search:")
+        search_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        search_row.addWidget(search_label)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(
+            "Search products in this invoice..."
+        )
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._apply_search_filter)
+        search_row.addWidget(self.search_input, 1)
+        layout.addLayout(search_row)
+
         card = QFrame()
         card.setObjectName("Card")
         card_layout = QVBoxLayout(card)
@@ -135,12 +148,16 @@ class InvoiceEditDialog(QDialog):
         button_row.addWidget(self.save_button)
         layout.addLayout(button_row)
 
+        if self._is_sales():
+            self._apply_sales_ui()
+
         self._populate(lines)
         self._delegate = _EnterMoveDelegate(self._handle_enter, self.table)
         self.table.setItemDelegate(self._delegate)
         self.table.installEventFilter(self)
         self.table.itemChanged.connect(self._on_item_changed)
         self._update_validation_state()
+        self._apply_search_filter()
 
     def _populate(self, lines: list[InvoiceLine]) -> None:
         self._updating = True
@@ -153,6 +170,7 @@ class InvoiceEditDialog(QDialog):
                 {
                     "original_product": line.product_name,
                     "cost_price": line.cost_price,
+                    "original_price": line.price,
                 },
             )
             self.table.setItem(row_idx, 0, product_item)
@@ -227,6 +245,7 @@ class InvoiceEditDialog(QDialog):
             {
                 "original_product": "",
                 "cost_price": 0.0,
+                "original_price": 0.0,
             },
         )
         self.table.setItem(row, 0, product_item)
@@ -248,6 +267,7 @@ class InvoiceEditDialog(QDialog):
         self._updating = False
         self._recalculate_summary()
         self._update_validation_state()
+        self._apply_search_filter()
         return row
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
@@ -255,6 +275,8 @@ class InvoiceEditDialog(QDialog):
             return
         if item.column() in {1, 2}:
             self._recalculate_row(item.row())
+        if item.column() == 0:
+            self._apply_search_filter()
         self._recalculate_summary()
         self._update_validation_state()
 
@@ -279,16 +301,21 @@ class InvoiceEditDialog(QDialog):
         total_qty = 0
         total_amount = 0.0
         for row in range(self.table.rowCount()):
-            price_item = self.table.item(row, 1)
             qty_item = self.table.item(row, 2)
-            if price_item is None or qty_item is None:
+            if qty_item is None:
                 continue
-            price = self._parse_price(price_item.text())
             qty = self._parse_quantity(qty_item.text())
-            if price is None or qty is None:
+            if qty is None:
                 continue
             total_qty += qty
-            total_amount += price * qty
+            if not self._is_sales():
+                price_item = self.table.item(row, 1)
+                if price_item is None:
+                    continue
+                price = self._parse_price(price_item.text())
+                if price is None:
+                    continue
+                total_amount += price * qty
         self.total_lines_label.setText(f"Lines: {self.table.rowCount()}")
         self.total_qty_label.setText(f"Total Qty: {total_qty}")
         self.total_amount_label.setText(
@@ -319,8 +346,9 @@ class InvoiceEditDialog(QDialog):
                 errors.append(f"Row {row + 1}: Product not found in inventory.")
             price_item = self.table.item(row, 1)
             price = self._parse_price(price_item.text() if price_item else "")
-            if price is None or price <= 0:
-                errors.append(f"Row {row + 1}: Price must be > 0.")
+            if not self._is_sales():
+                if price is None or price <= 0:
+                    errors.append(f"Row {row + 1}: Price must be > 0.")
             qty_item = self.table.item(row, 2)
             qty = self._parse_quantity(qty_item.text() if qty_item else "")
             if qty is None or qty <= 0:
@@ -344,6 +372,9 @@ class InvoiceEditDialog(QDialog):
             if not product_name:
                 continue
             price = self._parse_price(price_item.text())
+            if price is None and self._is_sales():
+                meta = product_item.data(Qt.UserRole) or {}
+                price = float(meta.get("original_price", 0.0))
             qty = self._parse_quantity(qty_item.text())
             if price is None or qty is None:
                 continue
@@ -378,6 +409,24 @@ class InvoiceEditDialog(QDialog):
     def _normalized_name(self) -> str | None:
         name = self.name_input.text().strip()
         return name if name else None
+
+    def _is_sales(self) -> bool:
+        return self.invoice.invoice_type.startswith("sales")
+
+    def _apply_sales_ui(self) -> None:
+        self.table.setColumnHidden(1, True)
+        self.table.setColumnHidden(3, True)
+        self.total_amount_label.setVisible(False)
+
+    def _apply_search_filter(self) -> None:
+        query = normalize_text(self.search_input.text().strip())
+        for row in range(self.table.rowCount()):
+            product_item = self.table.item(row, 0)
+            product = (
+                normalize_text(product_item.text()) if product_item else ""
+            )
+            match = True if not query else query in product
+            self.table.setRowHidden(row, not match)
 
     @staticmethod
     def _parse_price(text: str) -> float | None:
