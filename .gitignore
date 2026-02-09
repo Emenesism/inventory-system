@@ -3,7 +3,6 @@ config.json
 app.logs
 app.log
 __pycache__
-__init__.py
 .~lock.stock.xlsx#
 stock.xlsx.bak
 sales.xlsx
