@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-spec_dir = Path(__file__).resolve().parent
+spec_dir = Path(sys.argv[0]).resolve().parent
 project_root = spec_dir
 sys.path.insert(0, str(project_root))
 
