@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
 
 from app.utils.numeric import (
     format_amount,
@@ -13,6 +13,8 @@ from app.utils.text import normalize_text
 
 
 class DataFrameTableModel(QAbstractTableModel):
+    cell_edited = Signal(int, str, object, object)
+
     def __init__(
         self,
         dataframe: pd.DataFrame,
@@ -114,6 +116,7 @@ class DataFrameTableModel(QAbstractTableModel):
             and column_name not in self._editable_columns
         ):
             return False
+        old_value = self._full_dataframe.iat[index.row(), index.column()]
 
         if column_name == "quantity":
             try:
@@ -144,6 +147,8 @@ class DataFrameTableModel(QAbstractTableModel):
 
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
         self._update_search_cache_row(index.row())
+        new_value = self._full_dataframe.iat[index.row(), index.column()]
+        self.cell_edited.emit(index.row(), column_name, old_value, new_value)
         return True
 
     def set_dataframe(self, dataframe: pd.DataFrame) -> None:

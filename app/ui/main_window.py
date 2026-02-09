@@ -158,6 +158,8 @@ class MainWindow(QMainWindow):
             self.toast,
             self.action_log_service,
             self._get_current_admin,
+            self.invoice_service,
+            self.refresh_history_views,
             self,
         )
         self.sales_controller = SalesImportController(

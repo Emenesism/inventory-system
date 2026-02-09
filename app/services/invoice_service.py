@@ -522,6 +522,38 @@ class InvoiceService:
             )
         send_backup(reason="invoice_updated", admin_username=admin_username)
 
+    def rename_products(
+        self,
+        name_changes: list[tuple[str, str]],
+        admin_username: str | None = None,
+    ) -> int:
+        self._ensure_schema()
+        if not name_changes:
+            return 0
+        rename_map: dict[str, str] = {}
+        for old_name, new_name in name_changes:
+            old_value = str(old_name or "").strip()
+            new_value = str(new_name or "").strip()
+            if not old_value or not new_value:
+                continue
+            if old_value == new_value:
+                continue
+            rename_map[old_value] = new_value
+        if not rename_map:
+            return 0
+        self._backup_db()
+        updated = 0
+        with self._connect() as conn:
+            for old_value, new_value in rename_map.items():
+                cursor = conn.execute(
+                    "UPDATE invoice_lines SET product_name = ? WHERE product_name = ?",
+                    (new_value, old_value),
+                )
+                updated += int(cursor.rowcount or 0)
+        if updated:
+            send_backup(reason="invoice_updated", admin_username=admin_username)
+        return updated
+
     def delete_invoice(
         self, invoice_id: int, admin_username: str | None = None
     ) -> None:

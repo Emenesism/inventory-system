@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.utils import dialogs
 from app.utils.search import NormalizedFilterProxyModel
 from app.utils.table_models import DataFrameTableModel
+from app.utils.text import normalize_text
 
 
 class InventoryPage(QWidget):
@@ -31,6 +32,8 @@ class InventoryPage(QWidget):
         self._proxy: NormalizedFilterProxyModel | None = None
         self._editable_columns: list[str] | None = None
         self._blocked_columns: set[str] | None = None
+        self._name_changes: dict[str, str] = {}
+        self._name_originals: dict[str, str] = {}
         self._lazy_enabled_default = True
         self._pending_filter = ""
         self._search_timer = QTimer(self)
@@ -110,6 +113,8 @@ class InventoryPage(QWidget):
     ) -> None:  # noqa: ANN001
         if dataframe is None:
             return
+        self._name_changes = {}
+        self._name_originals = {}
         row_count = len(dataframe)
         if editable_columns is not None:
             self._editable_columns = editable_columns
@@ -134,6 +139,7 @@ class InventoryPage(QWidget):
             lazy_load=lazy_enabled,
             chunk_size=chunk_size,
         )
+        self._model.cell_edited.connect(self._handle_cell_edit)
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
         self.table.setModel(self._proxy)
@@ -155,6 +161,21 @@ class InventoryPage(QWidget):
         if not self._model:
             return None
         return self._model.dataframe()
+
+    def get_name_changes(self) -> list[tuple[str, str]]:
+        changes: list[tuple[str, str]] = []
+        for key, new_name in self._name_changes.items():
+            old_name = self._name_originals.get(key, "")
+            if not old_name or not new_name:
+                continue
+            if normalize_text(old_name) == normalize_text(new_name):
+                continue
+            changes.append((old_name, new_name))
+        return changes
+
+    def clear_name_changes(self) -> None:
+        self._name_changes = {}
+        self._name_originals = {}
 
     def set_editable_columns(self, editable_columns: list[str] | None) -> None:
         self._editable_columns = editable_columns
@@ -257,6 +278,37 @@ class InventoryPage(QWidget):
     def _update_delete_button(self) -> None:
         enabled = self.table.isEnabled() and self._has_selection()
         self.delete_row_button.setEnabled(enabled)
+
+    def _handle_cell_edit(
+        self,
+        row: int,
+        column_name: str,
+        old_value,
+        new_value,
+    ) -> None:
+        if column_name != "product_name":
+            return
+        old_name = str(old_value or "").strip()
+        new_name = str(new_value or "").strip()
+        if not old_name or not new_name:
+            return
+        if normalize_text(old_name) == normalize_text(new_name):
+            return
+
+        old_key = normalize_text(old_name)
+        if old_key in self._name_changes:
+            self._name_changes[old_key] = new_name
+            if old_key not in self._name_originals:
+                self._name_originals[old_key] = old_name
+            return
+
+        for key, current_new in list(self._name_changes.items()):
+            if normalize_text(current_new) == old_key:
+                self._name_changes[key] = new_name
+                return
+
+        self._name_changes[old_key] = new_name
+        self._name_originals[old_key] = old_name
 
     def _wire_selection_model(self) -> None:
         selection_model = self.table.selectionModel()

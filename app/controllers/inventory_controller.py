@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
+from app.services.invoice_service import InvoiceService
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
@@ -22,6 +23,8 @@ class InventoryController(QObject):
         toast: ToastManager,
         action_log_service: ActionLogService,
         current_admin_provider,
+        invoice_service: InvoiceService | None = None,
+        refresh_history_views=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -30,6 +33,8 @@ class InventoryController(QObject):
         self.toast = toast
         self.action_log_service = action_log_service
         self._current_admin_provider = current_admin_provider
+        self.invoice_service = invoice_service
+        self._refresh_history_views = refresh_history_views
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self.page.reload_requested.connect(self.reload)
@@ -68,6 +73,53 @@ class InventoryController(QObject):
             self.toast.show("Inventory save failed", "error")
             self._logger.exception("Failed to save inventory")
             return
+        name_changes = self.page.get_name_changes()
+        if name_changes and df is not None and "product_name" in df.columns:
+            current_names = {
+                normalize_text(str(name))
+                for name in df["product_name"].tolist()
+            }
+            name_changes = [
+                (old, new)
+                for old, new in name_changes
+                if normalize_text(new) in current_names
+            ]
+        clear_changes = True
+        if name_changes and self.invoice_service is not None:
+            try:
+                updated = self.invoice_service.rename_products(
+                    name_changes, admin_username=admin_username
+                )
+            except Exception:  # noqa: BLE001
+                clear_changes = False
+                dialogs.show_error(
+                    self.page,
+                    "Invoice Update Error",
+                    "Failed to update invoice product names.",
+                )
+                self._logger.exception(
+                    "Failed to update invoice product names."
+                )
+            else:
+                if updated:
+                    if self._refresh_history_views is not None:
+                        self._refresh_history_views()
+                    if self.action_log_service:
+                        details = "\n".join(
+                            f"{old} → {new}" for old, new in name_changes
+                        )
+                        self.action_log_service.log_action(
+                            "invoice_product_rename",
+                            "به‌روزرسانی نام کالا در فاکتورها",
+                            details,
+                            admin=admin,
+                        )
+                    self.toast.show(
+                        f"Updated {updated} invoice line(s)",
+                        "success",
+                    )
+        if clear_changes:
+            self.page.clear_name_changes()
         if old_df is not None:
             details = self._build_inventory_diff(old_df, df)
             if not details:
