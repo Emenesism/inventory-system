@@ -7,7 +7,8 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-project_root = Path.cwd()
+spec_dir = Path(__file__).resolve().parent
+project_root = spec_dir
 sys.path.insert(0, str(project_root))
 
 hiddenimports = collect_submodules("app")
