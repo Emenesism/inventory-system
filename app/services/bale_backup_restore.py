@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import os
+import sqlite3
 import tempfile
 import time
 import zipfile
@@ -20,6 +22,9 @@ DEFAULT_DB_NAME = "invoices.db"
 DEFAULT_STOCK_NAME = "stock.dat"
 
 logger = logging.getLogger(__name__)
+
+_HASH_CHUNK_SIZE = 1024 * 1024
+_IGNORED_DB_TABLES = {"actions"}
 
 
 class BaleBackupRestorer:
@@ -111,6 +116,21 @@ class BaleBackupRestorer:
             "yes" if db_bytes else "no",
             "yes" if stock_bytes else "no",
         )
+
+        if db_bytes and self._db_matches_backup(db_bytes):
+            self._logger.info("Local database matches backup hash. Skipping DB restore.")
+            db_bytes = None
+        if stock_bytes and self._stock_matches_backup(stock_bytes):
+            self._logger.info("Local stock matches backup hash. Skipping stock restore.")
+            stock_bytes = None
+
+        if not db_bytes and not stock_bytes:
+            if on_status:
+                on_status("نسخه پشتیبان با فایل‌های فعلی یکسان است.")
+            if backup_name:
+                self._store_backup_name(backup_name)
+            self._logger.info("Backup matches local files. Restore skipped.")
+            return True
 
         if db_bytes:
             if on_status:
@@ -302,6 +322,168 @@ class BaleBackupRestorer:
         except zipfile.BadZipFile:
             return None, None
         return db_bytes, stock_bytes
+
+    @staticmethod
+    def _sha256_bytes(payload: bytes) -> str:
+        digest = hashlib.sha256()
+        digest.update(payload)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(_HASH_CHUNK_SIZE)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _quote_identifier(name: str) -> str:
+        return f"\"{name.replace('\"', '\"\"')}\""
+
+    @staticmethod
+    def _serialize_sql_value(value: Any) -> bytes:
+        if value is None:
+            return b"NULL"
+        if isinstance(value, bytes):
+            return b"BYTES:" + value
+        return f"{type(value).__name__}:{value!r}".encode("utf-8")
+
+    @classmethod
+    def _hash_sqlite_connection(
+        cls, conn: sqlite3.Connection
+    ) -> str:
+        digest = hashlib.sha256()
+        rows = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name ASC
+            """
+        ).fetchall()
+        table_names = [str(row[0]) for row in rows]
+        for table in table_names:
+            if table in _IGNORED_DB_TABLES:
+                continue
+            digest.update(b"TBL:")
+            digest.update(table.encode("utf-8"))
+            columns = conn.execute(
+                f"PRAGMA table_info({cls._quote_identifier(table)})"
+            ).fetchall()
+            col_names = [str(col[1]) for col in columns]
+            digest.update(b"COLS:")
+            digest.update(
+                ",".join(
+                    f"{col[1]}|{col[2]}|{col[3]}|{col[4]}|{col[5]}"
+                    for col in columns
+                ).encode("utf-8")
+            )
+            if not col_names:
+                continue
+            col_sql = ", ".join(
+                cls._quote_identifier(name) for name in col_names
+            )
+            order_sql = ", ".join(
+                cls._quote_identifier(name) for name in col_names
+            )
+            query = (
+                f"SELECT {col_sql} FROM {cls._quote_identifier(table)} "
+                f"ORDER BY {order_sql}"
+            )
+            for row in conn.execute(query):
+                digest.update(b"ROW:")
+                for value in row:
+                    digest.update(b"|")
+                    digest.update(cls._serialize_sql_value(value))
+        return digest.hexdigest()
+
+    @classmethod
+    def _hash_sqlite_path(cls, path: Path) -> str | None:
+        try:
+            with sqlite3.connect(path) as conn:
+                return cls._hash_sqlite_connection(conn)
+        except sqlite3.Error:
+            logger.exception("Failed hashing SQLite database: %s", path)
+            return None
+
+    def _hash_sqlite_bytes(self, payload: bytes) -> str | None:
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix="armkala_db_hash_",
+                suffix=".db",
+                delete=False,
+            ) as handle:
+                handle.write(payload)
+                tmp_path = Path(handle.name)
+            return self._hash_sqlite_path(tmp_path)
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+    def _snapshot_db_for_hash(self) -> Path | None:
+        if not self.db_path.exists():
+            return None
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix="armkala_db_hash_",
+                suffix=".db",
+                delete=False,
+            ) as handle:
+                tmp_path = Path(handle.name)
+            with db_lock():
+                with sqlite3.connect(self.db_path) as source:
+                    with sqlite3.connect(tmp_path) as dest:
+                        source.backup(dest)
+            return tmp_path
+        except Exception:
+            logger.exception("Failed creating SQLite snapshot for hash.")
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+            return None
+
+    def _hash_local_db(self) -> str | None:
+        snapshot = self._snapshot_db_for_hash()
+        if snapshot is None:
+            return None
+        try:
+            return self._hash_sqlite_path(snapshot)
+        finally:
+            try:
+                snapshot.unlink()
+            except OSError:
+                pass
+
+    def _db_matches_backup(self, db_bytes: bytes) -> bool:
+        if not self.db_path.exists():
+            return False
+        remote_hash = self._hash_sqlite_bytes(db_bytes)
+        local_hash = self._hash_local_db()
+        if not remote_hash or not local_hash:
+            return False
+        return remote_hash == local_hash
+
+    def _stock_matches_backup(self, stock_bytes: bytes) -> bool:
+        if not self.stock_path.exists():
+            return False
+        try:
+            local_hash = self._sha256_file(self.stock_path)
+        except OSError:
+            logger.exception("Failed hashing local stock file: %s", self.stock_path)
+            return False
+        remote_hash = self._sha256_bytes(stock_bytes)
+        return local_hash == remote_hash
 
     @staticmethod
     def _atomic_replace(path: Path, data: bytes) -> bool:
