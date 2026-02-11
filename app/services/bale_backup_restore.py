@@ -290,8 +290,9 @@ class BaleBackupRestorer:
 
     def _store_backup_name(self, backup_name: str) -> None:
         if self.config.bale_last_backup_name != backup_name:
-            self.config.bale_last_backup_name = backup_name
-            self.config.save()
+            updated = AppConfig.save_partial(bale_last_backup_name=backup_name)
+            # Keep in-memory config in sync with persisted value.
+            self.config.bale_last_backup_name = updated.bale_last_backup_name
 
     @staticmethod
     def _get_file_path(client: BaleBotClient, file_id: str) -> str | None:
