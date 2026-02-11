@@ -87,7 +87,7 @@ class InventoryController(QObject):
         clear_changes = True
         if name_changes and self.invoice_service is not None:
             try:
-                updated = self.invoice_service.rename_products(
+                rename_result = self.invoice_service.rename_products(
                     name_changes, admin_username=admin_username
                 )
             except Exception:  # noqa: BLE001
@@ -101,21 +101,50 @@ class InventoryController(QObject):
                     "Failed to update invoice product names."
                 )
             else:
+                updated = rename_result.updated_lines
                 if updated:
+                    invoice_ids = rename_result.updated_invoice_ids
+                    invoice_count = len(invoice_ids)
                     if self._refresh_history_views is not None:
                         self._refresh_history_views()
                     if self.action_log_service:
-                        details = "\n".join(
+                        detail_lines = [
                             f"{old} → {new}" for old, new in name_changes
+                        ]
+                        if invoice_ids:
+                            invoice_text = ", ".join(
+                                str(invoice_id) for invoice_id in invoice_ids
+                            )
+                            detail_lines.append(
+                                f"فاکتورهای تحت تاثیر: {invoice_text}"
+                            )
+                        detail_lines.append(
+                            f"تعداد ردیف‌های تغییرکرده: {updated}"
                         )
+                        details = "\n".join(detail_lines)
                         self.action_log_service.log_action(
                             "invoice_product_rename",
                             "به‌روزرسانی نام کالا در فاکتورها",
                             details,
                             admin=admin,
                         )
+                    shown_ids = ", ".join(
+                        str(invoice_id) for invoice_id in invoice_ids[:25]
+                    )
+                    if len(invoice_ids) > 25:
+                        shown_ids += f", ... (+{len(invoice_ids) - 25} more)"
+                    if shown_ids:
+                        dialogs.show_info(
+                            self.page,
+                            "Invoice Update",
+                            (
+                                f"Updated {updated} invoice line(s) in "
+                                f"{invoice_count} invoice(s).\n"
+                                f"Invoice IDs: {shown_ids}"
+                            ),
+                        )
                     self.toast.show(
-                        f"Updated {updated} invoice line(s)",
+                        f"Updated {updated} line(s) in {invoice_count} invoice(s)",
                         "success",
                     )
         if clear_changes:

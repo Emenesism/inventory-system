@@ -274,12 +274,9 @@ class BackupSender:
             if db_snapshot is not None and db_snapshot.exists():
                 zip_file.write(db_snapshot, arcname=DEFAULT_DB_NAME)
             if stock_path is not None:
-                arcname = (
-                    DEFAULT_STOCK_NAME
-                    if stock_path.name == DEFAULT_STOCK_NAME
-                    else stock_path.name
-                )
-                zip_file.write(stock_path, arcname=arcname)
+                # Always archive inventory with a stable name so restore can
+                # reliably find it regardless of the source filename.
+                zip_file.write(stock_path, arcname=DEFAULT_STOCK_NAME)
         self._logger.info("Backup zip created: %s", zip_path)
 
         return zip_path

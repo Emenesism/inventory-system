@@ -118,10 +118,14 @@ class BaleBackupRestorer:
         )
 
         if db_bytes and self._db_matches_backup(db_bytes):
-            self._logger.info("Local database matches backup hash. Skipping DB restore.")
+            self._logger.info(
+                "Local database matches backup hash. Skipping DB restore."
+            )
             db_bytes = None
         if stock_bytes and self._stock_matches_backup(stock_bytes):
-            self._logger.info("Local stock matches backup hash. Skipping stock restore.")
+            self._logger.info(
+                "Local stock matches backup hash. Skipping stock restore."
+            )
             stock_bytes = None
 
         if not db_bytes and not stock_bytes:
@@ -311,14 +315,28 @@ class BaleBackupRestorer:
     def _extract_files(payload: bytes) -> tuple[bytes | None, bytes | None]:
         db_bytes = None
         stock_bytes = None
+        legacy_stock_name: str | None = None
+        legacy_stock_bytes: bytes | None = None
         try:
             with zipfile.ZipFile(io.BytesIO(payload)) as zip_file:
                 for name in zip_file.namelist():
-                    filename = Path(name).name.lower()
-                    if filename == DEFAULT_DB_NAME:
+                    filename = Path(name).name
+                    normalized = filename.lower()
+                    if normalized == DEFAULT_DB_NAME:
                         db_bytes = zip_file.read(name)
-                    if filename == DEFAULT_STOCK_NAME:
+                    elif normalized == DEFAULT_STOCK_NAME:
                         stock_bytes = zip_file.read(name)
+                    elif legacy_stock_bytes is None:
+                        suffix = Path(filename).suffix.lower()
+                        if suffix in {".dat", ".xlsx", ".xlsm"}:
+                            legacy_stock_name = filename
+                            legacy_stock_bytes = zip_file.read(name)
+                if stock_bytes is None and legacy_stock_bytes is not None:
+                    logger.info(
+                        "Using legacy stock entry from backup archive: %s",
+                        legacy_stock_name,
+                    )
+                    stock_bytes = legacy_stock_bytes
         except zipfile.BadZipFile:
             return None, None
         return db_bytes, stock_bytes
@@ -342,7 +360,7 @@ class BaleBackupRestorer:
 
     @staticmethod
     def _quote_identifier(name: str) -> str:
-        return f"\"{name.replace('\"', '\"\"')}\""
+        return f'"{name.replace('"', '""')}"'
 
     @staticmethod
     def _serialize_sql_value(value: Any) -> bytes:
@@ -353,9 +371,7 @@ class BaleBackupRestorer:
         return f"{type(value).__name__}:{value!r}".encode("utf-8")
 
     @classmethod
-    def _hash_sqlite_connection(
-        cls, conn: sqlite3.Connection
-    ) -> str:
+    def _hash_sqlite_connection(cls, conn: sqlite3.Connection) -> str:
         digest = hashlib.sha256()
         rows = conn.execute(
             """
@@ -480,7 +496,9 @@ class BaleBackupRestorer:
         try:
             local_hash = self._sha256_file(self.stock_path)
         except OSError:
-            logger.exception("Failed hashing local stock file: %s", self.stock_path)
+            logger.exception(
+                "Failed hashing local stock file: %s", self.stock_path
+            )
             return False
         remote_hash = self._sha256_bytes(stock_bytes)
         return local_hash == remote_hash

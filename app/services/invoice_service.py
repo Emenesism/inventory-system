@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -41,6 +41,12 @@ class SalesLine:
     price: float
     quantity: int
     cost_price: float
+
+
+@dataclass
+class ProductRenameResult:
+    updated_lines: int = 0
+    updated_invoice_ids: list[int] = field(default_factory=list)
 
 
 class InvoiceService:
@@ -526,10 +532,10 @@ class InvoiceService:
         self,
         name_changes: list[tuple[str, str]],
         admin_username: str | None = None,
-    ) -> int:
+    ) -> ProductRenameResult:
         self._ensure_schema()
         if not name_changes:
-            return 0
+            return ProductRenameResult()
         rename_map: dict[str, str] = {}
         for old_name, new_name in name_changes:
             old_value = str(old_name or "").strip()
@@ -540,19 +546,34 @@ class InvoiceService:
                 continue
             rename_map[old_value] = new_value
         if not rename_map:
-            return 0
+            return ProductRenameResult()
         self._backup_db()
         updated = 0
+        updated_by_invoice: dict[int, int] = {}
         with self._connect() as conn:
             for old_value, new_value in rename_map.items():
-                cursor = conn.execute(
+                rows = conn.execute(
+                    "SELECT invoice_id FROM invoice_lines WHERE product_name = ?",
+                    (old_value,),
+                ).fetchall()
+                if not rows:
+                    continue
+                for row in rows:
+                    invoice_id = int(row["invoice_id"])
+                    updated_by_invoice[invoice_id] = (
+                        updated_by_invoice.get(invoice_id, 0) + 1
+                    )
+                conn.execute(
                     "UPDATE invoice_lines SET product_name = ? WHERE product_name = ?",
                     (new_value, old_value),
                 )
-                updated += int(cursor.rowcount or 0)
+                updated += len(rows)
         if updated:
             send_backup(reason="invoice_updated", admin_username=admin_username)
-        return updated
+        return ProductRenameResult(
+            updated_lines=updated,
+            updated_invoice_ids=sorted(updated_by_invoice),
+        )
 
     def delete_invoice(
         self, invoice_id: int, admin_username: str | None = None
