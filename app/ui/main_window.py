@@ -7,6 +7,7 @@ import time
 from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QFileDialog,
     QGraphicsBlurEffect,
     QHBoxLayout,
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow):
         self.inventory_service = inventory_service
         self.config = config
         self._logger = logging.getLogger(self.__class__.__name__)
-        self.setWindowTitle("Armkala Inventory Suite")
+        self.setWindowTitle(self.tr("مدیریت رضاکالا"))
         self.resize(1280, 800)
 
         self.toast = ToastManager(self)
@@ -67,6 +68,8 @@ class MainWindow(QMainWindow):
 
         container = QWidget()
         layout = QHBoxLayout(container)
+        # Keep app chrome fixed: sidebar on the left even in RTL locale.
+        layout.setDirection(QBoxLayout.LeftToRight)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -209,8 +212,8 @@ class MainWindow(QMainWindow):
         if self._current_admin and self.action_log_service:
             self.action_log_service.log_action(
                 "logout",
-                "خروج از حساب",
-                "قفل برنامه",
+                self.tr("خروج از حساب"),
+                self.tr("قفل برنامه"),
                 admin=self._current_admin,
             )
         blur = QGraphicsBlurEffect(self)
@@ -246,8 +249,8 @@ class MainWindow(QMainWindow):
         ):
             self.action_log_service.log_action(
                 "login",
-                "ورود به سیستم",
-                f"کاربر: {admin.username}",
+                self.tr("ورود به سیستم"),
+                self.tr("کاربر: {username}").format(username=admin.username),
                 admin=admin,
             )
 
@@ -291,19 +294,23 @@ class MainWindow(QMainWindow):
         try:
             self.inventory_service.load()
             self.refresh_inventory_views()
-            self.toast.show("Inventory loaded from backend", "success")
+            self.toast.show(self.tr("موجودی از بک‌اند بارگذاری شد"), "success")
         except InventoryFileError as exc:
-            dialogs.show_error(self, "Inventory Error", str(exc))
-            self.toast.show("Backend inventory load failed", "error")
+            dialogs.show_error(self, self.tr("خطای موجودی"), str(exc))
+            self.toast.show(
+                self.tr("بارگذاری موجودی از بک‌اند ناموفق بود"), "error"
+            )
             self._logger.exception("Inventory load failed")
-            self.disable_inventory_features("Backend inventory unavailable")
+            self.disable_inventory_features(
+                self.tr("اتصال به بک‌اند موجودی برقرار نیست")
+            )
 
     def choose_inventory_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Inventory File",
+            self.tr("انتخاب فایل موجودی"),
             "",
-            "Excel Files (*.xlsx *.xlsm)",
+            self.tr("فایل‌های اکسل (*.xlsx *.xlsm)"),
         )
         if not file_path:
             return
@@ -312,17 +319,17 @@ class MainWindow(QMainWindow):
             self.inventory_service.import_excel(file_path)
             self.inventory_service.load()
         except InventoryFileError as exc:
-            dialogs.show_error(self, "Inventory Error", str(exc))
-            self.toast.show("Inventory import failed", "error")
+            dialogs.show_error(self, self.tr("خطای موجودی"), str(exc))
+            self.toast.show(self.tr("درون‌ریزی موجودی ناموفق بود"), "error")
             self._logger.exception("Inventory import failed")
             return
 
         self.refresh_inventory_views()
-        self.toast.show("Inventory imported to backend", "success")
+        self.toast.show(self.tr("موجودی به بک‌اند منتقل شد"), "success")
 
     def refresh_inventory_views(self) -> None:
         if not self.inventory_service.is_loaded():
-            self.disable_inventory_features("Inventory not loaded")
+            self.disable_inventory_features(self.tr("موجودی بارگذاری نشده است"))
             return
 
         df = self.inventory_service.get_dataframe()
@@ -346,10 +353,10 @@ class MainWindow(QMainWindow):
 
     def _update_status(self) -> None:
         if not self.inventory_service.is_loaded():
-            self.header.set_status("No inventory loaded")
+            self.header.set_status(self.tr("موجودی بارگذاری نشده است"))
             return
         df = self.inventory_service.get_dataframe()
-        self.header.set_status(f"{len(df)} products")
+        self.header.set_status(self.tr("{count} کالا").format(count=len(df)))
 
     def _switch_page(self, name: str) -> None:
         pages = {
