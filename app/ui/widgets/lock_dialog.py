@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -26,11 +27,12 @@ class LockDialog(QDialog):
         self._admin_service = admin_service
         self.authenticated_admin: AdminUser | None = None
         self.close_requested = False
-        self.setWindowTitle("Locked")
+        self.setWindowTitle(self.tr("قفل برنامه"))
         self.setWindowModality(Qt.WindowModal)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setObjectName("LockDialog")
+        self.setLayoutDirection(Qt.RightToLeft)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -48,23 +50,23 @@ class LockDialog(QDialog):
         wrapper.addStretch(1)
         layout.addLayout(wrapper)
 
-        title = QLabel("Unlock")
+        title = QLabel(self.tr("ورود به برنامه"))
         title.setObjectName("LockTitle")
         card_layout.addWidget(title)
 
-        hint = QLabel("This app is locked.")
+        hint = QLabel(self.tr("برنامه قفل است. برای ادامه وارد شوید."))
         hint.setObjectName("LockHint")
         card_layout.addWidget(hint)
 
         self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText("Username")
+        self.username_input.setPlaceholderText(self.tr("نام کاربری"))
         self.username_input.setText(username)
         self.username_input.returnPressed.connect(self._try_unlock)
         card_layout.addWidget(self.username_input)
 
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
-        self.password_input.setPlaceholderText("Password")
+        self.password_input.setPlaceholderText(self.tr("رمز عبور"))
         self.password_input.returnPressed.connect(self._try_unlock)
         card_layout.addWidget(self.password_input)
 
@@ -73,13 +75,14 @@ class LockDialog(QDialog):
         card_layout.addWidget(self.error_label)
 
         button_row = QHBoxLayout()
-        close_button = QPushButton("Close app")
+        button_row.setDirection(QBoxLayout.RightToLeft)
+        close_button = QPushButton(self.tr("خروج از برنامه"))
         close_button.clicked.connect(self._close_app)
         close_button.setAutoDefault(False)
         close_button.setDefault(False)
         button_row.addWidget(close_button)
         button_row.addStretch(1)
-        unlock_button = QPushButton("Unlock")
+        unlock_button = QPushButton(self.tr("ورود"))
         unlock_button.clicked.connect(self._try_unlock)
         unlock_button.setDefault(True)
         unlock_button.setAutoDefault(True)
@@ -99,7 +102,7 @@ class LockDialog(QDialog):
             self.authenticated_admin = admin
             self.accept()
             return
-        self.error_label.setText("Wrong username or password.")
+        self.error_label.setText(self.tr("نام کاربری یا رمز عبور اشتباه است."))
         self.password_input.selectAll()
         self.password_input.setFocus()
 
