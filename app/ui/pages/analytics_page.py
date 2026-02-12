@@ -38,12 +38,12 @@ class AnalyticsPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Analytics")
+        title = QLabel(self.tr("تحلیل‌ها"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
-        refresh_analytics = QPushButton("Refresh")
+        refresh_analytics = QPushButton(self.tr("بروزرسانی"))
         refresh_analytics.clicked.connect(self.load_analytics)
         header.addWidget(refresh_analytics)
         layout.addLayout(header)
@@ -54,10 +54,10 @@ class AnalyticsPage(QWidget):
         stats_layout.setContentsMargins(16, 16, 16, 16)
         stats_layout.setSpacing(24)
 
-        self.sales_total_label = QLabel("Sales total: 0")
-        self.purchase_total_label = QLabel("Purchase total: 0")
-        self.profit_total_label = QLabel("Profit: 0")
-        self.invoice_count_label = QLabel("Invoices: 0")
+        self.sales_total_label = QLabel(self.tr("جمع فروش: 0"))
+        self.purchase_total_label = QLabel(self.tr("جمع خرید: 0"))
+        self.profit_total_label = QLabel(self.tr("سود: 0"))
+        self.invoice_count_label = QLabel(self.tr("فاکتورها: 0"))
 
         stats_layout.addWidget(self.sales_total_label)
         stats_layout.addWidget(self.purchase_total_label)
@@ -73,7 +73,14 @@ class AnalyticsPage(QWidget):
 
         self.monthly_table = QTableWidget(0, 6)
         self.monthly_table.setHorizontalHeaderLabels(
-            ["Month (IR)", "Sales", "Purchases", "Profit", "Invoices", "Trend"]
+            [
+                self.tr("ماه"),
+                self.tr("فروش"),
+                self.tr("خرید"),
+                self.tr("سود"),
+                self.tr("فاکتورها"),
+                self.tr("روند"),
+            ]
         )
         header_view = self.monthly_table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -98,15 +105,23 @@ class AnalyticsPage(QWidget):
         total_invoices = sum(item["invoice_count"] for item in summary)
 
         self.sales_total_label.setText(
-            f"Sales total: {self._format_amount(total_sales)}"
+            self.tr("جمع فروش: {amount}").format(
+                amount=self._format_amount(total_sales)
+            )
         )
         self.purchase_total_label.setText(
-            f"Purchase total: {self._format_amount(total_purchases)}"
+            self.tr("جمع خرید: {amount}").format(
+                amount=self._format_amount(total_purchases)
+            )
         )
         self.profit_total_label.setText(
-            f"Profit: {self._format_amount(total_profit)}"
+            self.tr("سود: {amount}").format(
+                amount=self._format_amount(total_profit)
+            )
         )
-        self.invoice_count_label.setText(f"Invoices: {total_invoices}")
+        self.invoice_count_label.setText(
+            self.tr("فاکتورها: {count}").format(count=total_invoices)
+        )
 
         safe_sales = [
             self._safe_progress_value(item["sales_total"]) for item in summary
