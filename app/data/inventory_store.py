@@ -43,9 +43,9 @@ class InventoryStore:
 
     def load(self) -> pd.DataFrame:
         if not self.path:
-            raise InventoryFileError("No inventory file selected.")
+            raise InventoryFileError("هیچ فایل موجودی انتخاب نشده است.")
         if not self.path.exists():
-            raise InventoryFileError(f"Inventory file not found: {self.path}")
+            raise InventoryFileError(f"فایل موجودی پیدا نشد: {self.path}")
 
         try:
             df = self._read_file(self.path)
@@ -53,7 +53,7 @@ class InventoryStore:
             raise
         except Exception as exc:  # noqa: BLE001
             raise InventoryFileError(
-                "Failed to read inventory file. Please check the format."
+                "خواندن فایل موجودی ناموفق بود. قالب فایل را بررسی کنید."
             ) from exc
 
         df = self._normalize_columns(df)
@@ -65,12 +65,12 @@ class InventoryStore:
 
     def save(self, df: pd.DataFrame) -> None:
         if not self.path:
-            raise InventoryFileError("No inventory file selected.")
+            raise InventoryFileError("هیچ فایل موجودی انتخاب نشده است.")
         df_to_save = self._reorder_columns(df.copy())
 
         suffix = self.path.suffix.lower()
         if suffix not in {".xlsx", ".xlsm"}:
-            raise InventoryFileError("Unsupported inventory file format.")
+            raise InventoryFileError("قالب فایل موجودی پشتیبانی نمی‌شود.")
 
         df_to_save.to_excel(self.path, index=False)
         self._ensure_sheet_ltr(self.path)
@@ -81,7 +81,7 @@ class InventoryStore:
         suffix = path.suffix.lower()
         if suffix in {".xlsx", ".xlsm"}:
             return pd.read_excel(path, engine="openpyxl")
-        raise InventoryFileError("Unsupported inventory file format.")
+        raise InventoryFileError("قالب فایل موجودی پشتیبانی نمی‌شود.")
 
     def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -115,7 +115,7 @@ class InventoryStore:
         ]
         if missing:
             raise InventoryFileError(
-                f"Inventory file missing required columns: {', '.join(missing)}"
+                f"ستون‌های الزامی در فایل موجودی وجود ندارد: {', '.join(missing)}"
             )
 
         name_series = df["product_name"]
@@ -129,9 +129,7 @@ class InventoryStore:
 
         quantity = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
         if (quantity % 1 != 0).any():
-            raise InventoryFileError(
-                "Inventory quantities must be whole numbers."
-            )
+            raise InventoryFileError("تعداد موجودی باید عدد صحیح باشد.")
         df["quantity"] = quantity.astype(int)
 
         avg_buy = pd.to_numeric(df["avg_buy_price"], errors="coerce").fillna(0)
