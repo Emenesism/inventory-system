@@ -29,7 +29,7 @@ class InventoryService:
     def import_excel(self, path: str | Path) -> dict[str, object]:
         path_obj = Path(path)
         if not path_obj.exists():
-            raise InventoryFileError(f"Inventory file not found: {path_obj}")
+            raise InventoryFileError(f"فایل موجودی پیدا نشد: {path_obj}")
         try:
             with path_obj.open("rb") as handle:
                 payload = self._client.post(
@@ -112,7 +112,7 @@ class InventoryService:
         except Exception as exc:  # noqa: BLE001
             self._loaded = False
             raise InventoryFileError(
-                "Failed to load inventory from backend."
+                "بارگذاری موجودی از بک‌اند ناموفق بود."
             ) from exc
 
     def save(
@@ -168,7 +168,9 @@ class InventoryService:
             )
 
         if not rows:
-            raise InventoryFileError("No valid inventory rows to save.")
+            raise InventoryFileError(
+                "هیچ ردیف معتبری برای ذخیره موجودی وجود ندارد."
+            )
 
         try:
             self._client.post(
@@ -184,7 +186,7 @@ class InventoryService:
 
     def get_dataframe(self) -> pd.DataFrame:
         if self.store.dataframe is None:
-            raise InventoryFileError("Inventory not loaded.")
+            raise InventoryFileError("موجودی بارگذاری نشده است.")
         return self.store.dataframe
 
     def is_loaded(self) -> bool:
