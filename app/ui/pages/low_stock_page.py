@@ -18,10 +18,11 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
+from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.utils.excel import autofit_columns, ensure_sheet_rtl
-from app.utils.numeric import format_amount, normalize_numeric_text
+from app.utils.numeric import format_amount
 
 COL_PRODUCT = "نام کالا"
 COL_QUANTITY = "تعداد"
@@ -109,16 +110,14 @@ class LowStockPage(QWidget):
             self.total_needed_label.setText("Total needed: 0")
             return
 
-        df = self.inventory_service.get_dataframe()
-
         rows: list[dict[str, object]] = []
-        for _, row in df.iterrows():
-            qty = int(row.get("quantity", 0))
-            alarm_value = row.get("alarm", self.config.low_stock_threshold)
-            alarm = self._parse_alarm(alarm_value)
-            if qty >= alarm:
-                continue
-            needed = alarm - qty
+        try:
+            low_stock_rows = self.inventory_service.get_low_stock_rows(
+                self.config.low_stock_threshold
+            )
+        except InventoryFileError:
+            low_stock_rows = []
+        for row in low_stock_rows:
             source_value = row.get("source", "")
             source_text = "" if source_value is None else str(source_value)
             if source_text.lower() == "nan":
@@ -126,10 +125,10 @@ class LowStockPage(QWidget):
             rows.append(
                 {
                     "product": str(row.get("product_name", "")).strip(),
-                    "quantity": qty,
-                    "alarm": alarm,
-                    "needed": needed,
-                    "avg_buy": float(row.get("avg_buy_price", 0.0)),
+                    "quantity": int(row.get("quantity", 0) or 0),
+                    "alarm": int(row.get("alarm", 0) or 0),
+                    "needed": int(row.get("needed", 0) or 0),
+                    "avg_buy": float(row.get("avg_buy_price", 0.0) or 0.0),
                     "source": source_text.strip(),
                 }
             )
@@ -300,21 +299,3 @@ class LowStockPage(QWidget):
         brush = QBrush(QColor(red, green, blue))
         for item in items:
             item.setBackground(brush)
-
-    @staticmethod
-    def _parse_alarm(value: object) -> int:
-        if value is None:
-            return 0
-        if isinstance(value, (int, float)):
-            if value != value:
-                return 0
-            return int(value)
-        if isinstance(value, str):
-            normalized = normalize_numeric_text(value)
-            if not normalized:
-                return 0
-            try:
-                return int(float(normalized))
-            except ValueError:
-                return 0
-        return 0
