@@ -43,15 +43,19 @@ class HelpDialog(QDialog):
         self.body_area.setFrameShape(QFrame.NoFrame)
         self.body_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.body_area.setLayoutDirection(Qt.RightToLeft)
+        self.body_area.setStyleSheet(
+            "QScrollArea#HelpBody { border: none; background: transparent; }"
+        )
 
         self.body = QLabel()
         self.body.setObjectName("HelpBodyText")
-        self.body.setTextFormat(Qt.PlainText)
+        self.body.setTextFormat(Qt.RichText)
         self.body.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.body.setLayoutDirection(Qt.RightToLeft)
         self.body.setAlignment(Qt.AlignTop | Qt.AlignRight | Qt.AlignAbsolute)
         self.body.setWordWrap(True)
         self.body.setMargin(10)
+        self.body.setStyleSheet("background: transparent; font-size: 14px;")
 
         self.body_area.setWidget(self.body)
         layout.addWidget(self.body_area, 1)
@@ -65,68 +69,79 @@ class HelpDialog(QDialog):
 
     def set_content(self, title: str, body_html: str) -> None:
         self.title_label.setText(title)
-        self.body.setText(self._html_to_plain_rtl_text(body_html))
+        self.body.setText(self._html_to_rich_rtl_text(body_html))
 
     @staticmethod
-    def _html_to_plain_rtl_text(html_text: str) -> str:
-        text = html_text
+    def _html_to_rich_rtl_text(html_text: str) -> str:
+        text = html.unescape(html_text)
 
-        def _replace_ol(match) -> str:  # noqa: ANN001
-            inner = match.group(1)
+        def _render_list(inner_html: str, ordered: bool) -> str:
             items = re.findall(
-                r"<li[^>]*>(.*?)</li>", inner, flags=re.IGNORECASE | re.DOTALL
+                r"<li[^>]*>(.*?)</li>",
+                inner_html,
+                flags=re.IGNORECASE | re.DOTALL,
             )
             if not items:
-                return "\n"
-            lines = [
-                f"{idx}. {item.strip()}" for idx, item in enumerate(items, 1)
-            ]
-            return "\n" + "\n".join(lines) + "\n"
-
-        def _replace_ul(match) -> str:  # noqa: ANN001
-            inner = match.group(1)
-            items = re.findall(
-                r"<li[^>]*>(.*?)</li>", inner, flags=re.IGNORECASE | re.DOTALL
-            )
-            if not items:
-                return "\n"
-            lines = [f"• {item.strip()}" for item in items]
-            return "\n" + "\n".join(lines) + "\n"
+                return ""
+            lines: list[str] = []
+            for idx, item in enumerate(items, 1):
+                marker = f"{idx}." if ordered else "•"
+                lines.append(
+                    '<p dir="rtl" align="right" style="margin: 0 0 8px 0;">'
+                    f"<b>{marker}</b> {item.strip()}</p>"
+                )
+            return "".join(lines)
 
         text = re.sub(
+            r"<\s*code[^>]*>(.*?)</\s*code\s*>",
+            lambda m: (
+                '<span style="font-family: monospace; direction: ltr; '
+                'unicode-bidi: embed;">' + m.group(1).strip() + "</span>"
+            ),
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        text = re.sub(
+            r"<\s*p[^>]*>(.*?)</\s*p\s*>",
+            lambda m: (
+                '<p dir="rtl" align="right" style="margin: 0 0 12px 0;">'
+                + m.group(1).strip()
+                + "</p>"
+            ),
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        text = re.sub(
+            r"<\s*h3[^>]*>(.*?)</\s*h3\s*>",
+            lambda m: (
+                '<p dir="rtl" align="right" '
+                'style="margin: 14px 0 10px 0; font-size: 21px;"><b>'
+                + m.group(1).strip()
+                + "</b></p>"
+            ),
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        text = re.sub(
             r"<ol[^>]*>(.*?)</ol>",
-            _replace_ol,
+            lambda m: _render_list(m.group(1), ordered=True),
             text,
             flags=re.IGNORECASE | re.DOTALL,
         )
         text = re.sub(
             r"<ul[^>]*>(.*?)</ul>",
-            _replace_ul,
+            lambda m: _render_list(m.group(1), ordered=False),
             text,
             flags=re.IGNORECASE | re.DOTALL,
         )
-        text = re.sub(r"<\s*br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"</\s*h3\s*>", "\n\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<\s*h3[^>]*>", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"</\s*p\s*>", "\n\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<\s*p[^>]*>", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"</?\s*div[^>]*>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<\s*code[^>]*>", "`", text, flags=re.IGNORECASE)
-        text = re.sub(r"</\s*code\s*>", "`", text, flags=re.IGNORECASE)
-        text = re.sub(r"<\s*/?\s*(strong|b)\s*>", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", "", text, flags=re.IGNORECASE)
-        text = html.unescape(text).replace("\xa0", " ")
+        text = re.sub(r"</?\s*div[^>]*>", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"<\s*br\s*/?>", "<br/>", text, flags=re.IGNORECASE)
+        text = re.sub(
+            r"</?\s*(ul|ol|li)\b[^>]*>", "", text, flags=re.IGNORECASE
+        )
+        text = re.sub(r"\n{2,}", "\n", text).strip()
 
-        lines = [line.strip() for line in text.splitlines()]
-        normalized: list[str] = []
-        previous_blank = False
-        for line in lines:
-            if not line:
-                if not previous_blank:
-                    normalized.append("")
-                previous_blank = True
-                continue
-            normalized.append("\u200f" + line)
-            previous_blank = False
-
-        return "\n".join(normalized).strip()
+        return (
+            '<div dir="rtl" style="text-align: right; line-height: 1.95; '
+            'unicode-bidi: plaintext;">' + text + "</div>"
+        )
