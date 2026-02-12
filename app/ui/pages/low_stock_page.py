@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEventLoop, Qt
+from PySide6.QtCore import QCoreApplication, QEventLoop, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,12 +24,17 @@ from app.services.inventory_service import InventoryService
 from app.utils.excel import autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount
 
-COL_PRODUCT = "نام کالا"
-COL_QUANTITY = "تعداد"
-COL_ALARM = "حد هشدار"
-COL_NEEDED = "نیاز"
-COL_AVG_BUY = "میانگین خرید"
-COL_SOURCE = "منبع"
+
+def _t(text: str) -> str:
+    return QCoreApplication.translate("LowStockPage", text)
+
+
+COL_PRODUCT = _t("نام کالا")
+COL_QUANTITY = _t("تعداد")
+COL_ALARM = _t("حد هشدار")
+COL_NEEDED = _t("نیاز")
+COL_AVG_BUY = _t("میانگین خرید")
+COL_SOURCE = _t("منبع")
 
 
 class LowStockPage(QWidget):
@@ -53,16 +58,16 @@ class LowStockPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Low Stock Alerts")
+        title = QLabel(self.tr("هشدار کمبود موجودی"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
-        export_button = QPushButton("Export")
+        export_button = QPushButton(self.tr("خروجی"))
         export_button.clicked.connect(self._export)
         header.addWidget(export_button)
 
-        refresh_button = QPushButton("Refresh")
+        refresh_button = QPushButton(self.tr("بروزرسانی"))
         refresh_button.clicked.connect(self.refresh)
         header.addWidget(refresh_button)
         layout.addLayout(header)
@@ -73,8 +78,8 @@ class LowStockPage(QWidget):
         summary_layout.setContentsMargins(16, 16, 16, 16)
         summary_layout.setSpacing(24)
 
-        self.items_label = QLabel("Items below alarm: 0")
-        self.total_needed_label = QLabel("Total needed: 0")
+        self.items_label = QLabel(self.tr("کالاهای زیر حد هشدار: 0"))
+        self.total_needed_label = QLabel(self.tr("مجموع نیاز: 0"))
         summary_layout.addWidget(self.items_label)
         summary_layout.addWidget(self.total_needed_label)
         summary_layout.addStretch(1)
@@ -87,7 +92,14 @@ class LowStockPage(QWidget):
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Quantity", "Alarm", "Needed", "Avg Buy", "Source"]
+            [
+                self.tr("کالا"),
+                self.tr("تعداد"),
+                self.tr("هشدار"),
+                self.tr("نیاز"),
+                self.tr("میانگین خرید"),
+                self.tr("منبع"),
+            ]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -106,8 +118,8 @@ class LowStockPage(QWidget):
     def refresh(self) -> None:
         if not self.inventory_service.is_loaded():
             self.table.setRowCount(0)
-            self.items_label.setText("Items below alarm: 0")
-            self.total_needed_label.setText("Total needed: 0")
+            self.items_label.setText(self.tr("کالاهای زیر حد هشدار: 0"))
+            self.total_needed_label.setText(self.tr("مجموع نیاز: 0"))
             return
 
         rows: list[dict[str, object]] = []
@@ -134,9 +146,13 @@ class LowStockPage(QWidget):
             )
 
         self._rows = rows
-        self.items_label.setText(f"Items below alarm: {len(rows)}")
+        self.items_label.setText(
+            self.tr("کالاهای زیر حد هشدار: {count}").format(count=len(rows))
+        )
         self.total_needed_label.setText(
-            f"Total needed: {sum(item['needed'] for item in rows)}"
+            self.tr("مجموع نیاز: {count}").format(
+                count=sum(item["needed"] for item in rows)
+            )
         )
 
         sorting_enabled = self.table.isSortingEnabled()
@@ -193,9 +209,9 @@ class LowStockPage(QWidget):
             return
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Low Stock List",
+            self.tr("خروجی لیست کمبود موجودی"),
             "low_stock.xlsx",
-            "Excel Files (*.xlsx);;CSV Files (*.csv)",
+            self.tr("فایل‌های اکسل (*.xlsx);;فایل‌های CSV (*.csv)"),
         )
         if not file_path:
             return
@@ -228,8 +244,10 @@ class LowStockPage(QWidget):
             )
             self.action_log_service.log_action(
                 "low_stock_export",
-                "خروجی کمبود موجودی",
-                f"تعداد ردیف‌ها: {len(df)}\nمسیر: {file_path}",
+                self.tr("خروجی کمبود موجودی"),
+                self.tr("تعداد ردیف‌ها: {count}\nمسیر: {path}").format(
+                    count=len(df), path=file_path
+                ),
                 admin=admin,
             )
 
