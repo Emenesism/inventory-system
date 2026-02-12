@@ -1,79 +1,37 @@
 from __future__ import annotations
 
-import sqlite3
-from datetime import datetime
-from pathlib import Path
-from zoneinfo import ZoneInfo
-
-from app.core.db_lock import db_connection
-from app.core.paths import app_dir
-from app.services.backup_sender import send_backup
+from app.core.config import AppConfig
+from app.services.backend_client import BackendAPIError, BackendClient
 
 
 class BasalamIdStore:
-    def __init__(self, db_path: Path | None = None) -> None:
-        if db_path is None:
-            db_path = app_dir() / "invoices.db"
-        self.db_path = db_path
-        self._init_db()
-
-    def _connect(self):
-        return db_connection(self.db_path, timeout=30)
-
-    def _init_db(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS basalam_order_ids (
-                    id TEXT PRIMARY KEY,
-                    saved_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_basalam_order_ids_saved_at "
-                "ON basalam_order_ids(saved_at)"
-            )
+    def __init__(self, db_path=None) -> None:
+        _ = db_path
+        config = AppConfig.load()
+        self._client = BackendClient(config.backend_url)
 
     def fetch_existing_ids(self, ids: list[str]) -> set[str]:
         if not ids:
             return set()
-        existing: set[str] = set()
-        with self._connect() as conn:
-            for chunk in _chunked(ids, 500):
-                placeholders = ",".join("?" for _ in chunk)
-                rows = conn.execute(
-                    f"""
-                    SELECT id
-                    FROM basalam_order_ids
-                    WHERE id IN ({placeholders})
-                    """,
-                    chunk,
-                ).fetchall()
-                existing.update(row[0] for row in rows)
-        return existing
+        try:
+            payload = self._client.post(
+                "/api/v1/basalam/order-ids/check",
+                json_body={"ids": ids},
+            )
+        except BackendAPIError:
+            return set()
+        existing = (
+            payload.get("existing_ids", []) if isinstance(payload, dict) else []
+        )
+        return {str(item) for item in existing}
 
     def store_ids(self, ids: list[str]) -> None:
         if not ids:
             return
-        timestamp = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
-            timespec="seconds"
-        )
-        rows = [(item_id, timestamp) for item_id in ids]
-        changes = 0
-        with self._connect() as conn:
-            before = conn.total_changes
-            conn.executemany(
-                """
-                INSERT OR IGNORE INTO basalam_order_ids (id, saved_at)
-                VALUES (?, ?)
-                """,
-                rows,
+        try:
+            self._client.post(
+                "/api/v1/basalam/order-ids/store",
+                json_body={"ids": ids},
             )
-            changes = conn.total_changes - before
-        if changes > 0:
-            send_backup(reason="basalam_ids")
-
-
-def _chunked(items: list[str], size: int) -> list[list[str]]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
+        except BackendAPIError:
+            return
