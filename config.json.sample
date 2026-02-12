@@ -1,13 +1,7 @@
 {
-  "inventory_file": "stock.dat",
+  "inventory_file": "stock.xlsx",
+  "backend_url": "http://127.0.0.1:8080",
   "theme": "light",
   "low_stock_threshold": 5,
-  "backup_dir": null,
-  "passcode": "1111",
-  "inventory_key": null,
-  "access_token": "",
-  "bot_token" : "",
-  "channel_id" : "",
-  "bot_token_for_sending" : ""
-  "bale_last_backup_name": null
+  "access_token": ""
 }
