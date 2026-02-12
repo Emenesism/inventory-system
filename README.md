@@ -32,7 +32,7 @@ transparent workflows (preview before apply, explicit exports, auditable logs).
 - Rotating log files for traceability
 
 ## Key Modules (Selected)
-- Inventory: load/save, inline edits, and safe backups
+- Inventory: load/save and inline edits
 - Sales Import: preview, validate, and apply with summary feedback
 - Purchase Invoice: invoice entry and stock cost recalculation
 - Invoices: delete sales invoices, edit purchase invoices, and export per-invoice Excel
@@ -57,10 +57,9 @@ transparent workflows (preview before apply, explicit exports, auditable logs).
 ## Configuration
 `config.json` fields:
 - `inventory_file` (path)
+- `backend_url` (Go backend base URL, default `http://127.0.0.1:8080`)
 - `theme` (`light` or `dark`)
 - `low_stock_threshold` (int)
-- `backup_dir` (path or null)
-- `passcode` (string)
 - `access_token` (Basalam API token)
 
 ## Observability
@@ -77,6 +76,10 @@ python -m app.main
 
 ## Operating Notes
 - Inventory file must include: `product_name`, `quantity`, `avg_buy_price`.
-- Backups are created before updates.
 - Basalam fetch requires `access_token` in `config.json`.
 - Excel exports are RTL/Persian and auto-fit columns.
+
+## Backend (Go + PostgreSQL)
+- A standalone backend service is available in `backend/`.
+- See `backend/README.md` for API, migration, and VPS deployment instructions.
+- UI now reads/writes app data through backend APIs (inventory, invoices, admins, actions, low-stock, Basalam ID store).
