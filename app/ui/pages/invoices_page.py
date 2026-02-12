@@ -65,27 +65,29 @@ class InvoicesPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Invoices")
+        title = QLabel(self.tr("فاکتورها"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
-        self.factor_button = QPushButton("Factor")
+        self.factor_button = QPushButton(self.tr("خروجی فاکتور"))
         self.factor_button.clicked.connect(self._open_factor_export)
         header.addWidget(self.factor_button)
 
-        refresh_button = QPushButton("Refresh")
+        refresh_button = QPushButton(self.tr("بروزرسانی"))
         refresh_button.clicked.connect(self.refresh)
         header.addWidget(refresh_button)
 
-        self.edit_button = QPushButton("Edit Invoice")
+        self.edit_button = QPushButton(self.tr("ویرایش فاکتور"))
         self.edit_button.clicked.connect(self._edit_selected_invoice)
         self.edit_button.setEnabled(False)
         self.edit_button.setVisible(False)
-        self.edit_button.setToolTip("Only purchase invoices can be edited.")
+        self.edit_button.setToolTip(
+            self.tr("فقط فاکتورهای خرید قابل ویرایش هستند.")
+        )
         header.addWidget(self.edit_button)
 
-        self.delete_button = QPushButton("Delete Invoice")
+        self.delete_button = QPushButton(self.tr("حذف فاکتور"))
         self.delete_button.setStyleSheet(
             "QPushButton { background: #DC2626; }"
             "QPushButton:hover { background: #B91C1C; }"
@@ -96,7 +98,7 @@ class InvoicesPage(QWidget):
         self.delete_button.setVisible(False)
         header.addWidget(self.delete_button)
 
-        self.load_more_button = QPushButton("Load More")
+        self.load_more_button = QPushButton(self.tr("موارد بیشتر"))
         self.load_more_button.clicked.connect(self._load_more)
         self.load_more_button.setEnabled(False)
         header.addWidget(self.load_more_button)
@@ -108,8 +110,8 @@ class InvoicesPage(QWidget):
         summary_layout.setContentsMargins(16, 16, 16, 16)
         summary_layout.setSpacing(24)
 
-        self.total_invoices_label = QLabel("Total invoices: 0")
-        self.total_amount_label = QLabel("Total amount: 0")
+        self.total_invoices_label = QLabel(self.tr("تعداد فاکتورها: 0"))
+        self.total_amount_label = QLabel(self.tr("مبلغ کل: 0"))
         summary_layout.addWidget(self.total_invoices_label)
         summary_layout.addWidget(self.total_amount_label)
         summary_layout.addStretch(1)
@@ -123,15 +125,15 @@ class InvoicesPage(QWidget):
         self.invoices_table = QTableWidget(0, 9)
         self.invoices_table.setHorizontalHeaderLabels(
             [
-                "Date (IR)",
-                "شماره فاکتور",
-                "Name",
-                "Type",
-                "Lines",
-                "Quantity",
-                "Admin",
-                "Total",
-                "Export",
+                self.tr("تاریخ"),
+                self.tr("شماره فاکتور"),
+                self.tr("نام"),
+                self.tr("نوع"),
+                self.tr("ردیف"),
+                self.tr("تعداد"),
+                self.tr("مدیر"),
+                self.tr("مبلغ کل"),
+                self.tr("خروجی"),
             ]
         )
         header_view = self.invoices_table.horizontalHeader()
@@ -171,12 +173,19 @@ class InvoicesPage(QWidget):
         details_layout.setContentsMargins(16, 16, 16, 16)
         details_layout.setSpacing(12)
 
-        self.details_label = QLabel("Select an invoice to view details.")
+        self.details_label = QLabel(
+            self.tr("برای مشاهده جزئیات یک فاکتور را انتخاب کنید.")
+        )
         details_layout.addWidget(self.details_label)
 
         self.lines_table = QTableWidget(0, 4)
         self.lines_table.setHorizontalHeaderLabels(
-            ["Product", "Price", "Qty", "Line Total"]
+            [
+                self.tr("کالا"),
+                self.tr("قیمت"),
+                self.tr("تعداد"),
+                self.tr("جمع خط"),
+            ]
         )
         lines_header = self.lines_table.horizontalHeader()
         lines_header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -203,13 +212,15 @@ class InvoicesPage(QWidget):
             self.invoice_service.get_invoice_stats()
         )
         self.total_invoices_label.setText(
-            f"Total invoices: {self._total_count}"
+            self.tr("تعداد فاکتورها: {count}").format(count=self._total_count)
         )
         self._set_total_amount_label()
         self.invoices_table.blockSignals(True)
         self.invoices_table.setRowCount(0)
         self.invoices_table.blockSignals(False)
-        self.details_label.setText("Select an invoice to view details.")
+        self.details_label.setText(
+            self.tr("برای مشاهده جزئیات یک فاکتور را انتخاب کنید.")
+        )
         self.lines_table.setRowCount(0)
         self._load_more()
         self._update_action_buttons()
@@ -234,22 +245,29 @@ class InvoicesPage(QWidget):
         self.lines_table.setColumnHidden(3, not show_price)
         if inv:
             header_parts = [
-                f"شماره فاکتور {inv.invoice_id}",
+                self.tr("شماره فاکتور {id}").format(id=inv.invoice_id),
                 self._format_type(invoice_type),
                 to_jalali_datetime(inv.created_at),
             ]
             if inv.invoice_name:
-                header_parts.insert(1, f"نام: {inv.invoice_name}")
+                header_parts.insert(
+                    1,
+                    self.tr("نام: {name}").format(name=inv.invoice_name),
+                )
             header_parts.append(
-                f"Admin {self._format_admin(inv.admin_id, inv.admin_username)}"
+                self.tr("مدیر: {admin}").format(
+                    admin=self._format_admin(inv.admin_id, inv.admin_username)
+                )
             )
             if show_price:
                 header_parts.append(
-                    f"Total {self._format_amount(inv.total_amount)}"
+                    self.tr("مبلغ کل: {amount}").format(
+                        amount=self._format_amount(inv.total_amount)
+                    )
                 )
             header = " | ".join(header_parts)
         else:
-            header = "Invoice details"
+            header = self.tr("جزئیات فاکتور")
         self.details_label.setText(header)
 
         self.lines_table.setRowCount(len(lines))
@@ -294,7 +312,7 @@ class InvoicesPage(QWidget):
             self._loading_more = False
             self.load_more_button.setEnabled(False)
             if not self.invoices:
-                self.details_label.setText("No invoices yet.")
+                self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
             return
 
         start_row = self.invoices_table.rowCount()
@@ -340,7 +358,7 @@ class InvoicesPage(QWidget):
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 7, total_item)
 
-            export_button = QPushButton("Export")
+            export_button = QPushButton(self.tr("خروجی"))
             export_button.setProperty("compact", True)
             export_button.clicked.connect(
                 lambda _=False, inv_id=invoice.invoice_id, btn=export_button: (
@@ -358,31 +376,31 @@ class InvoicesPage(QWidget):
         if start_row == 0 and self.invoices:
             self.invoices_table.selectRow(0)
 
-    @staticmethod
-    def _format_type(value: str) -> str:
+    def _format_type(self, value: str) -> str:
         if value == "purchase":
-            return "Purchase"
+            return self.tr("خرید")
         if value == "sales_manual":
-            return "Sales Manual"
+            return self.tr("فروش دستی")
         if value == "sales_basalam":
-            return "Sales Basalam"
+            return self.tr("فروش باسلام")
         if value == "sales_site":
-            return "Sales Site"
+            return self.tr("فروش سایت")
         if value.startswith("sales"):
-            return "Sales"
+            return self.tr("فروش")
         return value.title()
 
     @staticmethod
     def _format_amount(value: float) -> str:
         return format_amount(value)
 
-    @staticmethod
-    def _format_admin(admin_id: int | None, admin_username: str | None) -> str:
+    def _format_admin(
+        self, admin_id: int | None, admin_username: str | None
+    ) -> str:
         if admin_username:
             return admin_username
         if admin_id is not None:
-            return f"ID {admin_id}"
-        return "Unknown"
+            return self.tr("شناسه {id}").format(id=admin_id)
+        return self.tr("نامشخص")
 
     def set_price_visibility(self, show: bool) -> None:
         self._show_prices = bool(show)
@@ -399,10 +417,12 @@ class InvoicesPage(QWidget):
     def _set_total_amount_label(self) -> None:
         if self._show_prices:
             self.total_amount_label.setText(
-                f"Total amount: {self._format_amount(self._total_amount)}"
+                self.tr("مبلغ کل: {amount}").format(
+                    amount=self._format_amount(self._total_amount)
+                )
             )
         else:
-            self.total_amount_label.setText("Total amount: ")
+            self.total_amount_label.setText(self.tr("مبلغ کل: "))
 
     def _should_show_prices(self, invoice_type: str) -> bool:
         if invoice_type.startswith("sales"):
@@ -459,14 +479,20 @@ class InvoicesPage(QWidget):
             return
         invoice = self.invoice_service.get_invoice(invoice_id)
         if invoice is None:
-            dialogs.show_error(self, "Invoices", "Invoice not found.")
+            dialogs.show_error(
+                self, self.tr("فاکتورها"), self.tr("فاکتور پیدا نشد.")
+            )
             return
         lines = self.invoice_service.get_invoice_lines(invoice_id)
         if not lines:
-            dialogs.show_error(self, "Invoices", "Invoice has no lines.")
+            dialogs.show_error(
+                self, self.tr("فاکتورها"), self.tr("فاکتور هیچ ردیفی ندارد.")
+            )
             return
         if not self.inventory_service.is_loaded():
-            dialogs.show_error(self, "Inventory", "Inventory not loaded.")
+            dialogs.show_error(
+                self, self.tr("موجودی"), self.tr("موجودی بارگذاری نشده است.")
+            )
             return
         inventory_df = self.inventory_service.get_dataframe()
         product_names = self.inventory_service.get_product_names()
@@ -499,18 +525,22 @@ class InvoicesPage(QWidget):
                     admin_username=admin_username,
                 )
             except Exception as exc:  # noqa: BLE001
-                dialogs.show_error(self, "Edit Invoice", str(exc))
+                dialogs.show_error(self, self.tr("ویرایش فاکتور"), str(exc))
                 return
             if self._action_log_service:
                 title = (
-                    "ویرایش نام فاکتور فروش"
+                    self.tr("ویرایش نام فاکتور فروش")
                     if invoice.invoice_type.startswith("sales")
-                    else "ویرایش نام فاکتور خرید"
+                    else self.tr("ویرایش نام فاکتور خرید")
                 )
-                details = (
-                    f"شماره فاکتور: {invoice.invoice_id}\n"
-                    f"نام قبلی: {invoice.invoice_name or ''}\n"
-                    f"نام جدید: {new_name or ''}"
+                details = self.tr(
+                    "شماره فاکتور: {invoice_id}\n"
+                    "نام قبلی: {old_name}\n"
+                    "نام جدید: {new_name}"
+                ).format(
+                    invoice_id=invoice.invoice_id,
+                    old_name=invoice.invoice_name or "",
+                    new_name=new_name or "",
                 )
                 self._action_log_service.log_action(
                     "invoice_edit",
@@ -519,27 +549,37 @@ class InvoicesPage(QWidget):
                     admin=admin,
                 )
             if self.toast:
-                self.toast.show("Invoice updated", "success")
+                self.toast.show(self.tr("فاکتور به‌روزرسانی شد"), "success")
             else:
-                dialogs.show_info(self, "Invoices", "Invoice updated.")
+                dialogs.show_info(
+                    self,
+                    self.tr("فاکتورها"),
+                    self.tr("فاکتور به‌روزرسانی شد."),
+                )
             self._after_invoice_change()
             return
         confirm_message = (
-            f"Save changes to invoice #{invoice.invoice_id}?\n"
-            f"Type: {self._format_type(invoice.invoice_type)}\n"
-            f"Date: {to_jalali_datetime(invoice.created_at)}\n"
+            self.tr("تغییرات فاکتور #{id} ذخیره شود؟\n").format(
+                id=invoice.invoice_id
+            )
+            + self.tr("نوع: {type}\n").format(
+                type=self._format_type(invoice.invoice_type)
+            )
+            + self.tr("تاریخ: {date}\n").format(
+                date=to_jalali_datetime(invoice.created_at)
+            )
         )
         if name_changed:
-            confirm_message += (
-                f"Name: {invoice.invoice_name or ''} → {new_name or ''}\n"
+            confirm_message += self.tr("نام: {old} → {new}\n").format(
+                old=invoice.invoice_name or "",
+                new=new_name or "",
             )
-        confirm_message += (
-            f"Lines: {len(lines)} → {len(new_lines)}\n"
-            "Stock reconciliation is handled by backend."
-        )
+        confirm_message += self.tr("ردیف‌ها: {old} → {new}\n").format(
+            old=len(lines), new=len(new_lines)
+        ) + self.tr("تطبیق موجودی توسط بک‌اند انجام می‌شود.")
         confirm = dialogs.ask_yes_no(
             self,
-            "Edit Invoice",
+            self.tr("ویرایش فاکتور"),
             confirm_message,
         )
         if not confirm:
@@ -559,31 +599,39 @@ class InvoicesPage(QWidget):
                 admin_username=admin_username,
             )
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self, "Edit Invoice", str(exc))
+            dialogs.show_error(self, self.tr("ویرایش فاکتور"), str(exc))
             return
         if self._action_log_service:
-            before_block = self._format_lines_for_log(lines, "قبل")
-            after_block = self._format_lines_for_log(new_lines, "بعد")
+            before_block = self._format_lines_for_log(lines, self.tr("قبل"))
+            after_block = self._format_lines_for_log(new_lines, self.tr("بعد"))
             title = (
-                "ویرایش فاکتور فروش"
+                self.tr("ویرایش فاکتور فروش")
                 if invoice.invoice_type.startswith("sales")
-                else "ویرایش فاکتور خرید"
+                else self.tr("ویرایش فاکتور خرید")
             )
             self._action_log_service.log_action(
                 "invoice_edit",
                 title,
-                (
-                    f"شماره فاکتور: {invoice.invoice_id}\n"
-                    f"تعداد ردیف‌ها: {len(lines)} → {len(new_lines)}\n"
+                self.tr(
+                    "شماره فاکتور: {invoice_id}\n"
+                    "تعداد ردیف‌ها: {old_count} → {new_count}\n"
                     "تغییر موجودی: اعمال در بک‌اند"
-                    f"\n\n{before_block}\n\n{after_block}"
-                ),
+                ).format(
+                    invoice_id=invoice.invoice_id,
+                    old_count=len(lines),
+                    new_count=len(new_lines),
+                )
+                + f"\n\n{before_block}\n\n{after_block}",
                 admin=admin,
             )
         if self.toast:
-            self.toast.show("Invoice updated", "success")
+            self.toast.show(self.tr("فاکتور به‌روزرسانی شد"), "success")
         else:
-            dialogs.show_info(self, "Invoices", "Invoice updated.")
+            dialogs.show_info(
+                self,
+                self.tr("فاکتورها"),
+                self.tr("فاکتور به‌روزرسانی شد."),
+            )
         self._after_invoice_change()
 
     def _delete_selected_invoice(self) -> None:
@@ -594,17 +642,25 @@ class InvoicesPage(QWidget):
             return
         invoice = self.invoice_service.get_invoice(invoice_id)
         if invoice is None:
-            dialogs.show_error(self, "Invoices", "Invoice not found.")
+            dialogs.show_error(
+                self, self.tr("فاکتورها"), self.tr("فاکتور پیدا نشد.")
+            )
             return
         confirm = dialogs.ask_yes_no(
             self,
-            "Delete Invoice",
+            self.tr("حذف فاکتور"),
             (
-                f"Delete invoice #{invoice.invoice_id}?\n"
-                f"Type: {self._format_type(invoice.invoice_type)}\n"
-                f"Date: {to_jalali_datetime(invoice.created_at)}\n"
-                f"Lines: {invoice.total_lines}\n"
-                "Stock reconciliation is handled by backend."
+                self.tr("فاکتور #{id} حذف شود؟\n").format(id=invoice.invoice_id)
+                + self.tr("نوع: {type}\n").format(
+                    type=self._format_type(invoice.invoice_type)
+                )
+                + self.tr("تاریخ: {date}\n").format(
+                    date=to_jalali_datetime(invoice.created_at)
+                )
+                + self.tr("تعداد ردیف: {count}\n").format(
+                    count=invoice.total_lines
+                )
+                + self.tr("تطبیق موجودی توسط بک‌اند انجام می‌شود.")
             ),
         )
         if not confirm:
@@ -620,36 +676,43 @@ class InvoicesPage(QWidget):
                 invoice.invoice_id, admin_username=admin_username
             )
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self, "Delete Invoice", str(exc))
+            dialogs.show_error(self, self.tr("حذف فاکتور"), str(exc))
             return
         if self._action_log_service:
             title = (
-                "حذف فاکتور فروش"
+                self.tr("حذف فاکتور فروش")
                 if invoice.invoice_type.startswith("sales")
-                else "حذف فاکتور خرید"
+                else self.tr("حذف فاکتور خرید")
             )
             self._action_log_service.log_action(
                 "invoice_delete",
                 title,
-                (
-                    f"شماره فاکتور: {invoice.invoice_id}\n"
-                    f"تعداد ردیف‌ها: {invoice.total_lines}\n"
+                self.tr(
+                    "شماره فاکتور: {invoice_id}\n"
+                    "تعداد ردیف‌ها: {line_count}\n"
                     "تغییر موجودی: اعمال در بک‌اند"
+                ).format(
+                    invoice_id=invoice.invoice_id,
+                    line_count=invoice.total_lines,
                 ),
                 admin=admin,
             )
         if self.toast:
-            self.toast.show("Invoice deleted", "success")
+            self.toast.show(self.tr("فاکتور حذف شد"), "success")
         else:
-            dialogs.show_info(self, "Invoices", "Invoice deleted.")
+            dialogs.show_info(
+                self,
+                self.tr("فاکتورها"),
+                self.tr("فاکتور حذف شد."),
+            )
         self._after_invoice_change()
 
     def _open_invoice_export_menu(
         self, button: QPushButton, invoice_id: int
     ) -> None:
         menu = QMenu(button)
-        excel_action = menu.addAction("Excel (.xlsx)")
-        pdf_action = menu.addAction("PDF (.pdf)")
+        excel_action = menu.addAction(self.tr("اکسل (.xlsx)"))
+        pdf_action = menu.addAction(self.tr("پی‌دی‌اف (.pdf)"))
         action = menu.exec(button.mapToGlobal(QPoint(0, button.height())))
         if action == excel_action:
             self._export_invoice(invoice_id, "excel")
@@ -659,41 +722,47 @@ class InvoicesPage(QWidget):
     def _export_invoice(self, invoice_id: int, file_format: str) -> None:
         invoice = self.invoice_service.get_invoice(invoice_id)
         if invoice is None:
-            dialogs.show_error(self, "Export Invoice", "Invoice not found.")
+            dialogs.show_error(
+                self, self.tr("خروجی فاکتور"), self.tr("فاکتور پیدا نشد.")
+            )
             return
         lines = self.invoice_service.get_invoice_lines(invoice_id)
         if not lines:
-            dialogs.show_error(self, "Export Invoice", "Invoice has no lines.")
+            dialogs.show_error(
+                self,
+                self.tr("خروجی فاکتور"),
+                self.tr("فاکتور هیچ ردیفی ندارد."),
+            )
             return
 
         if file_format == "pdf":
             default_name = f"invoice_{invoice.invoice_id}.pdf"
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
-                "Export Invoice",
+                self.tr("خروجی فاکتور"),
                 default_name,
-                "PDF Files (*.pdf)",
+                self.tr("فایل‌های PDF (*.pdf)"),
             )
             if not file_path:
                 return
             if not file_path.lower().endswith(".pdf"):
                 file_path = f"{file_path}.pdf"
             export_invoice_pdf(file_path, invoice, lines)
-            log_title = "خروجی PDF فاکتور"
+            log_title = self.tr("خروجی PDF فاکتور")
         else:
             default_name = f"invoice_{invoice.invoice_id}.xlsx"
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
-                "Export Invoice",
+                self.tr("خروجی فاکتور"),
                 default_name,
-                "Excel Files (*.xlsx)",
+                self.tr("فایل‌های اکسل (*.xlsx)"),
             )
             if not file_path:
                 return
             if not file_path.lower().endswith(".xlsx"):
                 file_path = f"{file_path}.xlsx"
             export_invoice_excel(file_path, invoice, lines)
-            log_title = "خروجی اکسل فاکتور"
+            log_title = self.tr("خروجی اکسل فاکتور")
 
         if self._action_log_service:
             admin = (
@@ -704,13 +773,20 @@ class InvoicesPage(QWidget):
             self._action_log_service.log_action(
                 "invoice_export",
                 log_title,
-                f"شماره فاکتور: {invoice.invoice_id}\nمسیر: {file_path}",
+                self.tr("شماره فاکتور: {invoice_id}\nمسیر: {path}").format(
+                    invoice_id=invoice.invoice_id,
+                    path=file_path,
+                ),
                 admin=admin,
             )
         if self.toast:
-            self.toast.show("Invoice exported", "success")
+            self.toast.show(self.tr("خروجی فاکتور انجام شد"), "success")
         else:
-            dialogs.show_info(self, "Export Invoice", "Invoice exported.")
+            dialogs.show_info(
+                self,
+                self.tr("خروجی فاکتور"),
+                self.tr("خروجی فاکتور انجام شد."),
+            )
 
     def _open_factor_export(self) -> None:
         dialog = InvoiceBatchExportDialog(
@@ -746,18 +822,26 @@ class InvoicesPage(QWidget):
                 return False
         return True
 
-    @staticmethod
-    def _format_lines_for_log(lines, label: str) -> str:
-        header = f"{label}:"
+    def _format_lines_for_log(self, lines, label: str) -> str:
+        header = self.tr("{label}:").format(label=label)
         if not lines:
-            return f"{header}\n(هیچ)"
+            return self.tr("{header}\n(هیچ)").format(header=header)
         rows = []
         for idx, line in enumerate(lines[:60], start=1):
             total = float(line.price) * int(line.quantity)
             rows.append(
-                f"{idx}) {line.product_name} | قیمت: {line.price} | "
-                f"تعداد: {line.quantity} | جمع: {total:,.0f}"
+                self.tr(
+                    "{idx}) {name} | قیمت: {price} | تعداد: {qty} | جمع: {total}"
+                ).format(
+                    idx=idx,
+                    name=line.product_name,
+                    price=line.price,
+                    qty=line.quantity,
+                    total=f"{total:,.0f}",
+                )
             )
         if len(lines) > 60:
-            rows.append(f"... {len(lines) - 60} ردیف دیگر")
+            rows.append(
+                self.tr("... {count} ردیف دیگر").format(count=len(lines) - 60)
+            )
         return header + "\n" + "\n".join(rows)
