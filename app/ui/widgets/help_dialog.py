@@ -17,7 +17,7 @@ class HelpDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("HelpDialog")
-        self.setWindowTitle("راهنما")
+        self.setWindowTitle(self.tr("راهنما"))
         self.setLayoutDirection(Qt.RightToLeft)
         self.resize(960, 640)
         self.setMinimumSize(860, 560)
@@ -26,7 +26,7 @@ class HelpDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        self.title_label = QLabel("راهنما")
+        self.title_label = QLabel(self.tr("راهنما"))
         self.title_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.title_label.setStyleSheet("font-size: 18px; font-weight: 700;")
         layout.addWidget(self.title_label)
@@ -45,7 +45,7 @@ class HelpDialog(QDialog):
 
         button_row = QHBoxLayout()
         button_row.addStretch(1)
-        close_button = QPushButton("بستن")
+        close_button = QPushButton(self.tr("بستن"))
         close_button.clicked.connect(self.accept)
         button_row.addWidget(close_button)
         layout.addLayout(button_row)
