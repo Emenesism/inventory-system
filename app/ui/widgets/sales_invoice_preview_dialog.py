@@ -106,9 +106,12 @@ class SalesInvoicePreviewDialog(QDialog):
         name_layout.addWidget(name_label)
 
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText(self.tr("اختیاری"))
+        # Prefix with RLM and force absolute-right so placeholder stays on visual right.
+        self.name_input.setPlaceholderText("\u200f" + self.tr("اختیاری"))
         self.name_input.setLayoutDirection(Qt.RightToLeft)
-        self.name_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.name_input.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
         name_layout.addWidget(self.name_input, 1)
 
         content_layout.addWidget(name_card)

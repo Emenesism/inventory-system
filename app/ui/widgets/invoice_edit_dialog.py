@@ -75,7 +75,11 @@ class InvoiceEditDialog(QDialog):
         name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         name_row.addWidget(name_label)
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText(self.tr("اختیاری"))
+        self.name_input.setPlaceholderText("\u200f" + self.tr("اختیاری"))
+        self.name_input.setLayoutDirection(Qt.RightToLeft)
+        self.name_input.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
         self.name_input.setText(invoice.invoice_name or "")
         name_row.addWidget(self.name_input, 1)
         layout.addLayout(name_row)
