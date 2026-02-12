@@ -50,9 +50,11 @@ class PurchaseInvoiceController(QObject):
     def submit(self, lines: list[PurchaseLine]) -> None:
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                self.page, "Inventory Error", "Load inventory first."
+                self.page,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
-            self.toast.show("Inventory not loaded", "error")
+            self.toast.show(self.tr("موجودی بارگذاری نشده است"), "error")
             return
         valid_lines: list[PurchaseLine] = []
         invalid = 0
@@ -67,15 +69,17 @@ class PurchaseInvoiceController(QObject):
 
         if not valid_lines:
             dialogs.show_error(
-                self.page, "Purchase Invoice", "Add at least one valid line."
+                self.page,
+                self.tr("فاکتور خرید"),
+                self.tr("حداقل یک ردیف معتبر اضافه کنید."),
             )
-            self.toast.show("No valid purchase lines", "error")
+            self.toast.show(self.tr("هیچ ردیف خرید معتبری وجود ندارد"), "error")
             return
 
         preview_data = self._build_preview_data(valid_lines, invalid)
         dialog = PurchaseInvoicePreviewDialog(self.page, preview_data)
         if dialog.exec() != QDialog.Accepted:
-            self.toast.show("Purchase invoice canceled", "info")
+            self.toast.show(self.tr("ثبت فاکتور خرید لغو شد"), "info")
             return
         invoice_name = dialog.invoice_name()
 
@@ -99,28 +103,35 @@ class PurchaseInvoiceController(QObject):
                 total_amount = sum(
                     line.price * line.quantity for line in valid_lines
                 )
-                details = (
-                    f"شماره فاکتور: {invoice_id}\n"
-                    f"تعداد ردیف‌ها: {len(valid_lines)}\n"
-                    f"تعداد کل: {total_qty}\n"
-                    f"مبلغ کل: {total_amount:,.0f}"
+                details = self.tr(
+                    "شماره فاکتور: {invoice_id}\n"
+                    "تعداد ردیف‌ها: {line_count}\n"
+                    "تعداد کل: {total_qty}\n"
+                    "مبلغ کل: {total_amount}"
+                ).format(
+                    invoice_id=invoice_id,
+                    line_count=len(valid_lines),
+                    total_qty=total_qty,
+                    total_amount=f"{total_amount:,.0f}",
                 )
                 self._action_log_service.log_action(
                     "purchase_invoice",
-                    "ثبت فاکتور خرید",
+                    self.tr("ثبت فاکتور خرید"),
                     details,
                     admin=admin,
                 )
             self.on_invoices_updated()
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Purchase Invoice", str(exc))
-            self.toast.show("Purchase invoice failed", "error")
+            dialogs.show_error(self.page, self.tr("فاکتور خرید"), str(exc))
+            self.toast.show(self.tr("ثبت فاکتور خرید ناموفق بود"), "error")
             self._logger.exception("Failed to create purchase invoice")
             return
 
-        message = "Purchase invoice saved."
+        message = self.tr("فاکتور خرید ذخیره شد.")
         if invalid:
-            message += f" Skipped {invalid} invalid lines."
+            message += " " + self.tr(
+                "{count} ردیف نامعتبر نادیده گرفته شد."
+            ).format(count=invalid)
         self.toast.show(message, "success")
         self.page.reset_after_submit()
 
