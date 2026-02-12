@@ -61,9 +61,11 @@ class SalesImportController(QObject):
     def preview(self, path: str) -> None:
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                self.page, "Inventory Error", "Load inventory first."
+                self.page,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
-            self.toast.show("Inventory not loaded", "error")
+            self.toast.show(self.tr("موجودی بارگذاری نشده است"), "error")
             return
         try:
             sales_df = self.sales_service.load_sales_file(path)
@@ -72,8 +74,8 @@ class SalesImportController(QObject):
                 sales_df, inventory_df
             )
         except InventoryFileError as exc:
-            dialogs.show_error(self.page, "Sales Import Error", str(exc))
-            self.toast.show("Sales preview failed", "error")
+            dialogs.show_error(self.page, self.tr("خطای ورود فروش"), str(exc))
+            self.toast.show(self.tr("پیش‌نمایش فروش ناموفق بود"), "error")
             self._logger.exception("Failed to preview sales import")
             return
 
@@ -88,20 +90,24 @@ class SalesImportController(QObject):
             editable, self.inventory_service.get_product_names()
         )
         self.page.set_preview(preview_rows, summary)
-        self.toast.show("Preview ready", "success")
+        self.toast.show(self.tr("پیش‌نمایش آماده است"), "success")
 
     def apply(self) -> None:
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                self.page, "Inventory Error", "Load inventory first."
+                self.page,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
-            self.toast.show("Inventory not loaded", "error")
+            self.toast.show(self.tr("موجودی بارگذاری نشده است"), "error")
             return
         if not self.page.preview_rows:
             dialogs.show_error(
-                self.page, "Sales Import", "Load a preview first."
+                self.page,
+                self.tr("ورود فروش"),
+                self.tr("ابتدا پیش‌نمایش را بارگذاری کنید."),
             )
-            self.toast.show("No preview loaded", "error")
+            self.toast.show(self.tr("پیش‌نمایشی بارگذاری نشده است"), "error")
             return
 
         ok_count = sum(
@@ -110,9 +116,13 @@ class SalesImportController(QObject):
         error_count = len(self.page.preview_rows) - ok_count
         if ok_count == 0:
             dialogs.show_error(
-                self.page, "Sales Import", "No valid rows to apply."
+                self.page,
+                self.tr("ورود فروش"),
+                self.tr("هیچ ردیف معتبری برای اعمال وجود ندارد."),
             )
-            self.toast.show("No valid rows to apply", "error")
+            self.toast.show(
+                self.tr("هیچ ردیف معتبری برای اعمال وجود ندارد"), "error"
+            )
             return
 
         self.page.flush_pending_edits()
@@ -133,15 +143,17 @@ class SalesImportController(QObject):
             )
             preview_dialog = SalesInvoicePreviewDialog(self.page, preview_data)
             if preview_dialog.exec() != QDialog.Accepted:
-                self.toast.show("Sales import canceled", "info")
+                self.toast.show(self.tr("ثبت فروش لغو شد"), "info")
                 return
             invoice_name = preview_dialog.invoice_name()
         except Exception:  # noqa: BLE001
             self._logger.exception("Failed to prepare sales import preview")
             dialogs.show_error(
-                self.page, "Sales Import", "Failed to build invoice preview."
+                self.page,
+                self.tr("ورود فروش"),
+                self.tr("ساخت پیش‌نمایش فاکتور ناموفق بود."),
             )
-            self.toast.show("Sales preview failed", "error")
+            self.toast.show(self.tr("پیش‌نمایش فروش ناموفق بود"), "error")
             return
 
         admin = (
@@ -175,15 +187,20 @@ class SalesImportController(QObject):
                     total_amount = sum(
                         line.price * line.quantity for line in sales_lines
                     )
-                    details = (
-                        f"شماره فاکتور: {invoice_id}\n"
-                        f"تعداد ردیف‌ها: {len(sales_lines)}\n"
-                        f"تعداد کل: {total_qty}\n"
-                        f"مبلغ کل: {total_amount:,.0f}"
+                    details = self.tr(
+                        "شماره فاکتور: {invoice_id}\n"
+                        "تعداد ردیف‌ها: {line_count}\n"
+                        "تعداد کل: {total_qty}\n"
+                        "مبلغ کل: {total_amount}"
+                    ).format(
+                        invoice_id=invoice_id,
+                        line_count=len(sales_lines),
+                        total_qty=total_qty,
+                        total_amount=f"{total_amount:,.0f}",
                     )
                     self._action_log_service.log_action(
                         "sales_import",
-                        "ثبت فاکتور فروش",
+                        self.tr("ثبت فاکتور فروش"),
                         details,
                         admin=admin,
                     )
@@ -191,13 +208,13 @@ class SalesImportController(QObject):
                 self.on_inventory_updated()
                 self.on_invoices_updated()
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Sales Import", str(exc))
-            self.toast.show("Sales import failed", "error")
+            dialogs.show_error(self.page, self.tr("ورود فروش"), str(exc))
+            self.toast.show(self.tr("ثبت فروش ناموفق بود"), "error")
             self._logger.exception("Failed to apply sales import")
             return
 
         self.page.reset_after_apply()
-        self.toast.show("Sales import applied", "success")
+        self.toast.show(self.tr("ورود فروش اعمال شد"), "success")
 
     def update_row_statuses(self, row_indices: list[int]) -> None:
         if not row_indices or not self.page.preview_rows:
@@ -219,12 +236,16 @@ class SalesImportController(QObject):
     def export(self) -> None:
         if not self.page.preview_rows:
             dialogs.show_error(
-                self.page, "Sales Export", "Load a preview first."
+                self.page,
+                self.tr("خروجی فروش"),
+                self.tr("ابتدا پیش‌نمایش را بارگذاری کنید."),
             )
             return
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                self.page, "Inventory Error", "Load inventory first."
+                self.page,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
             return
 
@@ -244,8 +265,8 @@ class SalesImportController(QObject):
         if not not_found_rows and not fuzzy_rows:
             dialogs.show_info(
                 self.page,
-                "Sales Export",
-                "No missing or fuzzy matches to export.",
+                self.tr("خروجی فروش"),
+                self.tr("موردی برای خروجیِ خطا یا تطبیق تقریبی وجود ندارد."),
             )
             return
 
@@ -253,9 +274,9 @@ class SalesImportController(QObject):
 
         file_path, _ = QFileDialog.getSaveFileName(
             self.page,
-            "Export Sales Issues",
+            self.tr("خروجی مغایرت‌های فروش"),
             "sales_import_review.xlsx",
-            "Excel Files (*.xlsx)",
+            self.tr("فایل‌های اکسل (*.xlsx)"),
         )
         if not file_path:
             return
@@ -265,7 +286,7 @@ class SalesImportController(QObject):
         try:
             import pandas as pd
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Sales Export", str(exc))
+            dialogs.show_error(self.page, self.tr("خروجی فروش"), str(exc))
             return
 
         inventory_df = self.inventory_service.get_dataframe()
@@ -276,35 +297,38 @@ class SalesImportController(QObject):
                 stock_map[key] = inv_row
 
         def _translate_status(status: str) -> str:
-            return {"OK": "موفق", "Error": "خطا"}.get(status, status)
+            return {
+                "OK": self.tr("موفق"),
+                "Error": self.tr("خطا"),
+            }.get(status, status)
 
         def _translate_message(message: str) -> str:
             if message.startswith("Matched to "):
                 matched = message.replace("Matched to ", "", 1).strip()
-                return f"مطابقت با {matched}"
+                return self.tr("مطابقت با {matched}").format(matched=matched)
             return {
-                "Product not found": "کالا یافت نشد",
-                "Missing product name": "نام کالا خالی است",
-                "Invalid quantity": "تعداد نامعتبر است",
-                "Will update stock": "موجودی بروزرسانی می‌شود",
+                "Product not found": self.tr("کالا یافت نشد"),
+                "Missing product name": self.tr("نام کالا خالی است"),
+                "Invalid quantity": self.tr("تعداد نامعتبر است"),
+                "Will update stock": self.tr("موجودی بروزرسانی می‌شود"),
             }.get(message, message)
 
         def _translate_inventory_columns(columns: list[str]) -> dict[str, str]:
             mapping = {
-                "product_name": "نام محصول",
-                "quantity": "تعداد",
-                "avg_buy_price": "میانگین قیمت خرید",
-                "alarm": "آلارم",
-                "source": "منبع",
-                "category": "دسته‌بندی",
-                "brand": "برند",
-                "sku": "کد کالا",
-                "code": "کد",
-                "barcode": "بارکد",
-                "size": "سایز",
-                "color": "رنگ",
-                "description": "توضیحات",
-                "notes": "یادداشت",
+                "product_name": self.tr("نام محصول"),
+                "quantity": self.tr("تعداد"),
+                "avg_buy_price": self.tr("میانگین قیمت خرید"),
+                "alarm": self.tr("آلارم"),
+                "source": self.tr("منبع"),
+                "category": self.tr("دسته‌بندی"),
+                "brand": self.tr("برند"),
+                "sku": self.tr("کد کالا"),
+                "code": self.tr("کد"),
+                "barcode": self.tr("بارکد"),
+                "size": self.tr("سایز"),
+                "color": self.tr("رنگ"),
+                "description": self.tr("توضیحات"),
+                "notes": self.tr("یادداشت"),
             }
             translated: dict[str, str] = {}
             for col in columns:
@@ -316,7 +340,7 @@ class SalesImportController(QObject):
                     if any("\u0600" <= ch <= "\u06ff" for ch in str(col)):
                         translated[col] = str(col)
                     else:
-                        translated[col] = f"ستون {col}"
+                        translated[col] = self.tr("ستون {col}").format(col=col)
             return translated
 
         inventory_columns = list(inventory_df.columns)
@@ -326,21 +350,21 @@ class SalesImportController(QObject):
         for row in not_found_rows:
             not_found_payload.append(
                 {
-                    "نام محصول فروش": row.product_name,
-                    "تعداد فروش": row.quantity_sold,
-                    "وضعیت": _translate_status(row.status),
-                    "پیام": _translate_message(row.message),
+                    self.tr("نام محصول فروش"): row.product_name,
+                    self.tr("تعداد فروش"): row.quantity_sold,
+                    self.tr("وضعیت"): _translate_status(row.status),
+                    self.tr("پیام"): _translate_message(row.message),
                 }
             )
 
         fuzzy_payload = []
         for row in fuzzy_rows:
             record = {
-                "نام محصول فروش": row.product_name,
-                "تعداد فروش": row.quantity_sold,
-                "محصول مطابق": row.resolved_name,
-                "وضعیت": "مطابقت تقریبی",
-                "پیام": _translate_message(row.message),
+                self.tr("نام محصول فروش"): row.product_name,
+                self.tr("تعداد فروش"): row.quantity_sold,
+                self.tr("محصول مطابق"): row.resolved_name,
+                self.tr("وضعیت"): self.tr("مطابقت تقریبی"),
+                self.tr("پیام"): _translate_message(row.message),
             }
             key = normalize_text(row.resolved_name or row.product_name)
             stock_row = stock_map.get(key)
@@ -356,17 +380,21 @@ class SalesImportController(QObject):
             with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
                 if not_found_payload:
                     pd.DataFrame(not_found_payload).to_excel(
-                        writer, index=False, sheet_name="یافت نشد"
+                        writer,
+                        index=False,
+                        sheet_name=self.tr("یافت نشد"),
                     )
                 if fuzzy_payload:
                     pd.DataFrame(fuzzy_payload).to_excel(
-                        writer, index=False, sheet_name="مطابقت تقریبی"
+                        writer,
+                        index=False,
+                        sheet_name=self.tr("مطابقت تقریبی"),
                     )
             ensure_sheet_rtl(file_path)
             apply_banded_rows(file_path)
             autofit_columns(file_path)
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Sales Export", str(exc))
+            dialogs.show_error(self.page, self.tr("خروجی فروش"), str(exc))
             self._logger.exception("Failed to export sales issues")
             return
 
@@ -376,26 +404,32 @@ class SalesImportController(QObject):
                 if self._current_admin_provider
                 else None
             )
-            details = (
-                f"موارد یافت نشد: {len(not_found_payload)}\n"
-                f"موارد fuzzy: {len(fuzzy_payload)}\n"
-                f"مسیر: {file_path}"
+            details = self.tr(
+                "موارد یافت نشد: {missing}\n"
+                "موارد تطبیق تقریبی: {fuzzy}\n"
+                "مسیر: {path}"
+            ).format(
+                missing=len(not_found_payload),
+                fuzzy=len(fuzzy_payload),
+                path=file_path,
             )
             self._action_log_service.log_action(
                 "sales_import_export",
-                "خروجی مغایرت‌های فروش",
+                self.tr("خروجی مغایرت‌های فروش"),
                 details,
                 admin=admin,
             )
 
-        self.toast.show("Sales export completed", "success")
+        self.toast.show(self.tr("خروجی فروش انجام شد"), "success")
 
     def open_manual_invoice(self) -> None:
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                self.page, "Inventory Error", "Load inventory first."
+                self.page,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
-            self.toast.show("Inventory not loaded", "error")
+            self.toast.show(self.tr("موجودی بارگذاری نشده است"), "error")
             return
         dialog = SalesManualInvoiceDialog(self.page)
         dialog.set_product_provider(self.inventory_service.get_product_names)
@@ -409,9 +443,11 @@ class SalesImportController(QObject):
     ) -> None:
         if not self.inventory_service.is_loaded():
             dialogs.show_error(
-                dialog, "Inventory Error", "Load inventory first."
+                dialog,
+                self.tr("خطای موجودی"),
+                self.tr("ابتدا موجودی را بارگذاری کنید."),
             )
-            self.toast.show("Inventory not loaded", "error")
+            self.toast.show(self.tr("موجودی بارگذاری نشده است"), "error")
             return
 
         valid_lines: list[SalesManualLine] = []
@@ -428,17 +464,17 @@ class SalesImportController(QObject):
         if not valid_lines:
             dialogs.show_error(
                 dialog,
-                "Manual Sales Invoice",
-                "Add at least one valid line.",
+                self.tr("فاکتور فروش دستی"),
+                self.tr("حداقل یک ردیف معتبر اضافه کنید."),
             )
-            self.toast.show("No valid sales lines", "error")
+            self.toast.show(self.tr("هیچ ردیف فروش معتبری وجود ندارد"), "error")
             return
 
         try:
             import pandas as pd
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
-            self.toast.show("Manual sales invoice failed", "error")
+            dialogs.show_error(dialog, self.tr("فاکتور فروش دستی"), str(exc))
+            self.toast.show(self.tr("ثبت فاکتور فروش دستی ناموفق بود"), "error")
             return
 
         manual_df = pd.DataFrame(
@@ -456,8 +492,8 @@ class SalesImportController(QObject):
                 manual_df, None
             )
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
-            self.toast.show("Manual sales invoice failed", "error")
+            dialogs.show_error(dialog, self.tr("فاکتور فروش دستی"), str(exc))
+            self.toast.show(self.tr("ثبت فاکتور فروش دستی ناموفق بود"), "error")
             return
 
         priced_lines = [
@@ -472,10 +508,10 @@ class SalesImportController(QObject):
         if not priced_lines:
             dialogs.show_error(
                 dialog,
-                "Manual Sales Invoice",
-                "No valid rows to submit.",
+                self.tr("فاکتور فروش دستی"),
+                self.tr("هیچ ردیف معتبری برای ثبت وجود ندارد."),
             )
-            self.toast.show("No valid sales lines", "error")
+            self.toast.show(self.tr("هیچ ردیف فروش معتبری وجود ندارد"), "error")
             return
 
         preview_data = self._build_sales_preview_data(
@@ -483,7 +519,7 @@ class SalesImportController(QObject):
         )
         preview_dialog = SalesInvoicePreviewDialog(dialog, preview_data)
         if preview_dialog.exec() != QDialog.Accepted:
-            self.toast.show("Manual sales invoice canceled", "info")
+            self.toast.show(self.tr("فاکتور فروش دستی لغو شد"), "info")
             return
         invoice_name = preview_dialog.invoice_name()
 
@@ -516,15 +552,20 @@ class SalesImportController(QObject):
                 total_amount = sum(
                     line.price * line.quantity for line in sales_lines
                 )
-                details = (
-                    f"شماره فاکتور: {invoice_id}\n"
-                    f"تعداد ردیف‌ها: {len(sales_lines)}\n"
-                    f"تعداد کل: {total_qty}\n"
-                    f"مبلغ کل: {total_amount:,.0f}"
+                details = self.tr(
+                    "شماره فاکتور: {invoice_id}\n"
+                    "تعداد ردیف‌ها: {line_count}\n"
+                    "تعداد کل: {total_qty}\n"
+                    "مبلغ کل: {total_amount}"
+                ).format(
+                    invoice_id=invoice_id,
+                    line_count=len(sales_lines),
+                    total_qty=total_qty,
+                    total_amount=f"{total_amount:,.0f}",
                 )
                 self._action_log_service.log_action(
                     "sales_manual_invoice",
-                    "ثبت فاکتور فروش دستی",
+                    self.tr("ثبت فاکتور فروش دستی"),
                     details,
                     admin=admin,
                 )
@@ -532,18 +573,20 @@ class SalesImportController(QObject):
             self.on_inventory_updated()
             self.on_invoices_updated()
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
-            self.toast.show("Manual sales invoice failed", "error")
+            dialogs.show_error(dialog, self.tr("فاکتور فروش دستی"), str(exc))
+            self.toast.show(self.tr("ثبت فاکتور فروش دستی ناموفق بود"), "error")
             self._logger.exception("Failed to apply manual sales invoice")
             return
 
         if invalid:
             self.toast.show(
-                f"Manual sales invoice saved (skipped {invalid} invalid rows).",
+                self.tr(
+                    "فاکتور فروش دستی ذخیره شد ({count} ردیف نامعتبر نادیده گرفته شد)."
+                ).format(count=invalid),
                 "success",
             )
         else:
-            self.toast.show("Manual sales invoice saved", "success")
+            self.toast.show(self.tr("فاکتور فروش دستی ذخیره شد"), "success")
         dialog.accept()
 
     def _build_sales_preview_data(
