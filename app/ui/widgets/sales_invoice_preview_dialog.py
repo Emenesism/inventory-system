@@ -56,7 +56,7 @@ class SalesInvoicePreviewDialog(QDialog):
         super().__init__(parent)
         self.data = data
 
-        self.setWindowTitle("پیش نمایش فاکتور فروش")
+        self.setWindowTitle(self.tr("پیش نمایش فاکتور فروش"))
         self.setModal(True)
         self.setLayoutDirection(Qt.RightToLeft)
         self.setMinimumSize(720, 560)
@@ -81,13 +81,15 @@ class SalesInvoicePreviewDialog(QDialog):
         content_layout.setSpacing(16)
         content_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
 
-        title = QLabel("پیش نمایش فاکتور فروش")
+        title = QLabel(self.tr("پیش نمایش فاکتور فروش"))
         title.setStyleSheet("font-size: 16px; font-weight: 700;")
         title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         content_layout.addWidget(title, 0, Qt.AlignRight)
 
-        subtitle = QLabel("لطفاً قبل از ثبت، فاکتور فروش را بررسی کنید.")
+        subtitle = QLabel(
+            self.tr("لطفاً قبل از ثبت، فاکتور فروش را بررسی کنید.")
+        )
         subtitle.setProperty("textRole", "muted")
         subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtitle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -99,12 +101,12 @@ class SalesInvoicePreviewDialog(QDialog):
         name_layout.setContentsMargins(16, 12, 16, 12)
         name_layout.setSpacing(12)
 
-        name_label = QLabel("نام فاکتور:")
+        name_label = QLabel(self.tr("نام فاکتور:"))
         name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         name_layout.addWidget(name_label)
 
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("اختیاری")
+        self.name_input.setPlaceholderText(self.tr("اختیاری"))
         self.name_input.setLayoutDirection(Qt.RightToLeft)
         self.name_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         name_layout.addWidget(self.name_input, 1)
@@ -119,14 +121,16 @@ class SalesInvoicePreviewDialog(QDialog):
         lines_layout.setSpacing(12)
         lines_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
 
-        lines_title = QLabel("اقلام فاکتور")
+        lines_title = QLabel(self.tr("اقلام فاکتور"))
         lines_title.setStyleSheet("font-weight: 600;")
         lines_title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lines_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lines_layout.addWidget(lines_title, 0, Qt.AlignRight)
 
         self.lines_table = QTableWidget(len(data.lines) + 1, 2)
-        self.lines_table.setHorizontalHeaderLabels(["شرح کالا", "تعداد"])
+        self.lines_table.setHorizontalHeaderLabels(
+            [self.tr("شرح کالا"), self.tr("تعداد")]
+        )
         self.lines_table.setAlternatingRowColors(True)
         self.lines_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.lines_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -157,7 +161,7 @@ class SalesInvoicePreviewDialog(QDialog):
             self._set_item(self.lines_table, row_idx, 1, str(line.quantity))
 
         totals_row = len(data.lines)
-        self._set_item(self.lines_table, totals_row, 0, "جمع کل")
+        self._set_item(self.lines_table, totals_row, 0, self.tr("جمع کل"))
         self._set_item(
             self.lines_table,
             totals_row,
@@ -172,7 +176,7 @@ class SalesInvoicePreviewDialog(QDialog):
         scroll.setWidget(content)
         layout.addWidget(scroll)
 
-        question = QLabel("ثبت این فاکتور؟")
+        question = QLabel(self.tr("ثبت این فاکتور؟"))
         question.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         question.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(question, 0, Qt.AlignRight)
@@ -180,12 +184,12 @@ class SalesInvoicePreviewDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.setDirection(QBoxLayout.RightToLeft)
 
-        confirm_button = QPushButton("ثبت فاکتور")
+        confirm_button = QPushButton(self.tr("ثبت فاکتور"))
         confirm_button.clicked.connect(self.accept)
         confirm_button.setDefault(True)
         button_row.addWidget(confirm_button)
 
-        cancel_button = QPushButton("انصراف")
+        cancel_button = QPushButton(self.tr("انصراف"))
         cancel_button.setProperty("variant", "secondary")
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
