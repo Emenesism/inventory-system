@@ -6,7 +6,15 @@ import math
 import time
 
 import requests
-from PySide6.QtCore import QObject, Qt, QThread, QTime, Signal, Slot
+from PySide6.QtCore import (
+    QCoreApplication,
+    QObject,
+    Qt,
+    QThread,
+    QTime,
+    Signal,
+    Slot,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -33,30 +41,35 @@ from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount, is_price_column
 from app.utils.text import normalize_text
 
+
+def _t(text: str) -> str:
+    return QCoreApplication.translate("BasalamPage", text)
+
+
 PERSIAN_MONTHS = [
-    "Farvardin",
-    "Ordibehesht",
-    "Khordad",
-    "Tir",
-    "Mordad",
-    "Shahrivar",
-    "Mehr",
-    "Aban",
-    "Azar",
-    "Dey",
-    "Bahman",
-    "Esfand",
+    _t("فروردین"),
+    _t("اردیبهشت"),
+    _t("خرداد"),
+    _t("تیر"),
+    _t("مرداد"),
+    _t("شهریور"),
+    _t("مهر"),
+    _t("آبان"),
+    _t("آذر"),
+    _t("دی"),
+    _t("بهمن"),
+    _t("اسفند"),
 ]
 
 PROPERTY_TITLES = [
-    "سایز",
-    "رنگ",
-    "مدل",
-    "نوع پلاک",
-    "فونت",
-    "رنگ دوخت",
-    "سمت جلد",
-    "جنس زیره",
+    _t("سایز"),
+    _t("رنگ"),
+    _t("مدل"),
+    _t("نوع پلاک"),
+    _t("فونت"),
+    _t("رنگ دوخت"),
+    _t("سمت جلد"),
+    _t("جنس زیره"),
 ]
 
 PROPERTY_TITLE_MAP = {
@@ -80,13 +93,13 @@ PROPERTY_TITLE_MAP = {
     normalize_text("sole material"): "جنس زیره",
 }
 
-COL_RECIPIENT = "نام گیرنده"
-COL_PRODUCT = "نام کالا"
-COL_QUANTITY = "تعداد"
-COL_TOTAL_QUANTITY = "جمع تعداد"
-COL_CUSTOMER = "نام مشتری"
+COL_RECIPIENT = _t("نام گیرنده")
+COL_PRODUCT = _t("نام کالا")
+COL_QUANTITY = _t("تعداد")
+COL_TOTAL_QUANTITY = _t("جمع تعداد")
+COL_CUSTOMER = _t("نام مشتری")
 
-TARGET_STATUS_FA = "رضایت مشتری"
+TARGET_STATUS_FA = _t("رضایت مشتری")
 TAB_COMPLETED = "COMPLECTED"
 TABS_TO_FETCH = ["SHIPPED", "PENDING", TAB_COMPLETED]
 PAGE_LIMIT = 30
@@ -373,16 +386,16 @@ class BasalamPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Basalam Orders")
+        title = QLabel(self.tr("سفارش‌های باسلام"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
-        self.fetch_button = QPushButton("Fetch")
+        self.fetch_button = QPushButton(self.tr("دریافت"))
         self.fetch_button.clicked.connect(self._fetch)
         header.addWidget(self.fetch_button)
 
-        self.export_button = QPushButton("Export")
+        self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export)
         header.addWidget(self.export_button)
@@ -396,7 +409,7 @@ class BasalamPage(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setMinimumHeight(12)
         self.progress_bar.setTextVisible(False)
-        self.progress_label.setText("آماده دریافت سفارشات.")
+        self.progress_label.setText(self.tr("آماده دریافت سفارشات."))
         progress_row.addWidget(self.progress_label)
         progress_row.addWidget(self.progress_bar, 1)
         layout.addLayout(progress_row)
@@ -408,14 +421,14 @@ class BasalamPage(QWidget):
         form_layout.setHorizontalSpacing(12)
         form_layout.setVerticalSpacing(12)
 
-        start_paid_label = QLabel("Start paid at (Jalali)")
+        start_paid_label = QLabel(self.tr("شروع پرداخت (جلالی)"))
         self.start_paid_input = JalaliDateTimePicker(
             default_time=QTime(0, 0, 0)
         )
         form_layout.addWidget(start_paid_label, 0, 0)
         form_layout.addWidget(self.start_paid_input, 0, 1)
 
-        end_paid_label = QLabel("End paid at (Jalali)")
+        end_paid_label = QLabel(self.tr("پایان پرداخت (جلالی)"))
         self.end_paid_input = JalaliDateTimePicker(
             default_time=QTime(23, 59, 59)
         )
@@ -424,7 +437,7 @@ class BasalamPage(QWidget):
 
         layout.addWidget(form_card)
 
-        self.summary_label = QLabel("No data loaded.")
+        self.summary_label = QLabel(self.tr("داده‌ای بارگذاری نشده است."))
         self.summary_label.setProperty("textRole", "muted")
         layout.addWidget(self.summary_label)
 
@@ -449,8 +462,10 @@ class BasalamPage(QWidget):
             self._logger.error("Basalam fetch blocked: access_token missing")
             dialogs.show_error(
                 self,
-                "Basalam Token Missing",
-                "Set access_token in config.json before fetching.",
+                self.tr("توکن باسلام تنظیم نشده"),
+                self.tr(
+                    "قبل از دریافت، مقدار access_token را در config.json تنظیم کنید."
+                ),
             )
             return
 
@@ -475,14 +490,18 @@ class BasalamPage(QWidget):
                 if self._current_admin_provider
                 else None
             )
-            details = (
-                f"شناسه فروشنده: {vendor_id}\n"
-                f"شروع پرداخت: {start_paid_at}\n"
-                f"پایان پرداخت: {end_paid_at}"
+            details = self.tr(
+                "شناسه فروشنده: {vendor_id}\n"
+                "شروع پرداخت: {start_paid_at}\n"
+                "پایان پرداخت: {end_paid_at}"
+            ).format(
+                vendor_id=vendor_id,
+                start_paid_at=start_paid_at,
+                end_paid_at=end_paid_at,
             )
             self.action_log_service.log_action(
                 "basalam_fetch",
-                "دریافت سفارشات باسلام",
+                self.tr("دریافت سفارشات باسلام"),
                 details,
                 admin=admin,
             )
@@ -518,9 +537,9 @@ class BasalamPage(QWidget):
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Basalam Orders",
+            self.tr("خروجی سفارش‌های باسلام"),
             "basalam_orders.xlsx",
-            "Excel Files (*.xlsx);;CSV Files (*.csv)",
+            self.tr("فایل‌های اکسل (*.xlsx);;فایل‌های CSV (*.csv)"),
         )
         if not file_path:
             self._logger.info("Basalam export cancelled")
@@ -543,8 +562,11 @@ class BasalamPage(QWidget):
             )
             self.action_log_service.log_action(
                 "basalam_export",
-                "خروجی باسلام",
-                f"تعداد ردیف‌ها: {len(export_df)}\nمسیر: {file_path}",
+                self.tr("خروجی باسلام"),
+                self.tr("تعداد ردیف‌ها: {count}\nمسیر: {path}").format(
+                    count=len(export_df),
+                    path=file_path,
+                ),
                 admin=admin,
             )
         self._logger.info(
@@ -555,13 +577,15 @@ class BasalamPage(QWidget):
 
     def _on_progress(self, total_count: int) -> None:
         self.progress_label.setText(
-            f"در حال دریافت سفارشات... {total_count} مورد دریافت شد."
+            self.tr("در حال دریافت سفارشات... {count} مورد دریافت شد.").format(
+                count=total_count
+            )
         )
 
     def _on_worker_error(self, message: str) -> None:
         self._logger.error("Basalam worker error: %s", message)
         self._set_loading(False)
-        dialogs.show_error(self, "Basalam Error", message)
+        dialogs.show_error(self, self.tr("خطای باسلام"), message)
 
     def _on_worker_finished(
         self, records: list, total_count: int, skipped_existing: int
@@ -572,18 +596,26 @@ class BasalamPage(QWidget):
             self._update_table(df)
             self.export_button.setEnabled(df is not None and not df.empty)
             if total_count == 0:
-                self.summary_label.setText("No data returned.")
+                self.summary_label.setText(self.tr("داده‌ای دریافت نشد."))
             elif df.empty and skipped_existing:
                 self.summary_label.setText(
-                    f"{total_count} rows fetched, {skipped_existing} already processed."
+                    self.tr(
+                        "{fetched} ردیف دریافت شد، {skipped} ردیف قبلاً پردازش شده بود."
+                    ).format(fetched=total_count, skipped=skipped_existing)
                 )
             else:
                 if skipped_existing:
                     self.summary_label.setText(
-                        f"{len(df)} new rows loaded, {skipped_existing} already processed."
+                        self.tr(
+                            "{loaded} ردیف جدید بارگذاری شد، {skipped} ردیف قبلاً پردازش شده بود."
+                        ).format(loaded=len(df), skipped=skipped_existing)
                     )
                 else:
-                    self.summary_label.setText(f"{len(df)} rows loaded.")
+                    self.summary_label.setText(
+                        self.tr("{count} ردیف بارگذاری شد.").format(
+                            count=len(df)
+                        )
+                    )
             self._logger.info(
                 "Basalam fetch finished fetched=%s new=%s skipped_existing=%s",
                 total_count,
@@ -592,7 +624,7 @@ class BasalamPage(QWidget):
             )
         except Exception as exc:  # noqa: BLE001
             self._logger.exception("Basalam finished handler failed")
-            dialogs.show_error(self, "Basalam Error", str(exc))
+            dialogs.show_error(self, self.tr("خطای باسلام"), str(exc))
         finally:
             self._set_loading(False)
 
@@ -606,12 +638,12 @@ class BasalamPage(QWidget):
             self.fetch_button.setEnabled(False)
             self.export_button.setEnabled(False)
             self.progress_bar.setRange(0, 0)
-            self.progress_label.setText("در حال دریافت سفارشات...")
+            self.progress_label.setText(self.tr("در حال دریافت سفارشات..."))
         else:
             self.fetch_button.setEnabled(True)
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(0)
-            self.progress_label.setText("آماده دریافت سفارشات.")
+            self.progress_label.setText(self.tr("آماده دریافت سفارشات."))
 
     def _records_to_dataframe(self, records):
         import pandas as pd
@@ -1100,7 +1132,7 @@ class BasalamPage(QWidget):
         if df is None or df.empty:
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
-            self.summary_label.setText("No data returned.")
+            self.summary_label.setText(self.tr("داده‌ای دریافت نشد."))
             return
 
         max_rows = len(df)
@@ -1119,9 +1151,15 @@ class BasalamPage(QWidget):
 
         self.table.resizeColumnsToContents()
         if len(df) > max_rows:
-            self.summary_label.setText(f"Showing {max_rows} of {len(df)} rows.")
+            self.summary_label.setText(
+                self.tr("نمایش {shown} از {total} ردیف.").format(
+                    shown=max_rows, total=len(df)
+                )
+            )
         else:
-            self.summary_label.setText(f"{len(df)} rows loaded.")
+            self.summary_label.setText(
+                self.tr("{count} ردیف بارگذاری شد.").format(count=len(df))
+            )
 
     @staticmethod
     def _format_cell(value, column_name: object | None = None) -> str:
