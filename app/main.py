@@ -6,6 +6,8 @@ import sys
 import threading
 from pathlib import Path
 
+from PySide6.QtCore import QLibraryInfo, QLocale, Qt, QTranslator
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 _CRASH_FILE = None
@@ -27,6 +29,7 @@ def main() -> int:
     _install_thread_exception_hook()
     _install_unraisable_hook()
     app = QApplication(sys.argv)
+    _install_localization(app)
     app.setStyle("Fusion")
     _install_qt_message_handler()
     _log_app_lifecycle(app)
@@ -38,6 +41,51 @@ def main() -> int:
     window = MainWindow(inventory_service, config)
     window.show()
     return app.exec()
+
+
+def _install_localization(app: QApplication) -> None:
+    locale = QLocale("fa_IR")
+    QLocale.setDefault(locale)
+    app.setLayoutDirection(Qt.RightToLeft)
+    _apply_persian_font(app)
+
+    translators: list[QTranslator] = []
+    qt_translator = QTranslator(app)
+    if qt_translator.load(
+        locale,
+        "qtbase",
+        "_",
+        QLibraryInfo.path(QLibraryInfo.TranslationsPath),
+    ):
+        app.installTranslator(qt_translator)
+        translators.append(qt_translator)
+
+    app_translator = QTranslator(app)
+    qm_path = Path(__file__).resolve().parent / "i18n" / "fa_IR.qm"
+    if app_translator.load(str(qm_path)):
+        app.installTranslator(app_translator)
+        translators.append(app_translator)
+
+    # Keep explicit references to avoid garbage collection in some bindings.
+    app._translators = translators  # type: ignore[attr-defined]
+
+
+def _apply_persian_font(app: QApplication) -> None:
+    families = set(QFontDatabase.families())
+    for family in [
+        "Vazirmatn",
+        "IRANSansX",
+        "IRANSans",
+        "Shabnam",
+        "Sahel",
+        "Noto Sans Arabic",
+        "DejaVu Sans",
+    ]:
+        if family in families:
+            font = QFont(family)
+            font.setPointSize(10)
+            app.setFont(font)
+            return
 
 
 def _install_exception_hook() -> None:
