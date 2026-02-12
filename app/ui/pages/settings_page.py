@@ -48,7 +48,7 @@ class SettingsPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        title = QLabel("Settings")
+        title = QLabel(self.tr("تنظیمات"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         layout.addWidget(title)
 
@@ -59,15 +59,16 @@ class SettingsPage(QWidget):
         card_layout.setSpacing(12)
 
         theme_row = QHBoxLayout()
-        theme_label = QLabel("Theme:")
+        theme_label = QLabel(self.tr("پوسته:"))
         theme_row.addWidget(theme_label)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Light", "Dark"])
-        self.theme_combo.setCurrentText(
-            "Dark" if self.config.theme == "dark" else "Light"
+        self.theme_combo.addItem(self.tr("روشن"), "light")
+        self.theme_combo.addItem(self.tr("تیره"), "dark")
+        self.theme_combo.setCurrentIndex(
+            1 if self.config.theme == "dark" else 0
         )
-        self.theme_combo.currentTextChanged.connect(self._apply_theme)
+        self.theme_combo.currentIndexChanged.connect(self._apply_theme)
         theme_row.addWidget(self.theme_combo)
         theme_row.addStretch(1)
 
@@ -80,19 +81,19 @@ class SettingsPage(QWidget):
         account_layout.setContentsMargins(16, 16, 16, 16)
         account_layout.setSpacing(12)
 
-        account_title = QLabel("Account")
+        account_title = QLabel(self.tr("حساب کاربری"))
         account_title.setStyleSheet("font-weight: 600;")
         account_layout.addWidget(account_title)
 
         user_row = QHBoxLayout()
-        user_label = QLabel("Current user:")
+        user_label = QLabel(self.tr("کاربر فعلی:"))
         user_row.addWidget(user_label)
         self.user_value = QLabel("-")
         user_row.addWidget(self.user_value, 1)
         account_layout.addLayout(user_row)
 
         current_row = QHBoxLayout()
-        current_label = QLabel("Current password:")
+        current_label = QLabel(self.tr("رمز عبور فعلی:"))
         current_row.addWidget(current_label)
         self.current_password_input = QLineEdit()
         self.current_password_input.setEchoMode(QLineEdit.Password)
@@ -100,7 +101,7 @@ class SettingsPage(QWidget):
         account_layout.addLayout(current_row)
 
         new_row = QHBoxLayout()
-        new_label = QLabel("New password:")
+        new_label = QLabel(self.tr("رمز عبور جدید:"))
         new_row.addWidget(new_label)
         self.new_password_input = QLineEdit()
         self.new_password_input.setEchoMode(QLineEdit.Password)
@@ -108,7 +109,7 @@ class SettingsPage(QWidget):
         account_layout.addLayout(new_row)
 
         confirm_row = QHBoxLayout()
-        confirm_label = QLabel("Confirm password:")
+        confirm_label = QLabel(self.tr("تکرار رمز عبور:"))
         confirm_row.addWidget(confirm_label)
         self.confirm_password_input = QLineEdit()
         self.confirm_password_input.setEchoMode(QLineEdit.Password)
@@ -117,7 +118,7 @@ class SettingsPage(QWidget):
 
         pass_button_row = QHBoxLayout()
         pass_button_row.addStretch(1)
-        update_password_button = QPushButton("Update password")
+        update_password_button = QPushButton(self.tr("به‌روزرسانی رمز"))
         update_password_button.clicked.connect(self._update_password)
         pass_button_row.addWidget(update_password_button)
         account_layout.addLayout(pass_button_row)
@@ -130,31 +131,34 @@ class SettingsPage(QWidget):
         admin_layout.setContentsMargins(16, 16, 16, 16)
         admin_layout.setSpacing(12)
 
-        admin_title = QLabel("Admin management")
+        admin_title = QLabel(self.tr("مدیریت مدیران"))
         admin_title.setStyleSheet("font-weight: 600;")
         admin_layout.addWidget(admin_title)
 
         create_row = QHBoxLayout()
         self.new_admin_username = QLineEdit()
-        self.new_admin_username.setPlaceholderText("Username")
+        self.new_admin_username.setPlaceholderText(self.tr("نام کاربری"))
         create_row.addWidget(self.new_admin_username)
 
         self.new_admin_password = QLineEdit()
-        self.new_admin_password.setPlaceholderText("Password")
+        self.new_admin_password.setPlaceholderText(self.tr("رمز عبور"))
         self.new_admin_password.setEchoMode(QLineEdit.Password)
         create_row.addWidget(self.new_admin_password)
 
         self.new_admin_role = QComboBox()
-        self.new_admin_role.addItems(["employee", "manager"])
+        self.new_admin_role.addItem(self.tr("کارمند"), "employee")
+        self.new_admin_role.addItem(self.tr("مدیر"), "manager")
         create_row.addWidget(self.new_admin_role)
 
-        create_button = QPushButton("Create admin")
+        create_button = QPushButton(self.tr("ایجاد مدیر"))
         create_button.clicked.connect(self._create_admin)
         create_row.addWidget(create_button)
         admin_layout.addLayout(create_row)
 
         self.admin_table = QTableWidget(0, 2)
-        self.admin_table.setHorizontalHeaderLabels(["Username", "Role"])
+        self.admin_table.setHorizontalHeaderLabels(
+            [self.tr("نام کاربری"), self.tr("نقش")]
+        )
         self.admin_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.admin_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.admin_table.horizontalHeader().setStretchLastSection(True)
@@ -163,7 +167,7 @@ class SettingsPage(QWidget):
 
         admin_button_row = QHBoxLayout()
         admin_button_row.addStretch(1)
-        delete_button = QPushButton("Delete selected")
+        delete_button = QPushButton(self.tr("حذف مورد انتخابی"))
         delete_button.clicked.connect(self._delete_selected_admin)
         admin_button_row.addWidget(delete_button)
         admin_layout.addLayout(admin_button_row)
@@ -199,19 +203,25 @@ class SettingsPage(QWidget):
         confirm = self.confirm_password_input.text()
         if not current or not new_password:
             dialogs.show_error(
-                self, "Password", "Please fill current and new password."
+                self,
+                self.tr("رمز عبور"),
+                self.tr("رمز فعلی و رمز جدید را وارد کنید."),
             )
             return
         if new_password != confirm:
             dialogs.show_error(
-                self, "Password", "Password confirmation does not match."
+                self,
+                self.tr("رمز عبور"),
+                self.tr("تکرار رمز عبور با مقدار جدید یکسان نیست."),
             )
             return
         authenticated = self.admin_service.authenticate(
             self.current_admin.username, current
         )
         if authenticated is None:
-            dialogs.show_error(self, "Password", "Current password is wrong.")
+            dialogs.show_error(
+                self, self.tr("رمز عبور"), self.tr("رمز عبور فعلی نادرست است.")
+            )
             return
         admin = (
             self._current_admin_provider()
@@ -227,11 +237,15 @@ class SettingsPage(QWidget):
         if self.action_log_service:
             self.action_log_service.log_action(
                 "password_change",
-                "تغییر رمز عبور",
-                f"کاربر: {self.current_admin.username}",
+                self.tr("تغییر رمز عبور"),
+                self.tr("کاربر: {username}").format(
+                    username=self.current_admin.username
+                ),
                 admin=admin,
             )
-        dialogs.show_info(self, "Password", "Password updated.")
+        dialogs.show_info(
+            self, self.tr("رمز عبور"), self.tr("رمز عبور به‌روزرسانی شد.")
+        )
         self.current_password_input.clear()
         self.new_password_input.clear()
         self.confirm_password_input.clear()
@@ -241,7 +255,7 @@ class SettingsPage(QWidget):
             return
         username = self.new_admin_username.text()
         password = self.new_admin_password.text()
-        role = self.new_admin_role.currentText()
+        role = str(self.new_admin_role.currentData())
         admin = (
             self._current_admin_provider()
             if self._current_admin_provider
@@ -256,7 +270,7 @@ class SettingsPage(QWidget):
                 admin_username=admin_username,
             )
         except ValueError as exc:
-            dialogs.show_error(self, "Admin", str(exc))
+            dialogs.show_error(self, self.tr("مدیر"), str(exc))
             return
         self.new_admin_username.clear()
         self.new_admin_password.clear()
@@ -265,11 +279,13 @@ class SettingsPage(QWidget):
         if self.action_log_service:
             self.action_log_service.log_action(
                 "admin_create",
-                "ایجاد ادمین جدید",
-                f"نام کاربری: {username}\nنقش: {role}",
+                self.tr("ایجاد ادمین جدید"),
+                self.tr("نام کاربری: {username}\nنقش: {role}").format(
+                    username=username, role=role
+                ),
                 admin=admin,
             )
-        dialogs.show_info(self, "Admin", "Admin created.")
+        dialogs.show_info(self, self.tr("مدیر"), self.tr("مدیر جدید ایجاد شد."))
 
     def _refresh_admins(self) -> None:
         admins = self.admin_service.list_admins()
@@ -278,14 +294,23 @@ class SettingsPage(QWidget):
             username_item = QTableWidgetItem(admin.username)
             username_item.setData(Qt.UserRole, admin.admin_id)
             self.admin_table.setItem(row_idx, 0, username_item)
-            self.admin_table.setItem(row_idx, 1, QTableWidgetItem(admin.role))
+            role_label = (
+                self.tr("مدیر")
+                if admin.role == "manager"
+                else self.tr("کارمند")
+            )
+            self.admin_table.setItem(row_idx, 1, QTableWidgetItem(role_label))
 
     def _delete_selected_admin(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
             return
         row = self.admin_table.currentRow()
         if row < 0:
-            dialogs.show_error(self, "Admin", "Select an admin to delete.")
+            dialogs.show_error(
+                self,
+                self.tr("مدیر"),
+                self.tr("یک مدیر را برای حذف انتخاب کنید."),
+            )
             return
         username_item = self.admin_table.item(row, 0)
         if username_item is None:
@@ -296,10 +321,16 @@ class SettingsPage(QWidget):
             return
         if int(admin_id) == self.current_admin.admin_id:
             dialogs.show_error(
-                self, "Admin", "You cannot delete the current admin."
+                self,
+                self.tr("مدیر"),
+                self.tr("امکان حذف مدیر فعلی وجود ندارد."),
             )
             return
-        if not dialogs.ask_yes_no(self, "Admin", f"Delete admin '{username}'?"):
+        if not dialogs.ask_yes_no(
+            self,
+            self.tr("مدیر"),
+            self.tr("مدیر «{username}» حذف شود؟").format(username=username),
+        ):
             return
         admin = (
             self._current_admin_provider()
@@ -314,14 +345,14 @@ class SettingsPage(QWidget):
         if self.action_log_service:
             self.action_log_service.log_action(
                 "admin_delete",
-                "حذف ادمین",
-                f"نام کاربری: {username}",
+                self.tr("حذف ادمین"),
+                self.tr("نام کاربری: {username}").format(username=username),
                 admin=admin,
             )
-        dialogs.show_info(self, "Admin", "Admin deleted.")
+        dialogs.show_info(self, self.tr("مدیر"), self.tr("مدیر حذف شد."))
 
-    def _apply_theme(self, value: str) -> None:
-        self.config.theme = "dark" if value == "Dark" else "light"
+    def _apply_theme(self, _index: int) -> None:
+        self.config.theme = str(self.theme_combo.currentData() or "light")
         self.config.save()
         if self.on_theme_changed:
             self.on_theme_changed(self.config.theme)
