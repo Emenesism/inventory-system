@@ -16,18 +16,8 @@ def _t(text: str) -> str:
 
 def _wrap(body: str) -> str:
     return (
-        '<div dir="rtl" style="font-family: '
-        "'"
-        "Vazirmatn"
-        "'"
-        ", "
-        "'"
-        "Segoe UI"
-        "'"
-        "; "
-        'font-size: 13px; line-height: 1.9; text-align: right;">'
-        + body.strip()
-        + "</div>"
+        '<div dir="rtl" style="font-size: 13px; line-height: 1.9; '
+        'text-align: right;">' + body.strip() + "</div>"
     )
 
 

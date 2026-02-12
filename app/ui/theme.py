@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from app.ui.fonts import format_qss_font_stack
+
+_FONT_STACK_TOKEN = "__UI_FONT_STACK__"
+
 LIGHT_THEME = """
 * {
-    font-family: "Vazirmatn", "Manrope", "Segoe UI";
+    font-family: __UI_FONT_STACK__;
     font-size: 12px;
 }
 QMainWindow {
@@ -262,7 +268,7 @@ QFrame#Toast[toastType="error"] {
 
 DARK_THEME = """
 * {
-    font-family: "Vazirmatn", "Manrope", "Segoe UI";
+    font-family: __UI_FONT_STACK__;
     font-size: 12px;
 }
 QMainWindow {
@@ -533,5 +539,9 @@ QFrame#Toast[toastType="error"] {
 """
 
 
-def get_stylesheet(theme: str) -> str:
-    return DARK_THEME if theme == "dark" else LIGHT_THEME
+def get_stylesheet(
+    theme: str, font_families: Sequence[str] | None = None
+) -> str:
+    stylesheet = DARK_THEME if theme == "dark" else LIGHT_THEME
+    font_stack = format_qss_font_stack(font_families)
+    return stylesheet.replace(_FONT_STACK_TOKEN, font_stack)

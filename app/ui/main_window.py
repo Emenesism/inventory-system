@@ -392,7 +392,15 @@ class MainWindow(QMainWindow):
 
         app = QApplication.instance()
         if app:
-            app.setStyleSheet(get_stylesheet(theme))
+            font_stack = app.property("ui_font_stack")
+            font_families: list[str] | None = None
+            if isinstance(font_stack, (list, tuple)):
+                font_families = [
+                    str(family).strip()
+                    for family in font_stack
+                    if str(family).strip()
+                ]
+            app.setStyleSheet(get_stylesheet(theme, font_families))
         self.header.set_theme_label(theme)
 
     def closeEvent(self, event) -> None:  # noqa: N802

@@ -19,6 +19,7 @@ from app.core.config import AppConfig
 from app.core.logging_setup import setup_logging
 from app.data.inventory_store import InventoryStore
 from app.services.inventory_service import InventoryService
+from app.ui.fonts import resolve_ui_font_stack
 from app.ui.main_window import MainWindow
 
 
@@ -71,21 +72,14 @@ def _install_localization(app: QApplication) -> None:
 
 
 def _apply_persian_font(app: QApplication) -> None:
-    families = set(QFontDatabase.families())
-    for family in [
-        "Vazirmatn",
-        "IRANSansX",
-        "IRANSans",
-        "Shabnam",
-        "Sahel",
-        "Noto Sans Arabic",
-        "DejaVu Sans",
-    ]:
-        if family in families:
-            font = QFont(family)
-            font.setPointSize(10)
-            app.setFont(font)
-            return
+    font_stack = resolve_ui_font_stack(QFontDatabase.families(), limit=4)
+    app.setProperty("ui_font_stack", font_stack)
+    primary_family = font_stack[0] if font_stack else ""
+    if not primary_family:
+        return
+    font = QFont(primary_family)
+    font.setPointSize(10)
+    app.setFont(font)
 
 
 def _install_exception_hook() -> None:
