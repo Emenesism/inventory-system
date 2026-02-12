@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
-from rapidfuzz import process
 
+from app.core.config import AppConfig
 from app.models.errors import InventoryFileError
-from app.utils.text import normalize_text
+from app.services.backend_client import BackendAPIError, BackendClient
 
 
 @dataclass
@@ -48,6 +48,10 @@ class SalesImportService:
         "price": "sell_price",
     }
 
+    def __init__(self) -> None:
+        config = AppConfig.load()
+        self._client = BackendClient(config.backend_url)
+
     def load_sales_file(self, path: str) -> pd.DataFrame:
         suffix = str(path).lower()
         if suffix.endswith((".xlsx", ".xlsm")):
@@ -82,131 +86,28 @@ class SalesImportService:
         return df
 
     def preview(
-        self, sales_df: pd.DataFrame, inventory_df: pd.DataFrame
+        self, sales_df: pd.DataFrame, inventory_df: pd.DataFrame | None = None
     ) -> tuple[list[SalesPreviewRow], SalesPreviewSummary]:
-        preview_rows: list[SalesPreviewRow] = []
-
-        inventory_lookup: dict[str, int] = {}
-        cost_lookup: dict[str, float] = {}
-        name_lookup: dict[str, str] = {}
-        for _, row in inventory_df.iterrows():
-            key = normalize_text(row.get("product_name", ""))
-            if key:
-                inventory_lookup[key] = int(row.get("quantity", 0))
-                cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
-                name_lookup.setdefault(
-                    key, str(row.get("product_name", "")).strip()
-                )
-        available = inventory_lookup.copy()
-        inventory_keys = list(inventory_lookup.keys())
-
-        total = 0
-        success = 0
-        errors = 0
-
-        for _, row in sales_df.iterrows():
-            total += 1
-            raw_name = row.get("product_name", "")
-            product_name = "" if pd.isna(raw_name) else str(raw_name).strip()
-            quantity_raw = row.get("quantity_sold", None)
-
-            if not product_name:
-                preview_rows.append(
-                    SalesPreviewRow(
-                        "", 0, 0.0, 0.0, "Error", "Missing product name"
-                    )
-                )
-                errors += 1
-                continue
-
-            quantity = pd.to_numeric(quantity_raw, errors="coerce")
-            if pd.isna(quantity) or quantity <= 0 or float(quantity) % 1 != 0:
-                preview_rows.append(
-                    SalesPreviewRow(
-                        product_name, 0, 0.0, 0.0, "Error", "Invalid quantity"
-                    )
-                )
-                errors += 1
-                continue
-
-            quantity = int(quantity)
-            key = normalize_text(product_name)
-            matched_key = key if key in available else ""
-            match_message = ""
-
-            if not matched_key and inventory_keys:
-                match = process.extractOne(
-                    key,
-                    inventory_keys,
-                    score_cutoff=95,
-                    processor=None,
-                )
-                if match:
-                    matched_key = match[0]
-                    match_message = (
-                        f"Matched to {name_lookup.get(matched_key, '')}"
-                    )
-
-            cost_price = cost_lookup.get(matched_key or key, 0.0)
-            sell_price = row.get("sell_price", None)
-            if pd.isna(sell_price) or sell_price is None or sell_price <= 0:
-                sell_price = cost_price
-            else:
-                sell_price = float(sell_price)
-
-            if not matched_key:
-                preview_rows.append(
-                    SalesPreviewRow(
-                        product_name,
-                        quantity,
-                        sell_price,
-                        cost_price,
-                        "Error",
-                        "Product not found",
-                    )
-                )
-                errors += 1
-                continue
-
-            available[matched_key] -= quantity
-            preview_rows.append(
-                SalesPreviewRow(
-                    product_name,
-                    quantity,
-                    sell_price,
-                    cost_price,
-                    "OK",
-                    match_message or "Will update stock",
-                    name_lookup.get(matched_key, product_name),
-                )
+        _ = inventory_df
+        rows_payload = self._rows_from_dataframe(sales_df)
+        try:
+            payload = self._client.post(
+                "/api/v1/sales/preview",
+                json_body={"rows": rows_payload},
             )
-            success += 1
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
 
-        summary = SalesPreviewSummary(
-            total=total, success=success, errors=errors
-        )
-        return preview_rows, summary
+        return self._parse_preview_payload(payload)
 
     def apply(
-        self, preview_rows: list[SalesPreviewRow], inventory_df: pd.DataFrame
+        self,
+        preview_rows: list[SalesPreviewRow],
+        inventory_df: pd.DataFrame,
     ) -> pd.DataFrame:
-        updated_df = inventory_df.copy()
-        name_to_index = {
-            normalize_text(name): idx
-            for idx, name in updated_df["product_name"].items()
-        }
-
-        for row in preview_rows:
-            if row.status != "OK":
-                continue
-            key = normalize_text(row.resolved_name or row.product_name)
-            idx = name_to_index.get(key)
-            if idx is None:
-                continue
-            current_qty = int(updated_df.at[idx, "quantity"])
-            updated_df.at[idx, "quantity"] = current_qty - row.quantity_sold
-
-        return updated_df
+        # Stock updates are applied in backend when invoice is created.
+        _ = preview_rows
+        return inventory_df
 
     def refresh_preview_rows(
         self,
@@ -214,87 +115,116 @@ class SalesImportService:
         inventory_df: pd.DataFrame,
         row_indices: list[int] | None = None,
     ) -> SalesPreviewSummary:
-        inventory_lookup: dict[str, int] = {}
-        cost_lookup: dict[str, float] = {}
-        name_lookup: dict[str, str] = {}
-        for _, row in inventory_df.iterrows():
-            key = normalize_text(row.get("product_name", ""))
-            if key:
-                inventory_lookup[key] = int(row.get("quantity", 0))
-                cost_lookup[key] = float(row.get("avg_buy_price", 0.0))
-                name_lookup.setdefault(
-                    key, str(row.get("product_name", "")).strip()
-                )
-        inventory_keys = list(inventory_lookup.keys())
-
+        _ = inventory_df
         indices = (
             row_indices
             if row_indices is not None
             else list(range(len(preview_rows)))
         )
+        if not indices:
+            total = len(preview_rows)
+            success = sum(1 for row in preview_rows if row.status == "OK")
+            return SalesPreviewSummary(
+                total=total, success=success, errors=total - success
+            )
+
+        rows_payload: list[dict[str, object]] = []
+        valid_positions: list[int] = []
         for idx in indices:
             if idx < 0 or idx >= len(preview_rows):
                 continue
             row = preview_rows[idx]
-            self._refresh_row(row, inventory_keys, cost_lookup, name_lookup)
+            rows_payload.append(
+                {
+                    "product_name": row.product_name,
+                    "quantity_sold": int(row.quantity_sold),
+                    "sell_price": float(row.sell_price),
+                }
+            )
+            valid_positions.append(idx)
+
+        if not rows_payload:
+            total = len(preview_rows)
+            success = sum(1 for row in preview_rows if row.status == "OK")
+            return SalesPreviewSummary(
+                total=total, success=success, errors=total - success
+            )
+
+        try:
+            payload = self._client.post(
+                "/api/v1/sales/preview",
+                json_body={"rows": rows_payload},
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+
+        updated_rows, _summary = self._parse_preview_payload(payload)
+        for position, updated in zip(valid_positions, updated_rows):
+            preview_rows[position] = updated
 
         total = len(preview_rows)
         success = sum(1 for row in preview_rows if row.status == "OK")
-        errors = total - success
-        return SalesPreviewSummary(total=total, success=success, errors=errors)
+        return SalesPreviewSummary(
+            total=total, success=success, errors=total - success
+        )
 
     @staticmethod
-    def _refresh_row(
-        row: SalesPreviewRow,
-        inventory_keys: list[str],
-        cost_lookup: dict[str, float],
-        name_lookup: dict[str, str],
-    ) -> None:
-        product_name = str(row.product_name or "").strip()
-        row.product_name = product_name
-        if not product_name:
-            row.status = "Error"
-            row.message = "Missing product name"
-            row.resolved_name = ""
-            row.cost_price = 0.0
-            return
-
-        quantity = pd.to_numeric(row.quantity_sold, errors="coerce")
-        if pd.isna(quantity) or quantity <= 0 or float(quantity) % 1 != 0:
-            row.status = "Error"
-            row.message = "Invalid quantity"
-            row.resolved_name = ""
-            row.cost_price = 0.0
-            return
-
-        quantity = int(quantity)
-        row.quantity_sold = quantity
-        key = normalize_text(product_name)
-        matched_key = key if key in name_lookup else ""
-        match_message = ""
-
-        if not matched_key and inventory_keys:
-            match = process.extractOne(
-                key,
-                inventory_keys,
-                score_cutoff=95,
-                processor=None,
+    def _rows_from_dataframe(sales_df: pd.DataFrame) -> list[dict[str, object]]:
+        payload: list[dict[str, object]] = []
+        for _, row in sales_df.iterrows():
+            name_raw = row.get("product_name", "")
+            quantity_raw = row.get("quantity_sold", 0)
+            sell_price_raw = row.get("sell_price", 0)
+            name = "" if pd.isna(name_raw) else str(name_raw).strip()
+            quantity_value = pd.to_numeric(quantity_raw, errors="coerce")
+            sell_price_value = pd.to_numeric(sell_price_raw, errors="coerce")
+            quantity_int = 0
+            if pd.notna(quantity_value):
+                quantity_float = float(quantity_value)
+                if quantity_float % 1 == 0:
+                    quantity_int = int(quantity_float)
+            payload.append(
+                {
+                    "product_name": name,
+                    "quantity_sold": quantity_int,
+                    "sell_price": float(sell_price_value)
+                    if pd.notna(sell_price_value)
+                    else 0.0,
+                }
             )
-            if match:
-                matched_key = match[0]
-                match_message = f"Matched to {name_lookup.get(matched_key, '')}"
+        return payload
 
-        cost_price = cost_lookup.get(matched_key or key, 0.0)
-        row.cost_price = cost_price
-        if row.sell_price is None or row.sell_price <= 0:
-            row.sell_price = cost_price
+    @staticmethod
+    def _parse_preview_payload(
+        payload: dict,
+    ) -> tuple[list[SalesPreviewRow], SalesPreviewSummary]:
+        rows_data = payload.get("rows", []) if isinstance(payload, dict) else []
+        summary_data = (
+            payload.get("summary", {}) if isinstance(payload, dict) else {}
+        )
 
-        if not matched_key:
-            row.status = "Error"
-            row.message = "Product not found"
-            row.resolved_name = ""
-            return
+        preview_rows: list[SalesPreviewRow] = []
+        for row in rows_data:
+            if not isinstance(row, dict):
+                continue
+            preview_rows.append(
+                SalesPreviewRow(
+                    product_name=str(row.get("product_name", "")),
+                    quantity_sold=int(row.get("quantity_sold", 0) or 0),
+                    sell_price=float(row.get("sell_price", 0.0) or 0.0),
+                    cost_price=float(row.get("cost_price", 0.0) or 0.0),
+                    status=str(row.get("status", "Error")),
+                    message=str(row.get("message", "")),
+                    resolved_name=str(row.get("resolved_name", "")),
+                )
+            )
 
-        row.status = "OK"
-        row.message = match_message or "Will update stock"
-        row.resolved_name = name_lookup.get(matched_key, product_name)
+        summary = SalesPreviewSummary(
+            total=int(
+                summary_data.get("total", len(preview_rows))
+                or len(preview_rows)
+            ),
+            success=int(summary_data.get("success", 0) or 0),
+            errors=int(summary_data.get("errors", 0) or 0),
+        )
+        return preview_rows, summary
