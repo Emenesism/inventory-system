@@ -6,7 +6,6 @@ from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QDialog
 
 from app.services.action_log_service import ActionLogService
-from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseLine, PurchaseService
@@ -15,7 +14,6 @@ from app.ui.widgets.purchase_invoice_preview_dialog import (
     PurchaseInvoicePreviewData,
     PurchaseInvoicePreviewDialog,
     PurchaseInvoicePreviewLine,
-    PurchaseInvoiceStockProjection,
 )
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
@@ -74,25 +72,7 @@ class PurchaseInvoiceController(QObject):
             self.toast.show("No valid purchase lines", "error")
             return
 
-        inventory_df = self.inventory_service.get_dataframe()
-        missing = [
-            line.product_name
-            for line in valid_lines
-            if self.inventory_service.find_index(line.product_name) is None
-        ]
-
-        if missing:
-            dialogs.show_error(
-                self.page,
-                "Purchase Invoice",
-                "Product(s) not found:\n\n" + "\n".join(sorted(set(missing))),
-            )
-            self.toast.show("Product(s) not found", "error")
-            return
-
-        preview_data = self._build_preview_data(
-            valid_lines, inventory_df, invalid
-        )
+        preview_data = self._build_preview_data(valid_lines, invalid)
         dialog = PurchaseInvoicePreviewDialog(self.page, preview_data)
         if dialog.exec() != QDialog.Accepted:
             self.toast.show("Purchase invoice canceled", "info")
@@ -105,78 +85,58 @@ class PurchaseInvoiceController(QObject):
             else None
         )
         admin_username = admin.username if admin else None
-        with backup_batch("purchase_invoice", admin_username=admin_username):
-            try:
-                updated_df, summary, errors = (
-                    self.purchase_service.apply_purchases(
-                        valid_lines, inventory_df, allow_create=False
-                    )
+        try:
+            invoice_id = self.invoice_service.create_purchase_invoice(
+                valid_lines,
+                invoice_name=invoice_name,
+                admin_id=admin.admin_id if admin else None,
+                admin_username=admin_username,
+            )
+            self.inventory_service.load()
+            self.on_inventory_updated()
+            if self._action_log_service:
+                total_qty = sum(line.quantity for line in valid_lines)
+                total_amount = sum(
+                    line.price * line.quantity for line in valid_lines
                 )
-                self.inventory_service.save(
-                    updated_df, admin_username=admin_username
+                details = (
+                    f"شماره فاکتور: {invoice_id}\n"
+                    f"تعداد ردیف‌ها: {len(valid_lines)}\n"
+                    f"تعداد کل: {total_qty}\n"
+                    f"مبلغ کل: {total_amount:,.0f}"
                 )
-                self.on_inventory_updated()
-            except Exception as exc:  # noqa: BLE001
-                dialogs.show_error(self.page, "Purchase Invoice", str(exc))
-                self.toast.show("Purchase invoice failed", "error")
-                self._logger.exception("Failed to apply purchase invoice")
-                return
+                self._action_log_service.log_action(
+                    "purchase_invoice",
+                    "ثبت فاکتور خرید",
+                    details,
+                    admin=admin,
+                )
+            self.on_invoices_updated()
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self.page, "Purchase Invoice", str(exc))
+            self.toast.show("Purchase invoice failed", "error")
+            self._logger.exception("Failed to create purchase invoice")
+            return
 
-            try:
-                invoice_id = self.invoice_service.create_purchase_invoice(
-                    valid_lines,
-                    invoice_name=invoice_name,
-                    admin_id=admin.admin_id if admin else None,
-                    admin_username=admin_username,
-                )
-                if self._action_log_service:
-                    total_qty = sum(line.quantity for line in valid_lines)
-                    total_amount = sum(
-                        line.price * line.quantity for line in valid_lines
-                    )
-                    details = (
-                        f"شماره فاکتور: {invoice_id}\n"
-                        f"تعداد ردیف‌ها: {len(valid_lines)}\n"
-                        f"تعداد کل: {total_qty}\n"
-                        f"مبلغ کل: {total_amount:,.0f}"
-                    )
-                    self._action_log_service.log_action(
-                        "purchase_invoice",
-                        "ثبت فاکتور خرید",
-                        details,
-                        admin=admin,
-                    )
-                self.on_invoices_updated()
-            except Exception as exc:  # noqa: BLE001
-                self.toast.show("Invoice saved, history not updated", "error")
-                self._logger.exception("Failed to store invoice history")
-
-        message = f"Updated {summary.updated} items, created {summary.created} new items."
+        message = "Purchase invoice saved."
         if invalid:
             message += f" Skipped {invalid} invalid lines."
-        if errors:
-            message += f" Skipped {len(errors)} new items (not created)."
         self.toast.show(message, "success")
         self.page.reset_after_submit()
 
     def _build_preview_data(
         self,
         valid_lines: list[PurchaseLine],
-        inventory_df,
         invalid_count: int,
     ) -> PurchaseInvoicePreviewData:
         preview_lines: list[PurchaseInvoicePreviewLine] = []
         total_qty = 0
         total_cost = 0.0
-        aggregated: dict[str, int] = {}
 
         for line in valid_lines:
             line_total = line.price * line.quantity
             total_qty += line.quantity
             total_cost += line_total
-            aggregated[line.product_name] = (
-                aggregated.get(line.product_name, 0) + line.quantity
-            )
             preview_lines.append(
                 PurchaseInvoicePreviewLine(
                     product_name=line.product_name,
@@ -186,25 +146,11 @@ class PurchaseInvoiceController(QObject):
                 )
             )
 
-        projections: list[PurchaseInvoiceStockProjection] = []
-        for product_name, add_qty in aggregated.items():
-            index = self.inventory_service.find_index(product_name)
-            current_qty = int(inventory_df.loc[index, "quantity"])
-            new_qty = current_qty + add_qty
-            projections.append(
-                PurchaseInvoiceStockProjection(
-                    product_name=product_name,
-                    current_qty=current_qty,
-                    added_qty=add_qty,
-                    new_qty=new_qty,
-                )
-            )
-
         return PurchaseInvoicePreviewData(
             lines=preview_lines,
             total_lines=len(valid_lines),
             total_quantity=total_qty,
             total_cost=total_cost,
             invalid_count=invalid_count,
-            projections=projections,
+            projections=[],
         )
