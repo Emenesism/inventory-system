@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -60,23 +57,6 @@ class SettingsPage(QWidget):
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
         card_layout.setSpacing(12)
-
-        row = QHBoxLayout()
-        label = QLabel("Backup folder:")
-        row.addWidget(label)
-
-        self.path_label = QLabel(self._current_path_text())
-        row.addWidget(self.path_label, 1)
-
-        choose_button = QPushButton("Choose")
-        choose_button.clicked.connect(self._choose_folder)
-        row.addWidget(choose_button)
-
-        clear_button = QPushButton("Default")
-        clear_button.clicked.connect(self._clear_folder)
-        row.addWidget(clear_button)
-
-        card_layout.addLayout(row)
 
         theme_row = QHBoxLayout()
         theme_label = QLabel("Theme:")
@@ -192,25 +172,6 @@ class SettingsPage(QWidget):
         self.admin_card.hide()
 
         layout.addStretch(1)
-
-    def _current_path_text(self) -> str:
-        return self.config.backup_dir or "Same folder as file"
-
-    def _choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Select Backup Folder")
-        if not folder:
-            return
-        self._set_backup_dir(folder)
-
-    def _clear_folder(self) -> None:
-        self._set_backup_dir(None)
-
-    def _set_backup_dir(self, path: str | None) -> None:
-        self.config.backup_dir = path
-        self.config.save()
-        backup_dir = Path(path) if path else None
-        self.invoice_service.set_backup_dir(backup_dir)
-        self.path_label.setText(self._current_path_text())
 
     def set_current_admin(self, admin: AdminUser | None) -> None:
         self.current_admin = admin
