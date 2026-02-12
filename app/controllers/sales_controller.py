@@ -7,7 +7,6 @@ from PySide6.QtWidgets import QDialog
 
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
-from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, SalesLine
 from app.services.sales_import_service import SalesImportService
@@ -17,7 +16,6 @@ from app.ui.widgets.sales_invoice_preview_dialog import (
     SalesInvoicePreviewData,
     SalesInvoicePreviewDialog,
     SalesInvoicePreviewLine,
-    SalesInvoiceStockProjection,
 )
 from app.ui.widgets.sales_manual_invoice_dialog import (
     SalesManualInvoiceDialog,
@@ -121,7 +119,6 @@ class SalesImportController(QObject):
 
         invoice_name = None
         try:
-            inventory_df = self.inventory_service.get_dataframe()
             preview_lines = [
                 SalesManualLine(
                     product_name=row.resolved_name or row.product_name,
@@ -132,7 +129,7 @@ class SalesImportController(QObject):
                 if row.status == "OK"
             ]
             preview_data = self._build_sales_preview_data(
-                preview_lines, inventory_df, error_count
+                preview_lines, error_count
             )
             preview_dialog = SalesInvoicePreviewDialog(self.page, preview_data)
             if preview_dialog.exec() != QDialog.Accepted:
@@ -153,61 +150,51 @@ class SalesImportController(QObject):
             else None
         )
         admin_username = admin.username if admin else None
-        with backup_batch("sales_import", admin_username=admin_username):
-            try:
-                updated_df = self.sales_service.apply(
-                    self.page.preview_rows, inventory_df
+        try:
+            sales_lines = [
+                SalesLine(
+                    product_name=row.resolved_name or row.product_name,
+                    price=row.sell_price,
+                    quantity=row.quantity_sold,
+                    cost_price=row.cost_price,
                 )
-                self.inventory_service.save(
-                    updated_df, admin_username=admin_username
+                for row in self.page.preview_rows
+                if row.status == "OK"
+            ]
+            if sales_lines:
+                invoice_type = self.page.get_sales_invoice_type()
+                invoice_id = self.invoice_service.create_sales_invoice(
+                    sales_lines,
+                    invoice_name=invoice_name,
+                    admin_id=admin.admin_id if admin else None,
+                    admin_username=admin_username,
+                    invoice_type=invoice_type,
                 )
+                if self._action_log_service:
+                    total_qty = sum(line.quantity for line in sales_lines)
+                    total_amount = sum(
+                        line.price * line.quantity for line in sales_lines
+                    )
+                    details = (
+                        f"شماره فاکتور: {invoice_id}\n"
+                        f"تعداد ردیف‌ها: {len(sales_lines)}\n"
+                        f"تعداد کل: {total_qty}\n"
+                        f"مبلغ کل: {total_amount:,.0f}"
+                    )
+                    self._action_log_service.log_action(
+                        "sales_import",
+                        "ثبت فاکتور فروش",
+                        details,
+                        admin=admin,
+                    )
+                self.inventory_service.load()
                 self.on_inventory_updated()
-            except InventoryFileError as exc:
-                dialogs.show_error(self.page, "Sales Import Error", str(exc))
-                self.toast.show("Sales import failed", "error")
-                self._logger.exception("Failed to apply sales import")
-                return
-
-            try:
-                sales_lines = [
-                    SalesLine(
-                        product_name=row.resolved_name or row.product_name,
-                        price=row.sell_price,
-                        quantity=row.quantity_sold,
-                        cost_price=row.cost_price,
-                    )
-                    for row in self.page.preview_rows
-                    if row.status == "OK"
-                ]
-                if sales_lines:
-                    invoice_type = self.page.get_sales_invoice_type()
-                    invoice_id = self.invoice_service.create_sales_invoice(
-                        sales_lines,
-                        invoice_name=invoice_name,
-                        admin_id=admin.admin_id if admin else None,
-                        admin_username=admin_username,
-                        invoice_type=invoice_type,
-                    )
-                    if self._action_log_service:
-                        total_qty = sum(line.quantity for line in sales_lines)
-                        total_amount = sum(
-                            line.price * line.quantity for line in sales_lines
-                        )
-                        details = (
-                            f"شماره فاکتور: {invoice_id}\n"
-                            f"تعداد ردیف‌ها: {len(sales_lines)}\n"
-                            f"تعداد کل: {total_qty}\n"
-                            f"مبلغ کل: {total_amount:,.0f}"
-                        )
-                        self._action_log_service.log_action(
-                            "sales_import",
-                            "ثبت فاکتور فروش",
-                            details,
-                            admin=admin,
-                        )
-                    self.on_invoices_updated()
-            except Exception:  # noqa: BLE001
-                self._logger.exception("Failed to store sales invoice history")
+                self.on_invoices_updated()
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self.page, "Sales Import", str(exc))
+            self.toast.show("Sales import failed", "error")
+            self._logger.exception("Failed to apply sales import")
+            return
 
         self.page.reset_after_apply()
         self.toast.show("Sales import applied", "success")
@@ -447,47 +434,52 @@ class SalesImportController(QObject):
             self.toast.show("No valid sales lines", "error")
             return
 
-        inventory_df = self.inventory_service.get_dataframe()
-        missing = [
-            line.product_name
-            for line in valid_lines
-            if self.inventory_service.find_index(line.product_name) is None
+        try:
+            import pandas as pd
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
+            self.toast.show("Manual sales invoice failed", "error")
+            return
+
+        manual_df = pd.DataFrame(
+            [
+                {
+                    "product_name": line.product_name,
+                    "quantity_sold": line.quantity,
+                    "sell_price": line.price,
+                }
+                for line in valid_lines
+            ]
+        )
+        try:
+            preview_rows, preview_summary = self.sales_service.preview(
+                manual_df, None
+            )
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
+            self.toast.show("Manual sales invoice failed", "error")
+            return
+
+        priced_lines = [
+            SalesManualLine(
+                product_name=row.resolved_name or row.product_name,
+                quantity=row.quantity_sold,
+                price=row.sell_price,
+            )
+            for row in preview_rows
+            if row.status == "OK"
         ]
-        if missing:
+        if not priced_lines:
             dialogs.show_error(
                 dialog,
                 "Manual Sales Invoice",
-                "Product(s) not found:\n\n" + "\n".join(sorted(set(missing))),
+                "No valid rows to submit.",
             )
-            self.toast.show("Product(s) not found", "error")
+            self.toast.show("No valid sales lines", "error")
             return
 
-        inventory_index = {
-            normalize_text(name): idx
-            for idx, name in inventory_df["product_name"].items()
-        }
-        aggregated: dict[str, int] = {}
-        for line in valid_lines:
-            key = normalize_text(line.product_name)
-            aggregated[key] = aggregated.get(key, 0) + line.quantity
-
-        cost_map = {
-            normalize_text(name): float(inventory_df.at[idx, "avg_buy_price"])
-            for idx, name in inventory_df["product_name"].items()
-        }
-        priced_lines = [
-            SalesManualLine(
-                product_name=line.product_name,
-                quantity=line.quantity,
-                price=float(
-                    cost_map.get(normalize_text(line.product_name), 0.0)
-                ),
-            )
-            for line in valid_lines
-        ]
-
         preview_data = self._build_sales_preview_data(
-            priced_lines, inventory_df, invalid
+            priced_lines, invalid + preview_summary.errors
         )
         preview_dialog = SalesInvoicePreviewDialog(dialog, preview_data)
         if preview_dialog.exec() != QDialog.Accepted:
@@ -501,64 +493,49 @@ class SalesImportController(QObject):
             else None
         )
         admin_username = admin.username if admin else None
-        with backup_batch("sales_manual", admin_username=admin_username):
-            try:
-                updated_df = inventory_df.copy()
-                for key, qty in aggregated.items():
-                    idx = inventory_index.get(key)
-                    if idx is None:
-                        continue
-                    current_qty = int(updated_df.at[idx, "quantity"])
-                    updated_df.at[idx, "quantity"] = int(current_qty - qty)
-                self.inventory_service.save(
-                    updated_df, admin_username=admin_username
+        try:
+            sales_lines = [
+                SalesLine(
+                    product_name=row.resolved_name or row.product_name,
+                    price=row.sell_price,
+                    quantity=row.quantity_sold,
+                    cost_price=row.cost_price,
                 )
-                self.on_inventory_updated()
-            except Exception as exc:  # noqa: BLE001
-                dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
-                self.toast.show("Manual sales invoice failed", "error")
-                self._logger.exception("Failed to apply manual sales invoice")
-                return
-
-            try:
-                sales_lines = [
-                    SalesLine(
-                        product_name=line.product_name,
-                        price=line.price,
-                        quantity=line.quantity,
-                        cost_price=float(
-                            cost_map.get(normalize_text(line.product_name), 0.0)
-                        ),
-                    )
-                    for line in priced_lines
-                ]
-                invoice_id = self.invoice_service.create_sales_invoice(
-                    sales_lines,
-                    invoice_name=invoice_name,
-                    admin_id=admin.admin_id if admin else None,
-                    admin_username=admin_username,
-                    invoice_type="sales_manual",
+                for row in preview_rows
+                if row.status == "OK"
+            ]
+            invoice_id = self.invoice_service.create_sales_invoice(
+                sales_lines,
+                invoice_name=invoice_name,
+                admin_id=admin.admin_id if admin else None,
+                admin_username=admin_username,
+                invoice_type="sales_manual",
+            )
+            if self._action_log_service:
+                total_qty = sum(line.quantity for line in sales_lines)
+                total_amount = sum(
+                    line.price * line.quantity for line in sales_lines
                 )
-                if self._action_log_service:
-                    total_qty = sum(line.quantity for line in priced_lines)
-                    total_amount = sum(
-                        line.price * line.quantity for line in priced_lines
-                    )
-                    details = (
-                        f"شماره فاکتور: {invoice_id}\n"
-                        f"تعداد ردیف‌ها: {len(valid_lines)}\n"
-                        f"تعداد کل: {total_qty}\n"
-                        f"مبلغ کل: {total_amount:,.0f}"
-                    )
-                    self._action_log_service.log_action(
-                        "sales_manual_invoice",
-                        "ثبت فاکتور فروش دستی",
-                        details,
-                        admin=admin,
-                    )
-                self.on_invoices_updated()
-            except Exception:  # noqa: BLE001
-                self._logger.exception("Failed to store manual sales invoice")
+                details = (
+                    f"شماره فاکتور: {invoice_id}\n"
+                    f"تعداد ردیف‌ها: {len(sales_lines)}\n"
+                    f"تعداد کل: {total_qty}\n"
+                    f"مبلغ کل: {total_amount:,.0f}"
+                )
+                self._action_log_service.log_action(
+                    "sales_manual_invoice",
+                    "ثبت فاکتور فروش دستی",
+                    details,
+                    admin=admin,
+                )
+            self.inventory_service.load()
+            self.on_inventory_updated()
+            self.on_invoices_updated()
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(dialog, "Manual Sales Invoice", str(exc))
+            self.toast.show("Manual sales invoice failed", "error")
+            self._logger.exception("Failed to apply manual sales invoice")
+            return
 
         if invalid:
             self.toast.show(
@@ -572,20 +549,16 @@ class SalesImportController(QObject):
     def _build_sales_preview_data(
         self,
         valid_lines: list[SalesManualLine],
-        inventory_df,
         invalid_count: int,
     ) -> SalesInvoicePreviewData:
         preview_lines: list[SalesInvoicePreviewLine] = []
         total_qty = 0
         total_amount = 0.0
-        aggregated: dict[str, int] = {}
 
         for line in valid_lines:
             line_total = line.price * line.quantity
             total_qty += line.quantity
             total_amount += line_total
-            key = normalize_text(line.product_name)
-            aggregated[key] = aggregated.get(key, 0) + line.quantity
             preview_lines.append(
                 SalesInvoicePreviewLine(
                     product_name=line.product_name,
@@ -595,33 +568,11 @@ class SalesImportController(QObject):
                 )
             )
 
-        inventory_index = {
-            normalize_text(name): idx
-            for idx, name in inventory_df["product_name"].items()
-        }
-        projections: list[SalesInvoiceStockProjection] = []
-        for key, sold_qty in aggregated.items():
-            idx = inventory_index.get(key)
-            if idx is None:
-                continue
-            current_qty = int(inventory_df.at[idx, "quantity"])
-            new_qty = current_qty - sold_qty
-            projections.append(
-                SalesInvoiceStockProjection(
-                    product_name=str(
-                        inventory_df.at[idx, "product_name"]
-                    ).strip(),
-                    current_qty=current_qty,
-                    sold_qty=sold_qty,
-                    new_qty=new_qty,
-                )
-            )
-
         return SalesInvoicePreviewData(
             lines=preview_lines,
             total_lines=len(valid_lines),
             total_quantity=total_qty,
             total_amount=total_amount,
             invalid_count=invalid_count,
-            projections=projections,
+            projections=[],
         )
