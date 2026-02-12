@@ -59,7 +59,7 @@ class SalesImportService:
         elif suffix.endswith(".csv"):
             df = pd.read_csv(path)
         else:
-            raise InventoryFileError("Unsupported sales file format.")
+            raise InventoryFileError("قالب فایل فروش پشتیبانی نمی‌شود.")
 
         df.columns = [str(col).strip() for col in df.columns]
         lower_map = {str(col).strip().lower(): col for col in df.columns}
@@ -78,8 +78,8 @@ class SalesImportService:
         ]
         if missing:
             raise InventoryFileError(
-                "Sales file missing required columns: "
-                "product_name, quantity_sold (aliases: Product Name, Quantity)"
+                "ستون‌های الزامی فایل فروش یافت نشد: "
+                "product_name, quantity_sold (معادل‌ها: Product Name, Quantity)"
             )
         if "sell_price" in df.columns:
             df["sell_price"] = pd.to_numeric(df["sell_price"], errors="coerce")
