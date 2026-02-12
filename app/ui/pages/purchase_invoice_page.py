@@ -83,15 +83,17 @@ class PurchaseInvoicePage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Purchase Invoice")
+        title = QLabel(self.tr("فاکتور خرید"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
         layout.addLayout(header)
 
         info = QLabel(
-            "Add purchased items. Start typing a product to see similar names "
-            "from inventory."
+            self.tr(
+                "اقلام خرید را اضافه کنید. با تایپ نام کالا، پیشنهادهای مشابه "
+                "از موجودی نمایش داده می‌شود."
+            )
         )
         info.setProperty("textRole", "muted")
         layout.addWidget(info)
@@ -104,7 +106,7 @@ class PurchaseInvoicePage(QWidget):
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Quantity", "Buy Price"]
+            [self.tr("کالا"), self.tr("تعداد"), self.tr("قیمت خرید")]
         )
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -118,17 +120,17 @@ class PurchaseInvoicePage(QWidget):
         self.table.installEventFilter(self)
 
         button_row = QHBoxLayout()
-        self.add_button = QPushButton("Add Line")
+        self.add_button = QPushButton(self.tr("افزودن ردیف"))
         self.add_button.clicked.connect(self.add_row)
         button_row.addWidget(self.add_button)
 
-        self.remove_button = QPushButton("Remove Selected")
+        self.remove_button = QPushButton(self.tr("حذف انتخاب‌شده"))
         self.remove_button.clicked.connect(self.remove_selected)
         button_row.addWidget(self.remove_button)
 
         button_row.addStretch(1)
 
-        self.submit_button = QPushButton("Submit Invoice")
+        self.submit_button = QPushButton(self.tr("ثبت فاکتور"))
         self.submit_button.clicked.connect(self._emit_submit)
         button_row.addWidget(self.submit_button)
         table_layout.addLayout(button_row)
@@ -156,7 +158,7 @@ class PurchaseInvoicePage(QWidget):
         self.table.insertRow(row)
 
         product_input = QLineEdit()
-        product_input.setPlaceholderText("Type product name...")
+        product_input.setPlaceholderText(self.tr("نام کالا را بنویسید..."))
         product_input.setClearButtonEnabled(True)
         product_input.textChanged.connect(
             lambda text, widget=product_input: self._update_completer(
