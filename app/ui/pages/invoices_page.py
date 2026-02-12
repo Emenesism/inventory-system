@@ -188,10 +188,21 @@ class InvoicesPage(QWidget):
             ]
         )
         lines_header = self.lines_table.horizontalHeader()
+        lines_header.setDefaultAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         lines_header.setSectionResizeMode(0, QHeaderView.Stretch)
         lines_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         lines_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         lines_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        for col in range(self.lines_table.columnCount()):
+            header_item = self.lines_table.horizontalHeaderItem(col)
+            if header_item is None:
+                continue
+            if col == 0:
+                header_item.setTextAlignment(
+                    Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+                )
+            else:
+                header_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignCenter)
         self.lines_table.setAlternatingRowColors(True)
         if hasattr(self.lines_table, "setUniformRowHeights"):
             self.lines_table.setUniformRowHeights(True)
@@ -272,23 +283,25 @@ class InvoicesPage(QWidget):
 
         self.lines_table.setRowCount(len(lines))
         for row_idx, line in enumerate(lines):
-            self.lines_table.setItem(
-                row_idx, 0, QTableWidgetItem(line.product_name)
+            product_item = QTableWidgetItem(line.product_name)
+            product_item.setTextAlignment(
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
             )
+            self.lines_table.setItem(row_idx, 0, product_item)
             price_text = self._format_amount(line.price) if show_price else ""
             price_item = QTableWidgetItem(price_text)
-            price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            price_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 1, price_item)
 
             qty_item = QTableWidgetItem(str(line.quantity))
-            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            qty_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 2, qty_item)
 
             total_text = (
                 self._format_amount(line.line_total) if show_price else ""
             )
             total_item = QTableWidgetItem(total_text)
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            total_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 3, total_item)
 
     def _maybe_load_more(self) -> None:

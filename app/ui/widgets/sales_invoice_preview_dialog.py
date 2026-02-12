@@ -151,13 +151,23 @@ class SalesInvoicePreviewDialog(QDialog):
         self.lines_table.setMinimumHeight(200)
         self.lines_table.setLayoutDirection(Qt.RightToLeft)
         self.lines_table.setStyleSheet(
-            "QHeaderView::section { text-align: right; padding-right: 6px; }"
+            "QHeaderView::section { padding-right: 6px; }"
         )
 
         lines_header = self.lines_table.horizontalHeader()
-        lines_header.setDefaultAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lines_header.setDefaultAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         lines_header.setSectionResizeMode(0, QHeaderView.Stretch)
         lines_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        for col in range(self.lines_table.columnCount()):
+            header_item = self.lines_table.horizontalHeaderItem(col)
+            if header_item is None:
+                continue
+            if col == 0:
+                header_item.setTextAlignment(
+                    Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+                )
+            else:
+                header_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignCenter)
 
         for row_idx, line in enumerate(data.lines):
             self._set_item(self.lines_table, row_idx, 0, line.product_name)
@@ -221,5 +231,10 @@ class SalesInvoicePreviewDialog(QDialog):
     @staticmethod
     def _set_item(table: QTableWidget, row: int, col: int, text: str) -> None:
         item = QTableWidgetItem(text)
-        item.setTextAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        if col == 0:
+            item.setTextAlignment(
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+            )
+        else:
+            item.setTextAlignment(Qt.AlignVCenter | Qt.AlignCenter)
         table.setItem(row, col, item)
