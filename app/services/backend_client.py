@@ -14,7 +14,9 @@ class BackendClient:
     def __init__(self, base_url: str | None = None) -> None:
         configured = (base_url or "").strip()
         env_value = os.getenv("REZA_BACKEND_URL", "").strip()
-        self.base_url = (env_value or configured or "http://127.0.0.1:8080").rstrip("/")
+        self.base_url = (
+            env_value or configured or "http://127.0.0.1:8080"
+        ).rstrip("/")
         self._timeout = (8, 120)
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
@@ -53,7 +55,9 @@ class BackendClient:
                 timeout=self._timeout,
             )
         except requests.RequestException as exc:
-            raise BackendAPIError(f"Backend request failed: {exc}") from exc
+            raise BackendAPIError(
+                f"درخواست به بک‌اند ناموفق بود: {exc}"
+            ) from exc
 
         if response.status_code == 204:
             return None
