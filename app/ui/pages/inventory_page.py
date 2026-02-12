@@ -46,30 +46,30 @@ class InventoryPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Inventory Overview")
+        title = QLabel(self.tr("نمای کلی موجودی"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search products...")
+        self.search_input.setPlaceholderText(self.tr("جستجوی کالا..."))
         self.search_input.setMinimumWidth(260)
         self.search_input.textChanged.connect(self._queue_filter)
         header.addWidget(self.search_input)
 
-        self.reload_button = QPushButton("Reload")
+        self.reload_button = QPushButton(self.tr("بارگذاری مجدد"))
         self.reload_button.clicked.connect(self.reload_requested.emit)
         header.addWidget(self.reload_button)
 
-        self.save_button = QPushButton("Save Changes")
+        self.save_button = QPushButton(self.tr("ذخیره تغییرات"))
         self.save_button.clicked.connect(self.save_requested.emit)
         header.addWidget(self.save_button)
 
-        self.add_row_button = QPushButton("Add Row")
+        self.add_row_button = QPushButton(self.tr("افزودن ردیف"))
         self.add_row_button.clicked.connect(self.add_row)
         header.addWidget(self.add_row_button)
 
-        self.delete_row_button = QPushButton("Delete Selected")
+        self.delete_row_button = QPushButton(self.tr("حذف انتخاب‌شده"))
         self.delete_row_button.setStyleSheet(
             "QPushButton { background: #DC2626; }"
             "QPushButton:hover { background: #B91C1C; }"
@@ -79,7 +79,7 @@ class InventoryPage(QWidget):
         self.delete_row_button.setEnabled(False)
         header.addWidget(self.delete_row_button)
 
-        self.export_button = QPushButton("Export")
+        self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.clicked.connect(self.export_requested.emit)
         header.addWidget(self.export_button)
 
@@ -262,8 +262,10 @@ class InventoryPage(QWidget):
             return
         if not dialogs.ask_yes_no(
             self,
-            "Delete Rows",
-            f"Delete {len(selected_rows)} selected row(s)?",
+            self.tr("حذف ردیف‌ها"),
+            self.tr("آیا {count} ردیف انتخاب‌شده حذف شود؟").format(
+                count=len(selected_rows)
+            ),
         ):
             return
 
