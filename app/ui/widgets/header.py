@@ -5,14 +5,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QStyle,
     QToolButton,
     QWidget,
 )
 
 
 class HeaderBar(QFrame):
-    inventory_requested = Signal()
     lock_requested = Signal()
     help_requested = Signal()
 
@@ -21,8 +19,8 @@ class HeaderBar(QFrame):
         self.setObjectName("HeaderBar")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 12, 20, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setSpacing(10)
 
         title = QLabel(self.tr("حسابداری و انبار"))
         title.setObjectName("AppTitle")
@@ -33,20 +31,10 @@ class HeaderBar(QFrame):
         layout.addWidget(self.status_label)
         layout.addStretch(1)
 
-        self.select_inventory_button = QToolButton()
-        self.select_inventory_button.setObjectName("SelectInventoryButton")
-        self.select_inventory_button.setText(self.tr("انتخاب فایل موجودی"))
-        self.select_inventory_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DialogOpenButton)
-        )
-        self.select_inventory_button.clicked.connect(
-            self.inventory_requested.emit
-        )
-        layout.addWidget(self.select_inventory_button)
-
         self.lock_button = QToolButton()
         self.lock_button.setObjectName("LockButton")
         self.lock_button.setText(self.tr("قفل"))
+        self.lock_button.setToolTip(self.tr("قفل برنامه"))
         self.lock_button.clicked.connect(self.lock_requested.emit)
         layout.addWidget(self.lock_button)
 

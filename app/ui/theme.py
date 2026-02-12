@@ -58,26 +58,26 @@ QToolButton#ThemeButton {
 QToolButton#ThemeButton:hover {
     background: #E0E7FF;
 }
-QToolButton#SelectInventoryButton {
-    background: #DBEAFE;
-    color: #1D4ED8;
-    border-radius: 10px;
-    padding: 6px 10px;
+QToolButton#LockButton, QToolButton#HelpButton {
+    background: #F8FAFC;
+    color: #111827;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 6px 12px;
+    font-weight: 600;
+    min-height: 34px;
 }
-QToolButton#SelectInventoryButton:hover {
-    background: #BFDBFE;
+QToolButton#LockButton:hover, QToolButton#HelpButton:hover {
+    background: #F3F4F6;
+}
+QToolButton#LockButton:pressed, QToolButton#HelpButton:pressed {
+    background: #E5E7EB;
 }
 QToolButton#HelpButton {
-    background: #F3F4F6;
-    color: #111827;
-    border-radius: 14px;
-    padding: 6px 10px;
     font-weight: 700;
-    min-width: 32px;
-    min-height: 32px;
-}
-QToolButton#HelpButton:hover {
-    background: #E5E7EB;
+    font-size: 15px;
+    min-width: 36px;
+    padding: 6px 0px;
 }
 QToolButton#SidebarButton {
     color: #E5E7EB;
@@ -319,14 +319,26 @@ QToolButton#ThemeButton {
 QToolButton#ThemeButton:hover {
     background: #374151;
 }
-QToolButton#SelectInventoryButton {
-    background: #1D4ED8;
-    color: #FFFFFF;
-    border-radius: 10px;
-    padding: 6px 10px;
+QToolButton#LockButton, QToolButton#HelpButton {
+    background: #0B1220;
+    color: #E5E7EB;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 6px 12px;
+    font-weight: 600;
+    min-height: 34px;
 }
-QToolButton#SelectInventoryButton:hover {
-    background: #2563EB;
+QToolButton#LockButton:hover, QToolButton#HelpButton:hover {
+    background: #1F2937;
+}
+QToolButton#LockButton:pressed, QToolButton#HelpButton:pressed {
+    background: #334155;
+}
+QToolButton#HelpButton {
+    font-weight: 700;
+    font-size: 15px;
+    min-width: 36px;
+    padding: 6px 0px;
 }
 QToolButton#SidebarButton {
     color: #E5E7EB;

@@ -83,7 +83,6 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         self.header = HeaderBar()
-        self.header.inventory_requested.connect(self.choose_inventory_file)
         self.header.lock_requested.connect(self.lock)
         self.header.help_requested.connect(self._show_help)
         main_layout.addWidget(self.header)
