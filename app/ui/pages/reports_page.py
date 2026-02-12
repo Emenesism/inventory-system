@@ -45,7 +45,7 @@ class ReportsPage(QWidget):
 
         header = QHBoxLayout()
         title = QLabel(self.tr("گزارش‌ها و لاگ‌ها"))
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 

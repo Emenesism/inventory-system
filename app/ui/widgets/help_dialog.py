@@ -28,7 +28,7 @@ class HelpDialog(QDialog):
 
         self.title_label = QLabel(self.tr("راهنما"))
         self.title_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.title_label.setStyleSheet("font-size: 18px; font-weight: 700;")
+        self.title_label.setStyleSheet("font-size: 20px; font-weight: 700;")
         layout.addWidget(self.title_label)
 
         self.body = QTextBrowser()

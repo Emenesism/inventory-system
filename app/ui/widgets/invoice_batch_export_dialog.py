@@ -136,7 +136,7 @@ class InvoiceBatchExportDialog(QDialog):
         layout.setSpacing(16)
 
         title = QLabel(self.tr("خروجی فاکتورها"))
-        title.setStyleSheet("font-size: 18px; font-weight: 600;")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
 
         date_card = QFrame()

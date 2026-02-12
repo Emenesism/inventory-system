@@ -24,15 +24,23 @@ QFrame#HeaderBar {
     border-bottom: 1px solid #E5E7EB;
 }
 QLabel#AppTitle {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
+}
+QLabel#SidebarBrand {
+    background: #FFFFFF;
+    color: #111111;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 22px;
+    font-weight: 800;
 }
 QLabel#StatusLabel {
     color: #6B7280;
 }
 QLabel#SidebarHint {
     color: #9CA3AF;
-    font-size: 11px;
+    font-size: 12px;
     padding-left: 36px;
 }
 QToolButton#ThemeButton {
@@ -71,7 +79,8 @@ QToolButton#SidebarButton {
     padding: 10px 12px;
     border-radius: 12px;
     text-align: left;
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 600;
 }
 QToolButton#SidebarButton:hover {
     background: #1F2937;
@@ -153,6 +162,7 @@ QHeaderView::section {
     background: #F3F4F6;
     border: none;
     padding: 8px;
+    font-size: 13px;
     font-weight: 600;
 }
 QTableWidget {
@@ -219,7 +229,7 @@ QFrame#LockCard {
 }
 QLabel#LockTitle {
     color: #0F172A;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
 }
 QLabel#LockHint {
@@ -274,16 +284,24 @@ QFrame#HeaderBar {
     border-bottom: 1px solid #1F2937;
 }
 QLabel#AppTitle {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
     color: #F8FAFC;
+}
+QLabel#SidebarBrand {
+    background: #FFFFFF;
+    color: #111111;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 22px;
+    font-weight: 800;
 }
 QLabel#StatusLabel {
     color: #9CA3AF;
 }
 QLabel#SidebarHint {
     color: #94A3B8;
-    font-size: 11px;
+    font-size: 12px;
     padding-left: 36px;
 }
 QToolButton#ThemeButton {
@@ -310,7 +328,8 @@ QToolButton#SidebarButton {
     padding: 10px 12px;
     border-radius: 12px;
     text-align: left;
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 600;
 }
 QToolButton#SidebarButton:hover {
     background: #1F2937;
@@ -408,6 +427,7 @@ QHeaderView::section {
     background: #111827;
     border: none;
     padding: 8px;
+    font-size: 13px;
     font-weight: 600;
     color: #F8FAFC;
 }
@@ -482,7 +502,7 @@ QFrame#LockCard {
 }
 QLabel#LockTitle {
     color: #F8FAFC;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
 }
 QLabel#LockHint {

@@ -25,10 +25,14 @@ class Sidebar(QFrame):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(14)
 
-        brand = QLabel(self.tr("رضاکالا"))
-        brand.setStyleSheet(
-            "color: #FFFFFF; font-weight: 700; font-size: 18px;"
+        brand = QLabel(
+            self.tr(
+                '<span style="color:#DC2626;">آرم</span>'
+                '<span style="color:#111111;">کالا</span>'
+            )
         )
+        brand.setObjectName("SidebarBrand")
+        brand.setTextFormat(Qt.RichText)
         layout.addWidget(brand)
 
         self.button_group = QButtonGroup(self)
@@ -60,8 +64,8 @@ class Sidebar(QFrame):
         }
         title_map = {
             "Inventory": self.tr("موجودی"),
-            "Sales Import": self.tr("ورود فروش"),
-            "Purchase Invoice": self.tr("فاکتور خرید"),
+            "Sales Import": self.tr("ثبت فاکتور فروش"),
+            "Purchase Invoice": self.tr("ثیت فاکتور خرید"),
             "Invoices": self.tr("فاکتورها"),
             "Analytics": self.tr("تحلیل"),
             "Low Stock": self.tr("کمبود موجودی"),

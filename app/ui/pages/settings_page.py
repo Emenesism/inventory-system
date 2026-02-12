@@ -49,7 +49,7 @@ class SettingsPage(QWidget):
         layout.setSpacing(16)
 
         title = QLabel(self.tr("تنظیمات"))
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
 
         card = QFrame()

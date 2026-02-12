@@ -50,6 +50,7 @@ class DataFrameTableModel(QAbstractTableModel):
 
         column_name = self._full_dataframe.columns[index.column()]
         value = self._full_dataframe.iat[index.row(), index.column()]
+        is_product_column = self._is_product_column(column_name)
         if role == Qt.DisplayRole:
             if pd.isna(value):
                 return "-" if column_name in {"منبع", "source"} else ""
@@ -62,8 +63,14 @@ class DataFrameTableModel(QAbstractTableModel):
                 and value == 0
             ):
                 return ""
+            if column_name == "quantity":
+                # Keep inventory quantity digits as Latin (English) numerals.
+                return self._ltr_numeric_text(int(value))
             if is_price_column(column_name):
-                return format_amount(value)
+                formatted = format_amount(value)
+                return self._ltr_numeric_text(formatted) if formatted else ""
+            if is_product_column:
+                return self._rtl_text(value)
             return value
         if role == Qt.EditRole:
             if pd.isna(value):
@@ -74,7 +81,10 @@ class DataFrameTableModel(QAbstractTableModel):
                 return float(value)
             return value
         if role == Qt.TextAlignmentRole:
-            return Qt.AlignVCenter | Qt.AlignLeft
+            if is_product_column:
+                # Force visual right alignment even when Qt mirrors in RTL.
+                return Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+            return Qt.AlignCenter
         return None
 
     def headerData(
@@ -233,3 +243,30 @@ class DataFrameTableModel(QAbstractTableModel):
                 [""] * (row - len(self._search_cache) + 1)
             )
         self._search_cache[row] = normalize_text(" ".join(parts))
+
+    @staticmethod
+    def _ltr_numeric_text(value: object) -> str:
+        # Prefix with LRM so minus sign stays leading in RTL UI (e.g. -37).
+        return "\u200e" + str(value)
+
+    @staticmethod
+    def _rtl_text(value: object) -> str:
+        # Prefix with RLM so mixed Persian/Latin product names keep RTL flow.
+        return "\u200f" + str(value)
+
+    @staticmethod
+    def _is_product_column(column_name: object) -> bool:
+        normalized = (
+            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+        if normalized in {
+            "product_name",
+            "product",
+            "name",
+            "نام_محصول",
+            "نام_کالا",
+            "کالا",
+            "محصول",
+        }:
+            return True
+        return "product" in normalized and "name" in normalized

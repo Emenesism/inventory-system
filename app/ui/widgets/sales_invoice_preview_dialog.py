@@ -82,7 +82,7 @@ class SalesInvoicePreviewDialog(QDialog):
         content_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
 
         title = QLabel(self.tr("پیش نمایش فاکتور فروش"))
-        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        title.setStyleSheet("font-size: 20px; font-weight: 700;")
         title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         content_layout.addWidget(title, 0, Qt.AlignRight)

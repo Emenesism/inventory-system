@@ -55,7 +55,7 @@ class InvoiceEditDialog(QDialog):
         title = QLabel(
             self.tr("ویرایش فاکتور #{id}").format(id=invoice.invoice_id)
         )
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
         layout.addWidget(title)
 
         meta = QLabel(

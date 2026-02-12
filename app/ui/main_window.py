@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.inventory_service = inventory_service
         self.config = config
         self._logger = logging.getLogger(self.__class__.__name__)
-        self.setWindowTitle(self.tr("مدیریت رضاکالا"))
+        self.setWindowTitle(self.tr("مدیریت آرمکالا"))
         self.resize(1280, 800)
 
         self.toast = ToastManager(self)
