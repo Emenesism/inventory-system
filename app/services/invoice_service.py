@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import shutil
-import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from app.core.db_lock import db_connection, db_lock
-from app.core.paths import app_dir
-from app.services.backup_sender import send_backup
+from app.core.config import AppConfig
+from app.services.backend_client import BackendAPIError, BackendClient
 from app.services.purchase_service import PurchaseLine
 
 
@@ -53,111 +48,10 @@ class InvoiceService:
     def __init__(
         self,
         db_path: Path | None = None,
-        backup_dir: Path | None = None,
     ) -> None:
-        if db_path is None:
-            db_path = app_dir() / "invoices.db"
-        self.db_path = db_path
-        self.backup_dir = backup_dir
-        self._schema_signature: tuple[int, int, int] | None = None
-        self._init_db()
-
-    def _connect(self):
-        return db_connection(self.db_path, row_factory=sqlite3.Row)
-
-    def _db_signature(self) -> tuple[int, int, int] | None:
-        try:
-            stat = self.db_path.stat()
-        except FileNotFoundError:
-            return None
-        return (stat.st_ino, stat.st_size, stat.st_mtime_ns)
-
-    def _ensure_schema(self) -> None:
-        current = self._db_signature()
-        if current != self._schema_signature:
-            self._init_db()
-            self._schema_signature = self._db_signature()
-
-    def _backup_db(self) -> None:
-        if not self.db_path.exists():
-            return
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"invoices_backup_{timestamp}{self.db_path.suffix}"
-        target_dir = self.backup_dir if self.backup_dir else self.db_path.parent
-        backup_path = target_dir / backup_name
-        with db_lock():
-            shutil.copy2(self.db_path, backup_path)
-
-    def set_backup_dir(self, backup_dir: Path | None) -> None:
-        self.backup_dir = backup_dir
-
-    def _init_db(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS invoices (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    invoice_type TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    total_lines INTEGER NOT NULL,
-                    total_qty INTEGER NOT NULL,
-                    total_amount REAL NOT NULL,
-                    invoice_name TEXT
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS invoice_lines (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    invoice_id INTEGER NOT NULL,
-                    product_name TEXT NOT NULL,
-                    price REAL NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    line_total REAL NOT NULL,
-                    cost_price REAL NOT NULL DEFAULT 0,
-                    FOREIGN KEY (invoice_id)
-                        REFERENCES invoices(id)
-                        ON DELETE CASCADE
-                )
-                """
-            )
-            columns = {
-                row[1]
-                for row in conn.execute(
-                    "PRAGMA table_info(invoice_lines)"
-                ).fetchall()
-            }
-            if "cost_price" not in columns:
-                conn.execute(
-                    "ALTER TABLE invoice_lines "
-                    "ADD COLUMN cost_price REAL NOT NULL DEFAULT 0"
-                )
-            invoice_columns = {
-                row[1]
-                for row in conn.execute(
-                    "PRAGMA table_info(invoices)"
-                ).fetchall()
-            }
-            if "invoice_name" not in invoice_columns:
-                conn.execute(
-                    "ALTER TABLE invoices ADD COLUMN invoice_name TEXT"
-                )
-            if "admin_id" not in invoice_columns:
-                conn.execute("ALTER TABLE invoices ADD COLUMN admin_id INTEGER")
-            if "admin_username" not in invoice_columns:
-                conn.execute(
-                    "ALTER TABLE invoices ADD COLUMN admin_username TEXT"
-                )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id "
-                "ON invoice_lines(invoice_id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_invoices_created_at "
-                "ON invoices(created_at)"
-            )
-        self._schema_signature = self._db_signature()
+        _ = db_path
+        config = AppConfig.load()
+        self._client = BackendClient(config.backend_url)
 
     def create_purchase_invoice(
         self,
@@ -166,70 +60,26 @@ class InvoiceService:
         admin_id: int | None = None,
         admin_username: str | None = None,
     ) -> int:
-        self._ensure_schema()
-        total_qty = sum(line.quantity for line in lines)
-        total_amount = sum(line.price * line.quantity for line in lines)
-        created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
-            timespec="seconds"
-        )
-
-        self._backup_db()
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO invoices (
-                    invoice_type,
-                    created_at,
-                    total_lines,
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "purchase",
-                    created_at,
-                    len(lines),
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username,
-                ),
-            )
-            invoice_id = int(cursor.lastrowid)
-
-            line_rows = [
-                (
-                    invoice_id,
-                    line.product_name,
-                    float(line.price),
-                    int(line.quantity),
-                    float(line.price * line.quantity),
-                    float(line.price),
-                )
+        _ = admin_id
+        payload = {
+            "invoice_name": invoice_name,
+            "admin_username": admin_username,
+            "lines": [
+                {
+                    "product_name": line.product_name,
+                    "price": float(line.price),
+                    "quantity": int(line.quantity),
+                }
                 for line in lines
-            ]
-            conn.executemany(
-                """
-                INSERT INTO invoice_lines (
-                    invoice_id,
-                    product_name,
-                    price,
-                    quantity,
-                    line_total,
-                    cost_price
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                line_rows,
+            ],
+        }
+        try:
+            response = self._client.post(
+                "/api/v1/invoices/purchase", json_body=payload
             )
-        send_backup(
-            reason="invoice_purchase_created",
-            admin_username=admin_username,
-        )
-        return invoice_id
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        return int(response.get("invoice_id", 0))
 
     def create_sales_invoice(
         self,
@@ -239,108 +89,41 @@ class InvoiceService:
         admin_username: str | None = None,
         invoice_type: str = "sales",
     ) -> int:
-        self._ensure_schema()
-        total_qty = sum(line.quantity for line in lines)
-        total_amount = sum(line.price * line.quantity for line in lines)
-        created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
-            timespec="seconds"
-        )
-
-        self._backup_db()
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO invoices (
-                    invoice_type,
-                    created_at,
-                    total_lines,
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    invoice_type,
-                    created_at,
-                    len(lines),
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username,
-                ),
-            )
-            invoice_id = int(cursor.lastrowid)
-
-            line_rows = [
-                (
-                    invoice_id,
-                    line.product_name,
-                    float(line.price),
-                    int(line.quantity),
-                    float(line.price * line.quantity),
-                    float(line.cost_price),
-                )
+        _ = admin_id
+        payload = {
+            "invoice_name": invoice_name,
+            "admin_username": admin_username,
+            "invoice_type": invoice_type,
+            "lines": [
+                {
+                    "product_name": line.product_name,
+                    "price": float(line.price),
+                    "quantity": int(line.quantity),
+                }
                 for line in lines
-            ]
-            conn.executemany(
-                """
-                INSERT INTO invoice_lines (
-                    invoice_id,
-                    product_name,
-                    price,
-                    quantity,
-                    line_total,
-                    cost_price
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                line_rows,
+            ],
+        }
+        try:
+            response = self._client.post(
+                "/api/v1/invoices/sales", json_body=payload
             )
-        send_backup(
-            reason="invoice_sales_created",
-            admin_username=admin_username,
-        )
-        return invoice_id
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        return int(response.get("invoice_id", 0))
 
     def list_invoices(
         self, limit: int = 200, offset: int = 0
     ) -> list[InvoiceSummary]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    id,
-                    invoice_type,
-                    created_at,
-                    total_lines,
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username
-                FROM invoices
-                ORDER BY id DESC
-                LIMIT ?
-                OFFSET ?
-                """,
-                (limit, offset),
-            ).fetchall()
-        return [
-            InvoiceSummary(
-                invoice_id=row["id"],
-                invoice_type=row["invoice_type"],
-                created_at=row["created_at"],
-                total_lines=row["total_lines"],
-                total_qty=row["total_qty"],
-                total_amount=row["total_amount"],
-                invoice_name=row["invoice_name"],
-                admin_id=row["admin_id"],
-                admin_username=row["admin_username"],
+        try:
+            payload = self._client.get(
+                "/api/v1/invoices",
+                params={"limit": limit, "offset": offset},
             )
-            for row in rows
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [
+            self._to_summary(item) for item in items if isinstance(item, dict)
         ]
 
     def list_invoices_between(
@@ -352,111 +135,37 @@ class InvoiceService:
         id_from: int | None = None,
         id_to: int | None = None,
     ) -> list[InvoiceSummary]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            conditions = ["i.created_at >= ?", "i.created_at <= ?"]
-            params: list[object] = [start_iso, end_iso]
-            if id_from is not None:
-                conditions.append("i.id >= ?")
-                params.append(id_from)
-            if id_to is not None:
-                conditions.append("i.id <= ?")
-                params.append(id_to)
-            where_clause = " AND ".join(conditions)
-            if product_filter:
-                if fuzzy:
-                    product_value = f"%{product_filter}%"
-                    op = "LIKE"
-                else:
-                    product_value = product_filter
-                    op = "="
-                params.append(product_value)
-                rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT
-                        i.id,
-                        i.invoice_type,
-                        i.created_at,
-                        i.total_lines,
-                        i.total_qty,
-                        i.total_amount,
-                        i.invoice_name,
-                        i.admin_id,
-                        i.admin_username
-                    FROM invoices i
-                    JOIN invoice_lines il ON i.id = il.invoice_id
-                    WHERE {where_clause} AND il.product_name {op} ?
-                    ORDER BY i.id DESC
-                    """,
-                    params,
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"""
-                    SELECT
-                        i.id,
-                        i.invoice_type,
-                        i.created_at,
-                        i.total_lines,
-                        i.total_qty,
-                        i.total_amount,
-                        i.invoice_name,
-                        i.admin_id,
-                        i.admin_username
-                    FROM invoices i
-                    WHERE {where_clause}
-                    ORDER BY i.id DESC
-                    """,
-                    params,
-                ).fetchall()
+        params: dict[str, object] = {
+            "start": start_iso,
+            "end": end_iso,
+            "fuzzy": str(bool(fuzzy)).lower(),
+        }
+        if product_filter:
+            params["product_filter"] = product_filter
+        if id_from is not None:
+            params["id_from"] = id_from
+        if id_to is not None:
+            params["id_to"] = id_to
+        try:
+            payload = self._client.get("/api/v1/invoices/range", params=params)
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
         return [
-            InvoiceSummary(
-                invoice_id=row["id"],
-                invoice_type=row["invoice_type"],
-                created_at=row["created_at"],
-                total_lines=row["total_lines"],
-                total_qty=row["total_qty"],
-                total_amount=row["total_amount"],
-                invoice_name=row["invoice_name"],
-                admin_id=row["admin_id"],
-                admin_username=row["admin_username"],
-            )
-            for row in rows
+            self._to_summary(item) for item in items if isinstance(item, dict)
         ]
 
     def get_invoice(self, invoice_id: int) -> InvoiceSummary | None:
-        self._ensure_schema()
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    id,
-                    invoice_type,
-                    created_at,
-                    total_lines,
-                    total_qty,
-                    total_amount,
-                    invoice_name,
-                    admin_id,
-                    admin_username
-                FROM invoices
-                WHERE id = ?
-                """,
-                (invoice_id,),
-            ).fetchone()
-        if row is None:
+        try:
+            payload = self._client.get(f"/api/v1/invoices/{invoice_id}")
+        except BackendAPIError as exc:
+            if "not found" in str(exc).lower():
+                return None
+            raise RuntimeError(str(exc)) from exc
+        invoice = payload.get("invoice") if isinstance(payload, dict) else None
+        if not isinstance(invoice, dict):
             return None
-        return InvoiceSummary(
-            invoice_id=row["id"],
-            invoice_type=row["invoice_type"],
-            created_at=row["created_at"],
-            total_lines=row["total_lines"],
-            total_qty=row["total_qty"],
-            total_amount=row["total_amount"],
-            invoice_name=row["invoice_name"],
-            admin_id=row["admin_id"],
-            admin_username=row["admin_username"],
-        )
+        return self._to_summary(invoice)
 
     def update_invoice_lines(
         self,
@@ -466,52 +175,28 @@ class InvoiceService:
         invoice_name: str | None,
         admin_username: str | None = None,
     ) -> None:
-        self._ensure_schema()
-        total_qty = sum(line.quantity for line in lines)
-        total_amount = sum(line.price * line.quantity for line in lines)
-        self._backup_db()
-        with self._connect() as conn:
-            conn.execute(
-                "DELETE FROM invoice_lines WHERE invoice_id = ?",
-                (invoice_id,),
-            )
-            line_rows = [
-                (
-                    invoice_id,
-                    line.product_name,
-                    float(line.price),
-                    int(line.quantity),
-                    float(line.price * line.quantity),
-                    float(
-                        line.cost_price
-                        if invoice_type.startswith("sales")
-                        else line.price
-                    ),
-                )
+        _ = invoice_type
+        _ = admin_username
+        payload = {
+            "invoice_name": invoice_name,
+            "lines": [
+                {
+                    "product_name": line.product_name,
+                    "price": float(line.price),
+                    "quantity": int(line.quantity),
+                    "line_total": float(line.price) * int(line.quantity),
+                    "cost_price": float(line.cost_price),
+                }
                 for line in lines
-            ]
-            conn.executemany(
-                """
-                INSERT INTO invoice_lines (
-                    invoice_id,
-                    product_name,
-                    price,
-                    quantity,
-                    line_total,
-                    cost_price
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                line_rows,
+            ],
+        }
+        try:
+            self._client.patch(
+                f"/api/v1/invoices/{invoice_id}/lines",
+                json_body=payload,
             )
-            conn.execute(
-                """
-                UPDATE invoices
-                SET total_lines = ?, total_qty = ?, total_amount = ?, invoice_name = ?
-                WHERE id = ?
-                """,
-                (len(lines), total_qty, total_amount, invoice_name, invoice_id),
-            )
-        send_backup(reason="invoice_updated", admin_username=admin_username)
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def update_invoice_name(
         self,
@@ -519,147 +204,119 @@ class InvoiceService:
         invoice_name: str | None,
         admin_username: str | None = None,
     ) -> None:
-        self._ensure_schema()
-        self._backup_db()
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE invoices SET invoice_name = ? WHERE id = ?",
-                (invoice_name, invoice_id),
+        _ = admin_username
+        try:
+            self._client.patch(
+                f"/api/v1/invoices/{invoice_id}/name",
+                json_body={"invoice_name": invoice_name},
             )
-        send_backup(reason="invoice_updated", admin_username=admin_username)
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def rename_products(
         self,
         name_changes: list[tuple[str, str]],
         admin_username: str | None = None,
     ) -> ProductRenameResult:
-        self._ensure_schema()
-        if not name_changes:
-            return ProductRenameResult()
-        rename_map: dict[str, str] = {}
-        for old_name, new_name in name_changes:
-            old_value = str(old_name or "").strip()
-            new_value = str(new_name or "").strip()
-            if not old_value or not new_value:
-                continue
-            if old_value == new_value:
-                continue
-            rename_map[old_value] = new_value
-        if not rename_map:
-            return ProductRenameResult()
-        self._backup_db()
-        updated = 0
-        updated_by_invoice: dict[int, int] = {}
-        with self._connect() as conn:
-            for old_value, new_value in rename_map.items():
-                rows = conn.execute(
-                    "SELECT invoice_id FROM invoice_lines WHERE product_name = ?",
-                    (old_value,),
-                ).fetchall()
-                if not rows:
-                    continue
-                for row in rows:
-                    invoice_id = int(row["invoice_id"])
-                    updated_by_invoice[invoice_id] = (
-                        updated_by_invoice.get(invoice_id, 0) + 1
-                    )
-                conn.execute(
-                    "UPDATE invoice_lines SET product_name = ? WHERE product_name = ?",
-                    (new_value, old_value),
-                )
-                updated += len(rows)
-        if updated:
-            send_backup(reason="invoice_updated", admin_username=admin_username)
+        _ = admin_username
+        changes = [[old, new] for old, new in name_changes]
+        try:
+            payload = self._client.post(
+                "/api/v1/invoices/rename-products",
+                json_body={"changes": changes},
+            )
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        updated_ids = (
+            payload.get("updated_invoice_ids", [])
+            if isinstance(payload, dict)
+            else []
+        )
         return ProductRenameResult(
-            updated_lines=updated,
-            updated_invoice_ids=sorted(updated_by_invoice),
+            updated_lines=int(payload.get("updated_lines", 0)),
+            updated_invoice_ids=[int(item) for item in updated_ids],
         )
 
     def delete_invoice(
         self, invoice_id: int, admin_username: str | None = None
     ) -> None:
-        self._ensure_schema()
-        self._backup_db()
-        with self._connect() as conn:
-            conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
-        send_backup(reason="invoice_deleted", admin_username=admin_username)
+        _ = admin_username
+        try:
+            self._client.delete(f"/api/v1/invoices/{invoice_id}")
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def count_invoices(self) -> int:
-        self._ensure_schema()
-        with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()
-        return int(row[0] if row else 0)
+        count, _ = self.get_invoice_stats()
+        return count
 
     def get_invoice_stats(self) -> tuple[int, float]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM invoices"
-            ).fetchone()
-        if not row:
-            return 0, 0.0
-        return int(row[0]), float(row[1])
+        try:
+            payload = self._client.get("/api/v1/invoices/stats")
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        return int(payload.get("count", 0)), float(
+            payload.get("total_amount", 0.0)
+        )
 
     def get_invoice_lines(self, invoice_id: int) -> list[InvoiceLine]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT product_name, price, quantity, line_total, cost_price
-                FROM invoice_lines
-                WHERE invoice_id = ?
-                ORDER BY id ASC
-                """,
-                (invoice_id,),
-            ).fetchall()
-        return [
-            InvoiceLine(
-                product_name=row["product_name"],
-                price=row["price"],
-                quantity=row["quantity"],
-                line_total=row["line_total"],
-                cost_price=row["cost_price"],
+        try:
+            payload = self._client.get(f"/api/v1/invoices/{invoice_id}")
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        lines = payload.get("lines", []) if isinstance(payload, dict) else []
+        result: list[InvoiceLine] = []
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
+            price = float(line.get("price", 0.0) or 0.0)
+            qty = int(line.get("quantity", 0) or 0)
+            result.append(
+                InvoiceLine(
+                    product_name=str(line.get("product_name", "")),
+                    price=price,
+                    quantity=qty,
+                    line_total=float(
+                        line.get("line_total", price * qty) or (price * qty)
+                    ),
+                    cost_price=float(line.get("cost_price", 0.0) or 0.0),
+                )
             )
-            for row in rows
-        ]
+        return result
 
     def get_monthly_summary(self, limit: int = 12) -> list[dict[str, float]]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                WITH invoice_months AS (
-                    SELECT
-                        substr(created_at, 1, 7) AS month,
-                        SUM(CASE WHEN invoice_type = 'purchase'
-                            THEN total_amount ELSE 0 END) AS purchase_total,
-                        SUM(CASE WHEN invoice_type LIKE 'sales%'
-                            THEN total_amount ELSE 0 END) AS sales_total,
-                        COUNT(*) AS invoice_count
-                    FROM invoices
-                    GROUP BY month
-                ),
-                sales_profit AS (
-                    SELECT
-                        substr(i.created_at, 1, 7) AS month,
-                        SUM(il.line_total - il.cost_price * il.quantity)
-                            AS profit
-                    FROM invoices i
-                    JOIN invoice_lines il ON i.id = il.invoice_id
-                    WHERE i.invoice_type LIKE 'sales%'
-                    GROUP BY month
-                )
-                SELECT
-                    im.month,
-                    im.purchase_total,
-                    im.sales_total,
-                    COALESCE(sp.profit, 0) AS profit,
-                    im.invoice_count
-                FROM invoice_months im
-                LEFT JOIN sales_profit sp ON sp.month = im.month
-                ORDER BY im.month DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-        return [dict(row) for row in rows]
+        try:
+            payload = self._client.get(
+                "/api/v1/analytics/monthly",
+                params={"limit": limit},
+            )
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    @staticmethod
+    def _to_summary(raw: dict[str, object]) -> InvoiceSummary:
+        return InvoiceSummary(
+            invoice_id=int(raw.get("id", 0) or 0),
+            invoice_type=str(raw.get("invoice_type", "")),
+            created_at=str(raw.get("created_at", "")),
+            total_lines=int(raw.get("total_lines", 0) or 0),
+            total_qty=int(raw.get("total_qty", 0) or 0),
+            total_amount=float(raw.get("total_amount", 0.0) or 0.0),
+            invoice_name=(
+                None
+                if raw.get("invoice_name") in {None, ""}
+                else str(raw.get("invoice_name"))
+            ),
+            admin_id=(
+                None
+                if raw.get("admin_id") is None
+                else int(raw.get("admin_id", 0) or 0)
+            ),
+            admin_username=(
+                None
+                if raw.get("admin_username") in {None, ""}
+                else str(raw.get("admin_username"))
+            ),
+        )
