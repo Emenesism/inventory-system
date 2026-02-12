@@ -41,54 +41,65 @@ class InvoiceEditDialog(QDialog):
         self.updated_name: str | None = invoice.invoice_name
         self._updating = False
 
-        self.setWindowTitle(f"Edit Invoice #{invoice.invoice_id}")
+        self.setWindowTitle(
+            self.tr("ویرایش فاکتور #{id}").format(id=invoice.invoice_id)
+        )
         self.setModal(True)
         self.setMinimumWidth(720)
+        self.setLayoutDirection(Qt.RightToLeft)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        title = QLabel(f"Edit Invoice #{invoice.invoice_id}")
+        title = QLabel(
+            self.tr("ویرایش فاکتور #{id}").format(id=invoice.invoice_id)
+        )
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         layout.addWidget(title)
 
         meta = QLabel(
-            f"Type: {invoice.invoice_type.title()} | "
-            f"Lines: {invoice.total_lines} | "
-            f"Total Qty: {invoice.total_qty}"
+            self.tr(
+                "نوع: {type} | ردیف‌ها: {lines} | مجموع تعداد: {qty}"
+            ).format(
+                type=self._format_invoice_type(invoice.invoice_type),
+                lines=invoice.total_lines,
+                qty=invoice.total_qty,
+            )
         )
         meta.setProperty("textRole", "muted")
         layout.addWidget(meta)
 
         name_row = QHBoxLayout()
-        name_label = QLabel("Invoice Name:")
-        name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        name_label = QLabel(self.tr("نام فاکتور:"))
+        name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         name_row.addWidget(name_label)
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Optional")
+        self.name_input.setPlaceholderText(self.tr("اختیاری"))
         self.name_input.setText(invoice.invoice_name or "")
         name_row.addWidget(self.name_input, 1)
         layout.addLayout(name_row)
 
-        hint_text = (
-            "Double-click to edit. Use Remove Line for mistakes, "
-            "then Save to apply inventory changes."
+        hint_text = self.tr(
+            "برای ویرایش دوبار کلیک کنید. برای حذف ردیف اشتباه از «حذف ردیف» "
+            "استفاده کنید و سپس ذخیره را بزنید."
         )
         if invoice.invoice_type.startswith("sales"):
-            hint_text += " Changing product uses current avg buy price."
+            hint_text += " " + self.tr(
+                "در فروش، تغییر نام کالا از میانگین خرید فعلی استفاده می‌کند."
+            )
         hint = QLabel(hint_text)
         hint.setProperty("textRole", "muted")
         hint.setProperty("size", "small")
         layout.addWidget(hint)
 
         search_row = QHBoxLayout()
-        search_label = QLabel("Search:")
-        search_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        search_label = QLabel(self.tr("جستجو:"))
+        search_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         search_row.addWidget(search_label)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(
-            "Search products in this invoice..."
+            self.tr("جستجو در کالاهای این فاکتور...")
         )
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._apply_search_filter)
@@ -103,7 +114,12 @@ class InvoiceEditDialog(QDialog):
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Price", "Qty", "Line Total"]
+            [
+                self.tr("کالا"),
+                self.tr("قیمت"),
+                self.tr("تعداد"),
+                self.tr("جمع خط"),
+            ]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(
@@ -117,9 +133,9 @@ class InvoiceEditDialog(QDialog):
         layout.addWidget(card)
 
         summary_row = QHBoxLayout()
-        self.total_lines_label = QLabel("Lines: 0")
-        self.total_qty_label = QLabel("Total Qty: 0")
-        self.total_amount_label = QLabel("Total Amount: 0")
+        self.total_lines_label = QLabel(self.tr("ردیف‌ها: 0"))
+        self.total_qty_label = QLabel(self.tr("مجموع تعداد: 0"))
+        self.total_amount_label = QLabel(self.tr("مبلغ کل: 0"))
         summary_row.addWidget(self.total_lines_label)
         summary_row.addWidget(self.total_qty_label)
         summary_row.addWidget(self.total_amount_label)
@@ -132,18 +148,18 @@ class InvoiceEditDialog(QDialog):
         layout.addWidget(self.error_label)
 
         button_row = QHBoxLayout()
-        self.add_button = QPushButton("Add Line")
+        self.add_button = QPushButton(self.tr("افزودن ردیف"))
         self.add_button.clicked.connect(self._append_empty_row)
         button_row.addWidget(self.add_button)
 
-        self.remove_button = QPushButton("Remove Line")
+        self.remove_button = QPushButton(self.tr("حذف ردیف"))
         self.remove_button.clicked.connect(self._remove_selected_line)
         button_row.addWidget(self.remove_button)
         button_row.addStretch(1)
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(self.tr("انصراف"))
         self.cancel_button.clicked.connect(self.reject)
         button_row.addWidget(self.cancel_button)
-        self.save_button = QPushButton("Save Changes")
+        self.save_button = QPushButton(self.tr("ذخیره تغییرات"))
         self.save_button.clicked.connect(self._try_accept)
         button_row.addWidget(self.save_button)
         layout.addLayout(button_row)
@@ -196,7 +212,11 @@ class InvoiceEditDialog(QDialog):
     def _remove_selected_line(self) -> None:
         row = self.table.currentRow()
         if row < 0:
-            dialogs.show_error(self, "Edit Invoice", "Select a line to remove.")
+            dialogs.show_error(
+                self,
+                self.tr("ویرایش فاکتور"),
+                self.tr("یک ردیف را برای حذف انتخاب کنید."),
+            )
             return
         self.table.removeRow(row)
         self._recalculate_summary()
@@ -316,10 +336,16 @@ class InvoiceEditDialog(QDialog):
                 if price is None:
                     continue
                 total_amount += price * qty
-        self.total_lines_label.setText(f"Lines: {self.table.rowCount()}")
-        self.total_qty_label.setText(f"Total Qty: {total_qty}")
+        self.total_lines_label.setText(
+            self.tr("ردیف‌ها: {count}").format(count=self.table.rowCount())
+        )
+        self.total_qty_label.setText(
+            self.tr("مجموع تعداد: {count}").format(count=total_qty)
+        )
         self.total_amount_label.setText(
-            f"Total Amount: {self._format_amount(total_amount)}"
+            self.tr("مبلغ کل: {amount}").format(
+                amount=self._format_amount(total_amount)
+            )
         )
 
     def _update_validation_state(self) -> None:
@@ -334,31 +360,51 @@ class InvoiceEditDialog(QDialog):
     def _collect_errors(self) -> list[str]:
         errors: list[str] = []
         if self.table.rowCount() == 0:
-            errors.append("Invoice must have at least one line.")
+            errors.append(self.tr("فاکتور باید حداقل یک ردیف داشته باشد."))
             return errors
         for row in range(self.table.rowCount()):
             product_item = self.table.item(row, 0)
             product = product_item.text().strip() if product_item else ""
             if not product:
-                errors.append(f"Row {row + 1}: Product is required.")
+                errors.append(
+                    self.tr("ردیف {row}: نام کالا الزامی است.").format(
+                        row=row + 1
+                    )
+                )
                 continue
             if normalize_text(product) not in self._product_map:
-                errors.append(f"Row {row + 1}: Product not found in inventory.")
+                errors.append(
+                    self.tr("ردیف {row}: کالا در موجودی پیدا نشد.").format(
+                        row=row + 1
+                    )
+                )
             price_item = self.table.item(row, 1)
             price = self._parse_price(price_item.text() if price_item else "")
             if not self._is_sales():
                 if price is None or price <= 0:
-                    errors.append(f"Row {row + 1}: Price must be > 0.")
+                    errors.append(
+                        self.tr(
+                            "ردیف {row}: قیمت باید بزرگ‌تر از صفر باشد."
+                        ).format(row=row + 1)
+                    )
             qty_item = self.table.item(row, 2)
             qty = self._parse_quantity(qty_item.text() if qty_item else "")
             if qty is None or qty <= 0:
-                errors.append(f"Row {row + 1}: Qty must be a whole number.")
+                errors.append(
+                    self.tr(
+                        "ردیف {row}: تعداد باید عدد صحیح مثبت باشد."
+                    ).format(row=row + 1)
+                )
         return errors
 
     def _try_accept(self) -> None:
         errors = self._collect_errors()
         if errors:
-            dialogs.show_error(self, "Edit Invoice", "\n".join(errors[:5]))
+            dialogs.show_error(
+                self,
+                self.tr("ویرایش فاکتور"),
+                "\n".join(errors[:5]),
+            )
             return
         lines: list[InvoiceLine] = []
         for row in range(self.table.rowCount()):
@@ -398,8 +444,8 @@ class InvoiceEditDialog(QDialog):
         if not lines:
             dialogs.show_error(
                 self,
-                "Edit Invoice",
-                "Invoice must have at least one valid line.",
+                self.tr("ویرایش فاکتور"),
+                self.tr("فاکتور باید حداقل یک ردیف معتبر داشته باشد."),
             )
             return
         self.updated_name = self._normalized_name()
@@ -412,6 +458,19 @@ class InvoiceEditDialog(QDialog):
 
     def _is_sales(self) -> bool:
         return self.invoice.invoice_type.startswith("sales")
+
+    def _format_invoice_type(self, invoice_type: str) -> str:
+        if invoice_type == "purchase":
+            return self.tr("خرید")
+        if invoice_type == "sales_manual":
+            return self.tr("فروش دستی")
+        if invoice_type == "sales_basalam":
+            return self.tr("فروش باسلام")
+        if invoice_type == "sales_site":
+            return self.tr("فروش سایت")
+        if invoice_type.startswith("sales"):
+            return self.tr("فروش")
+        return invoice_type
 
     def _apply_sales_ui(self) -> None:
         self.table.setColumnHidden(1, True)
