@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from app.core.db_lock import db_connection
-from app.core.paths import app_dir
+from app.core.config import AppConfig
+from app.services.backend_client import BackendAPIError, BackendClient
 from app.services.admin_service import AdminUser
 
 
@@ -23,41 +19,10 @@ class ActionEntry:
 
 
 class ActionLogService:
-    def __init__(self, db_path: Path | None = None) -> None:
-        if db_path is None:
-            db_path = app_dir() / "invoices.db"
-        self.db_path = db_path
-        self._init_db()
-
-    def _connect(self):
-        return db_connection(self.db_path, row_factory=sqlite3.Row)
-
-    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS actions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                admin_id INTEGER,
-                admin_username TEXT,
-                action_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                details TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_actions_created_at "
-            "ON actions(created_at)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_actions_type "
-            "ON actions(action_type)"
-        )
-
-    def _init_db(self) -> None:
-        with self._connect() as conn:
-            self._ensure_schema(conn)
+    def __init__(self, db_path=None) -> None:
+        _ = db_path
+        config = AppConfig.load()
+        self._client = BackendClient(config.backend_url)
 
     def log_action(
         self,
@@ -66,31 +31,19 @@ class ActionLogService:
         details: str,
         admin: AdminUser | None = None,
     ) -> None:
-        created_at = datetime.now(ZoneInfo("Asia/Tehran")).isoformat(
-            timespec="seconds"
-        )
-        with self._connect() as conn:
-            self._ensure_schema(conn)
-            conn.execute(
-                """
-                INSERT INTO actions (
-                    created_at,
-                    admin_id,
-                    admin_username,
-                    action_type,
-                    title,
-                    details
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    created_at,
-                    admin.admin_id if admin else None,
-                    admin.username if admin else None,
-                    action_type,
-                    title,
-                    details,
-                ),
+        try:
+            self._client.post(
+                "/api/v1/actions",
+                json_body={
+                    "action_type": action_type,
+                    "title": title,
+                    "details": details,
+                    "admin_username": admin.username if admin else None,
+                },
             )
+        except BackendAPIError:
+            # Logging should not break user workflows.
+            return
 
     def list_actions(
         self,
@@ -98,72 +51,45 @@ class ActionLogService:
         offset: int = 0,
         search: str | None = None,
     ) -> list[ActionEntry]:
-        with self._connect() as conn:
-            self._ensure_schema(conn)
-            if search:
-                like = f"%{search}%"
-                rows = conn.execute(
-                    """
-                    SELECT
-                        id,
-                        created_at,
-                        admin_id,
-                        admin_username,
-                        action_type,
-                        title,
-                        details
-                    FROM actions
-                    WHERE title LIKE ? OR details LIKE ? OR admin_username LIKE ?
-                    ORDER BY id DESC
-                    LIMIT ?
-                    OFFSET ?
-                    """,
-                    (like, like, like, limit, offset),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT
-                        id,
-                        created_at,
-                        admin_id,
-                        admin_username,
-                        action_type,
-                        title,
-                        details
-                    FROM actions
-                    ORDER BY id DESC
-                    LIMIT ?
-                    OFFSET ?
-                    """,
-                    (limit, offset),
-                ).fetchall()
-        return [
-            ActionEntry(
-                action_id=row["id"],
-                created_at=row["created_at"],
-                admin_id=row["admin_id"],
-                admin_username=row["admin_username"],
-                action_type=row["action_type"],
-                title=row["title"],
-                details=row["details"],
+        try:
+            payload = self._client.get(
+                "/api/v1/actions",
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                    "search": search or "",
+                },
             )
-            for row in rows
-        ]
+        except BackendAPIError:
+            return []
+        rows = payload.get("items", []) if isinstance(payload, dict) else []
+        result: list[ActionEntry] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            result.append(
+                ActionEntry(
+                    action_id=int(row.get("action_id", 0) or 0),
+                    created_at=str(row.get("created_at", "")),
+                    admin_id=None,
+                    admin_username=(
+                        None
+                        if row.get("admin_username") in {None, ""}
+                        else str(row.get("admin_username"))
+                    ),
+                    action_type=str(row.get("action_type", "")),
+                    title=str(row.get("title", "")),
+                    details=str(row.get("details", "")),
+                )
+            )
+        return result
 
     def count_actions(self, search: str | None = None) -> int:
-        with self._connect() as conn:
-            self._ensure_schema(conn)
-            if search:
-                like = f"%{search}%"
-                row = conn.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM actions
-                    WHERE title LIKE ? OR details LIKE ? OR admin_username LIKE ?
-                    """,
-                    (like, like, like),
-                ).fetchone()
-            else:
-                row = conn.execute("SELECT COUNT(*) FROM actions").fetchone()
-        return int(row[0] if row else 0)
+        try:
+            payload = self._client.get(
+                "/api/v1/actions/count",
+                params={"search": search or ""},
+            )
+        except BackendAPIError:
+            return 0
+        return int(payload.get("count", 0) if isinstance(payload, dict) else 0)
