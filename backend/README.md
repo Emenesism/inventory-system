@@ -77,6 +77,37 @@ Supported columns (English/Persian aliases):
 - `avg_buy_price`
 - optional: `last_buy_price`, `alarm`, `source`
 
+## One-shot legacy import script (stock.xlsx + invoices.db)
+For repeatable migrations from old local files into PostgreSQL:
+
+```bash
+cd backend
+./scripts/import_legacy_data.sh
+```
+
+What it does:
+- runs DB migrations (including `stock` table creation)
+- imports all rows from `../stock.xlsx` into `stock`
+- also syncs `products` from `stock.xlsx` (enabled by default)
+- imports legacy tables from `../invoices.db`:
+  - `admins`
+  - `invoices`
+  - `invoice_lines`
+  - `actions`
+  - `basalam_order_ids`
+
+Default mode in wrapper script is `--replace` (truncate + reload).
+
+Direct command (custom paths/options):
+
+```bash
+cd backend
+go run ./cmd/import_legacy \
+  --stock /path/to/stock.xlsx \
+  --sqlite /path/to/invoices.db \
+  --replace
+```
+
 ## VPS deploy (simple)
 1. Install Go and PostgreSQL.
 2. Create DB/user and create `backend/.env`.
