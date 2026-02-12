@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -44,21 +44,21 @@ class ActionsPage(QWidget):
         content_layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("اقدامات")
+        title = QLabel(self.tr("اقدامات"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("جستجو در اقدامات...")
+        self.search_input.setPlaceholderText(self.tr("جستجو در اقدامات..."))
         self.search_input.textChanged.connect(self.refresh)
         header.addWidget(self.search_input)
 
-        refresh_button = QPushButton("بروزرسانی")
+        refresh_button = QPushButton(self.tr("بروزرسانی"))
         refresh_button.clicked.connect(self.refresh)
         header.addWidget(refresh_button)
 
-        self.load_more_button = QPushButton("موارد بیشتر")
+        self.load_more_button = QPushButton(self.tr("موارد بیشتر"))
         self.load_more_button.clicked.connect(self._load_more)
         self.load_more_button.setEnabled(False)
         header.addWidget(self.load_more_button)
@@ -70,7 +70,7 @@ class ActionsPage(QWidget):
         summary_layout.setContentsMargins(16, 16, 16, 16)
         summary_layout.setSpacing(24)
 
-        self.total_label = QLabel("تعداد اقدامات: 0")
+        self.total_label = QLabel(self.tr("تعداد اقدامات: 0"))
         summary_layout.addWidget(self.total_label)
         summary_layout.addStretch(1)
         content_layout.addWidget(summary_card)
@@ -81,7 +81,14 @@ class ActionsPage(QWidget):
         list_layout.setContentsMargins(16, 16, 16, 16)
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["تاریخ", "ادمین", "نوع", "عنوان"])
+        self.table.setHorizontalHeaderLabels(
+            [
+                self.tr("تاریخ"),
+                self.tr("ادمین"),
+                self.tr("نوع"),
+                self.tr("عنوان"),
+            ]
+        )
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -106,7 +113,7 @@ class ActionsPage(QWidget):
         details_layout.setContentsMargins(16, 16, 16, 16)
         details_layout.setSpacing(12)
 
-        self.details_label = QLabel("جزئیات اقدام را انتخاب کنید.")
+        self.details_label = QLabel(self.tr("جزئیات اقدام را انتخاب کنید."))
         details_layout.addWidget(self.details_label)
 
         self.details_text = QPlainTextEdit()
@@ -152,11 +159,13 @@ class ActionsPage(QWidget):
         self._total_count = self.action_service.count_actions(
             search if search else None
         )
-        self.total_label.setText(f"تعداد اقدامات: {self._total_count}")
+        self.total_label.setText(
+            self.tr("تعداد اقدامات: {count}").format(count=self._total_count)
+        )
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         self.table.blockSignals(False)
-        self.details_label.setText("جزئیات اقدام را انتخاب کنید.")
+        self.details_label.setText(self.tr("جزئیات اقدام را انتخاب کنید."))
         self.details_text.clear()
         self._load_more()
 
@@ -212,7 +221,7 @@ class ActionsPage(QWidget):
             date_item = QTableWidgetItem(to_jalali_datetime(entry.created_at))
             date_item.setData(Qt.UserRole, entry.action_id)
             self.table.setItem(row_idx, 0, date_item)
-            admin_text = entry.admin_username or "نامشخص"
+            admin_text = entry.admin_username or self.tr("نامشخص")
             self.table.setItem(row_idx, 1, QTableWidgetItem(admin_text))
             self.table.setItem(
                 row_idx, 2, QTableWidgetItem(self._format_action(entry))
@@ -227,28 +236,30 @@ class ActionsPage(QWidget):
         if start_row == 0 and self._actions:
             self.table.selectRow(0)
 
-    @staticmethod
-    def _format_action(entry: ActionEntry) -> str:
+    def _format_action(self, entry: ActionEntry) -> str:
+        t = lambda text: QCoreApplication.translate(  # noqa: E731
+            "ActionsPage", text
+        )
         mapping = {
-            "sales_import": "ثبت فروش",
-            "sales_manual_invoice": "ثبت فاکتور فروش دستی",
-            "sales_import_export": "خروجی مغایرت‌های فروش",
-            "purchase_invoice": "ثبت خرید",
-            "inventory_edit": "ویرایش موجودی",
-            "invoice_edit": "ویرایش فاکتور",
-            "invoice_delete": "حذف فاکتور",
-            "invoice_export": "خروجی فاکتور",
-            "invoice_batch_export": "خروجی گروهی فاکتورها",
-            "low_stock_export": "خروجی کمبود موجودی",
-            "inventory_export": "خروجی موجودی",
-            "basalam_fetch": "دریافت باسلام",
-            "basalam_export": "خروجی باسلام",
-            "password_change": "تغییر رمز عبور",
-            "auto_lock_update": "تغییر قفل خودکار",
-            "admin_create": "ایجاد ادمین",
-            "admin_delete": "حذف ادمین",
-            "reports_export": "خروجی گزارش",
-            "login": "ورود",
-            "logout": "خروج",
+            "sales_import": t("ثبت فروش"),
+            "sales_manual_invoice": t("ثبت فاکتور فروش دستی"),
+            "sales_import_export": t("خروجی مغایرت‌های فروش"),
+            "purchase_invoice": t("ثبت خرید"),
+            "inventory_edit": t("ویرایش موجودی"),
+            "invoice_edit": t("ویرایش فاکتور"),
+            "invoice_delete": t("حذف فاکتور"),
+            "invoice_export": t("خروجی فاکتور"),
+            "invoice_batch_export": t("خروجی گروهی فاکتورها"),
+            "low_stock_export": t("خروجی کمبود موجودی"),
+            "inventory_export": t("خروجی موجودی"),
+            "basalam_fetch": t("دریافت باسلام"),
+            "basalam_export": t("خروجی باسلام"),
+            "password_change": t("تغییر رمز عبور"),
+            "auto_lock_update": t("تغییر قفل خودکار"),
+            "admin_create": t("ایجاد ادمین"),
+            "admin_delete": t("حذف ادمین"),
+            "reports_export": t("خروجی گزارش"),
+            "login": t("ورود"),
+            "logout": t("خروج"),
         }
         return mapping.get(entry.action_type, entry.action_type)
