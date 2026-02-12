@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import time
-from pathlib import Path
 
 from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import (
@@ -26,7 +24,6 @@ from app.core.logging_setup import LOG_DIR
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
-from app.services.bale_backup_restore import restore_latest_backup_async
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.services.purchase_service import PurchaseService
@@ -96,10 +93,7 @@ class MainWindow(QMainWindow):
         self.inventory_page = InventoryPage()
         self.sales_page = SalesImportPage()
         self.purchase_page = PurchaseInvoicePage()
-        backup_dir = (
-            Path(self.config.backup_dir) if self.config.backup_dir else None
-        )
-        self.invoice_service = InvoiceService(backup_dir=backup_dir)
+        self.invoice_service = InvoiceService()
         self.admin_service = AdminService()
         self.action_log_service = ActionLogService()
         self.invoices_page = InvoicesPage(
@@ -256,11 +250,6 @@ class MainWindow(QMainWindow):
                 f"کاربر: {admin.username}",
                 admin=admin,
             )
-        restore_latest_backup_async(
-            config=self.config,
-            ui_parent=self,
-            on_restored=self._after_backup_restore,
-        )
 
     def _get_current_admin(self) -> AdminUser | None:
         return self._current_admin
@@ -283,26 +272,6 @@ class MainWindow(QMainWindow):
             self.actions_page.set_accessible(True)
             self.reports_page.set_accessible(True)
 
-    def _after_backup_restore(self) -> None:
-        try:
-            if self.inventory_service.store.path or self.config.inventory_file:
-                self.inventory_service.load()
-        except Exception:  # noqa: BLE001
-            self._logger.exception(
-                "Failed to reload inventory after backup restore"
-            )
-        if self.inventory_service.is_loaded():
-            self.refresh_inventory_views()
-        else:
-            self.disable_inventory_features("Inventory not loaded")
-        try:
-            self.settings_page.refresh_admins()
-        except Exception:  # noqa: BLE001
-            self._logger.exception(
-                "Failed to reload admin list after backup restore"
-            )
-        self.refresh_history_views()
-
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if not self._lock_open and event.type() in (
             QEvent.KeyPress,
@@ -319,129 +288,37 @@ class MainWindow(QMainWindow):
         return
 
     def initialize_inventory(self) -> None:
-        config_path = (
-            Path(self.config.inventory_file)
-            if self.config.inventory_file
-            else None
-        )
-        if config_path and not config_path.exists():
-            self._logger.warning(
-                "Configured inventory file missing: %s", config_path
-            )
-            self.config.inventory_file = None
-            self.config.save()
-            config_path = None
-
-        if not config_path:
-            default_path = self._find_default_inventory_path()
-            if default_path is not None:
-                self.config.inventory_file = str(default_path)
-                self.config.save()
-
-        if self.config.inventory_file:
-            self.inventory_service.set_inventory_path(
-                self.config.inventory_file
-            )
-            try:
-                self.inventory_service.load()
-                self.refresh_inventory_views()
-                self._maybe_convert_inventory_to_encrypted(
-                    Path(self.config.inventory_file)
-                )
-                self.toast.show("Inventory loaded", "success")
-                return
-            except InventoryFileError as exc:
-                dialogs.show_error(self, "Inventory Error", str(exc))
-                self.toast.show("Inventory load failed", "error")
-                self._logger.exception("Inventory load failed")
-                self.inventory_service.set_inventory_path(None)
-
-        self.choose_inventory_file()
-        if not self.inventory_service.is_loaded():
-            self.disable_inventory_features("No inventory file loaded")
-
-    @staticmethod
-    def _find_default_inventory_path() -> Path | None:
-        candidates: list[Path] = []
-        if getattr(sys, "frozen", False):
-            candidates.append(
-                Path(sys.executable).resolve().parent / "stock.dat"
-            )
-            candidates.append(
-                Path(sys.executable).resolve().parent / "stock.xlsx"
-            )
-        argv_path = Path(sys.argv[0]).resolve()
-        candidates.append(argv_path.parent / "stock.dat")
-        candidates.append(argv_path.parent / "stock.xlsx")
-        candidates.append(Path.cwd() / "stock.dat")
-        candidates.append(Path.cwd() / "stock.xlsx")
-        candidates.append(Path(__file__).resolve().parents[2] / "stock.dat")
-        candidates.append(Path(__file__).resolve().parents[2] / "stock.xlsx")
-        for path in candidates:
-            if path.exists():
-                return path
-        return None
+        try:
+            self.inventory_service.load()
+            self.refresh_inventory_views()
+            self.toast.show("Inventory loaded from backend", "success")
+        except InventoryFileError as exc:
+            dialogs.show_error(self, "Inventory Error", str(exc))
+            self.toast.show("Backend inventory load failed", "error")
+            self._logger.exception("Inventory load failed")
+            self.disable_inventory_features("Backend inventory unavailable")
 
     def choose_inventory_file(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Inventory File",
             "",
-            "Encrypted Inventory (*.dat);;Excel Files (*.xlsx *.xlsm)",
+            "Excel Files (*.xlsx *.xlsm)",
         )
         if not file_path:
             return
 
-        self.inventory_service.store.set_path(file_path)
         try:
+            self.inventory_service.import_excel(file_path)
             self.inventory_service.load()
         except InventoryFileError as exc:
             dialogs.show_error(self, "Inventory Error", str(exc))
-            self.toast.show("Inventory load failed", "error")
-            self._logger.exception("Inventory load failed")
-            self.disable_inventory_features("Inventory file invalid")
-            self.inventory_service.set_inventory_path(None)
+            self.toast.show("Inventory import failed", "error")
+            self._logger.exception("Inventory import failed")
             return
 
-        self.inventory_service.set_inventory_path(file_path)
-        self._maybe_convert_inventory_to_encrypted(Path(file_path))
         self.refresh_inventory_views()
-        self.toast.show("Inventory file loaded", "success")
-
-    def _maybe_convert_inventory_to_encrypted(self, source_path: Path) -> None:
-        if source_path.suffix.lower() not in {".xlsx", ".xlsm"}:
-            return
-        convert = dialogs.ask_yes_no(
-            self,
-            "Inventory",
-            "Convert this inventory to encrypted format (.dat)?",
-        )
-        if not convert:
-            return
-        target_path = source_path.with_suffix(".dat")
-        if target_path.exists():
-            overwrite = dialogs.ask_yes_no(
-                self,
-                "Inventory",
-                "Encrypted file already exists. Overwrite it?",
-            )
-            if not overwrite:
-                return
-        original_path = self.inventory_service.store.path
-        try:
-            df = self.inventory_service.get_dataframe().copy()
-            self.inventory_service.store.set_path(target_path)
-            admin_username = (
-                self._current_admin.username if self._current_admin else None
-            )
-            self.inventory_service.save(df, admin_username=admin_username)
-            self.inventory_service.set_inventory_path(target_path)
-            self._update_status()
-            self.toast.show("Inventory encrypted", "success")
-        except InventoryFileError as exc:
-            if original_path is not None:
-                self.inventory_service.store.set_path(original_path)
-            dialogs.show_error(self, "Inventory", str(exc))
+        self.toast.show("Inventory imported to backend", "success")
 
     def refresh_inventory_views(self) -> None:
         if not self.inventory_service.is_loaded():
@@ -468,18 +345,11 @@ class MainWindow(QMainWindow):
         self.header.set_status(status)
 
     def _update_status(self) -> None:
-        backup_label = (self.config.bale_last_backup_name or "").strip()
         if not self.inventory_service.is_loaded():
-            if backup_label:
-                self.header.set_status(f"{backup_label} | No inventory loaded")
-            else:
-                self.header.set_status("No inventory loaded")
+            self.header.set_status("No inventory loaded")
             return
         df = self.inventory_service.get_dataframe()
-        if backup_label:
-            self.header.set_status(f"{backup_label} | {len(df)} products")
-        else:
-            self.header.set_status(f"{len(df)} products")
+        self.header.set_status(f"{len(df)} products")
 
     def _switch_page(self, name: str) -> None:
         pages = {
@@ -529,8 +399,7 @@ class MainWindow(QMainWindow):
 
     def _shutdown_background_threads(self) -> None:
         threads = [
-            ("backup", getattr(self, "_backup_thread", None)),
-            ("restore", getattr(self, "_backup_restore_thread", None)),
+            ("basalam", getattr(self.basalam_page, "_worker_thread", None))
         ]
         for name, thread in threads:
             if thread is None:
