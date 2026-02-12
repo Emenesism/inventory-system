@@ -56,7 +56,7 @@ class Sidebar(QFrame):
             "Basalam": "Vendor parcels",
             "Actions": "Audit trail",
             "Reports/Logs": "App log",
-            "Settings": "Backups and preferences",
+            "Settings": "Preferences and admins",
         }
 
         for name in [
