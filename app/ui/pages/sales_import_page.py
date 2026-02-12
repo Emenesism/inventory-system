@@ -24,6 +24,7 @@ from app.services.sales_import_service import (
     SalesPreviewRow,
     SalesPreviewSummary,
 )
+from app.utils.text import normalize_text
 
 
 class ProductNameDelegate(QStyledItemDelegate):
@@ -142,7 +143,7 @@ class SalesImportPage(QWidget):
         layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Sales Import")
+        title = QLabel(self.tr("ورود فروش"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
@@ -156,30 +157,30 @@ class SalesImportPage(QWidget):
 
         self.file_input = QLineEdit()
         self.file_input.setPlaceholderText(
-            "Select sales Excel/CSV file (Product Name, Quantity)..."
+            self.tr("فایل فروش اکسل/CSV را انتخاب کنید (نام کالا، تعداد)...")
         )
         self.file_input.textEdited.connect(self._on_file_text_edited)
         file_layout.addWidget(self.file_input, 1)
 
-        self.browse_button = QPushButton("Browse")
+        self.browse_button = QPushButton(self.tr("مرور"))
         self.browse_button.clicked.connect(self._browse_file)
         file_layout.addWidget(self.browse_button)
 
-        self.preview_button = QPushButton("Load Preview")
+        self.preview_button = QPushButton(self.tr("بارگذاری پیش‌نمایش"))
         self.preview_button.clicked.connect(self._emit_preview)
         file_layout.addWidget(self.preview_button)
 
-        self.manual_invoice_button = QPushButton("Manual Invoice")
+        self.manual_invoice_button = QPushButton(self.tr("فاکتور دستی"))
         self.manual_invoice_button.clicked.connect(
             self.manual_invoice_requested.emit
         )
         file_layout.addWidget(self.manual_invoice_button)
 
-        self.apply_button = QPushButton("Apply Updates")
+        self.apply_button = QPushButton(self.tr("اعمال تغییرات"))
         self.apply_button.clicked.connect(self.apply_requested.emit)
         file_layout.addWidget(self.apply_button)
 
-        self.export_button = QPushButton("Export")
+        self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_requested.emit)
         file_layout.addWidget(self.export_button)
@@ -187,8 +188,10 @@ class SalesImportPage(QWidget):
         layout.addWidget(file_card)
 
         helper = QLabel(
-            "Expected columns: Product Name, Quantity (or Quantity Sold). "
-            "Optional: Sell Price for profit analytics."
+            self.tr(
+                "ستون‌های مورد انتظار: نام کالا، تعداد (یا تعداد فروش). "
+                "اختیاری: قیمت فروش برای تحلیل سود."
+            )
         )
         helper.setProperty("textRole", "muted")
         layout.addWidget(helper)
@@ -199,9 +202,9 @@ class SalesImportPage(QWidget):
         summary_layout.setContentsMargins(16, 16, 16, 16)
         summary_layout.setSpacing(24)
 
-        self.total_label = QLabel("Total: 0")
-        self.success_label = QLabel("Success: 0")
-        self.errors_label = QLabel("Errors: 0")
+        self.total_label = QLabel(self.tr("کل: 0"))
+        self.success_label = QLabel(self.tr("موفق: 0"))
+        self.errors_label = QLabel(self.tr("خطا: 0"))
         summary_layout.addWidget(self.total_label)
         summary_layout.addWidget(self.success_label)
         summary_layout.addWidget(self.errors_label)
@@ -216,7 +219,12 @@ class SalesImportPage(QWidget):
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
-            ["Product", "Quantity Sold", "Status", "Message"]
+            [
+                self.tr("کالا"),
+                self.tr("تعداد فروش"),
+                self.tr("وضعیت"),
+                self.tr("پیام"),
+            ]
         )
         self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -276,9 +284,15 @@ class SalesImportPage(QWidget):
         self._deferred_refresh = False
         self._deferred_timer.stop()
         self.export_button.setEnabled(bool(rows))
-        self.total_label.setText(f"Total: {summary.total}")
-        self.success_label.setText(f"Success: {summary.success}")
-        self.errors_label.setText(f"Errors: {summary.errors}")
+        self.total_label.setText(
+            self.tr("کل: {count}").format(count=summary.total)
+        )
+        self.success_label.setText(
+            self.tr("موفق: {count}").format(count=summary.success)
+        )
+        self.errors_label.setText(
+            self.tr("خطا: {count}").format(count=summary.errors)
+        )
         self._sort_preview_rows()
         self._rebuild_table()
         header = self.table.horizontalHeader()
@@ -309,9 +323,9 @@ class SalesImportPage(QWidget):
         self.export_button.setEnabled(False)
         self.file_input.clear()
         self._sales_invoice_type = None
-        self.total_label.setText("Total: 0")
-        self.success_label.setText("Success: 0")
-        self.errors_label.setText("Errors: 0")
+        self.total_label.setText(self.tr("کل: 0"))
+        self.success_label.setText(self.tr("موفق: 0"))
+        self.errors_label.setText(self.tr("خطا: 0"))
         self.table.setRowCount(0)
 
     def _emit_preview(self) -> None:
@@ -327,9 +341,9 @@ class SalesImportPage(QWidget):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Sales File",
+            self.tr("انتخاب فایل فروش"),
             "",
-            "Excel Files (*.xlsx *.xlsm);;CSV Files (*.csv)",
+            self.tr("فایل‌های اکسل (*.xlsx *.xlsm);;فایل‌های CSV (*.csv)"),
         )
         if file_path:
             self._sales_invoice_type = None
@@ -347,11 +361,11 @@ class SalesImportPage(QWidget):
     def _ensure_sales_type(self) -> bool:
         if self._sales_invoice_type:
             return True
-        items = ["Basalam", "Site"]
+        items = [self.tr("باسلام"), self.tr("سایت")]
         selection, ok = QInputDialog.getItem(
             self,
-            "Sales Source",
-            "Select sales source for this file:",
+            self.tr("منبع فروش"),
+            self.tr("منبع فروش این فایل را انتخاب کنید:"),
             items,
             0,
             False,
@@ -359,9 +373,9 @@ class SalesImportPage(QWidget):
         if not ok:
             return False
         normalized = str(selection).strip().lower()
-        if normalized == "basalam":
+        if normalized == normalize_text(self.tr("باسلام")):
             self._sales_invoice_type = "sales_basalam"
-        elif normalized == "site":
+        elif normalized == normalize_text(self.tr("سایت")):
             self._sales_invoice_type = "sales_site"
         else:
             self._sales_invoice_type = "sales"
@@ -376,9 +390,15 @@ class SalesImportPage(QWidget):
     def update_preview_rows(
         self, row_indices: list[int], summary: SalesPreviewSummary
     ) -> None:
-        self.total_label.setText(f"Total: {summary.total}")
-        self.success_label.setText(f"Success: {summary.success}")
-        self.errors_label.setText(f"Errors: {summary.errors}")
+        self.total_label.setText(
+            self.tr("کل: {count}").format(count=summary.total)
+        )
+        self.success_label.setText(
+            self.tr("موفق: {count}").format(count=summary.success)
+        )
+        self.errors_label.setText(
+            self.tr("خطا: {count}").format(count=summary.errors)
+        )
         if self._is_editing():
             self._update_status_cells(row_indices)
             self._deferred_refresh = True
@@ -426,14 +446,14 @@ class SalesImportPage(QWidget):
                 status_item = QTableWidgetItem()
                 status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, 2, status_item)
-            status_item.setText(row_data.status)
+            status_item.setText(self._display_status(row_data.status))
 
             message_item = self.table.item(row, 3)
             if message_item is None:
                 message_item = QTableWidgetItem()
                 message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, 3, message_item)
-            message_item.setText(row_data.message)
+            message_item.setText(self._display_message(row_data.message))
         self._suppress_item_updates = False
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
@@ -529,9 +549,10 @@ class SalesImportPage(QWidget):
 
             status_item = QTableWidgetItem(row.status)
             status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+            status_item.setText(self._display_status(row.status))
             self.table.setItem(row_idx, 2, status_item)
 
-            message_item = QTableWidgetItem(row.message)
+            message_item = QTableWidgetItem(self._display_message(row.message))
             message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row_idx, 3, message_item)
 
@@ -601,9 +622,9 @@ class SalesImportPage(QWidget):
 
         self.export_button.setEnabled(bool(self.preview_rows))
         if not self.preview_rows:
-            self.total_label.setText("Total: 0")
-            self.success_label.setText("Success: 0")
-            self.errors_label.setText("Errors: 0")
+            self.total_label.setText(self.tr("کل: 0"))
+            self.success_label.setText(self.tr("موفق: 0"))
+            self.errors_label.setText(self.tr("خطا: 0"))
             self.table.setRowCount(0)
             return
         self._sort_preview_rows()
@@ -638,3 +659,26 @@ class SalesImportPage(QWidget):
         self._pending_rows = set(range(len(self.preview_rows)))
         if self._pending_rows:
             self._edit_timer.start()
+
+    def _display_status(self, status: str) -> str:
+        normalized = str(status or "").strip().lower()
+        if normalized == "ok":
+            return self.tr("موفق")
+        if normalized == "error":
+            return self.tr("خطا")
+        return status
+
+    def _display_message(self, message: str) -> str:
+        text = str(message or "").strip()
+        if text.startswith("Matched to "):
+            return (
+                self.tr("مطابقت با ")
+                + text.replace("Matched to ", "", 1).strip()
+            )
+        mapping = {
+            "Product not found": self.tr("کالا یافت نشد"),
+            "Missing product name": self.tr("نام کالا خالی است"),
+            "Invalid quantity": self.tr("تعداد نامعتبر است"),
+            "Will update stock": self.tr("موجودی به‌روزرسانی می‌شود"),
+        }
+        return mapping.get(text, text)
