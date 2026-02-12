@@ -45,12 +45,12 @@ class InventoryController(QObject):
         try:
             df = self.inventory_service.load()
         except InventoryFileError as exc:
-            dialogs.show_error(self.page, "Inventory Error", str(exc))
-            self.toast.show("Inventory reload failed", "error")
+            dialogs.show_error(self.page, self.tr("خطای موجودی"), str(exc))
+            self.toast.show(self.tr("بارگذاری مجدد موجودی ناموفق بود"), "error")
             self._logger.exception("Failed to reload inventory")
             return
         self.page.set_inventory(df)
-        self.toast.show("Inventory reloaded", "success")
+        self.toast.show(self.tr("موجودی بارگذاری مجدد شد"), "success")
 
     def save(self) -> None:
         df = self.page.get_dataframe()
@@ -69,8 +69,8 @@ class InventoryController(QObject):
         try:
             self.inventory_service.save(df, admin_username=admin_username)
         except InventoryFileError as exc:
-            dialogs.show_error(self.page, "Inventory Error", str(exc))
-            self.toast.show("Inventory save failed", "error")
+            dialogs.show_error(self.page, self.tr("خطای موجودی"), str(exc))
+            self.toast.show(self.tr("ذخیره موجودی ناموفق بود"), "error")
             self._logger.exception("Failed to save inventory")
             return
         name_changes = self.page.get_name_changes()
@@ -94,8 +94,8 @@ class InventoryController(QObject):
                 clear_changes = False
                 dialogs.show_error(
                     self.page,
-                    "Invoice Update Error",
-                    "Failed to update invoice product names.",
+                    self.tr("خطای به‌روزرسانی فاکتور"),
+                    self.tr("به‌روزرسانی نام کالاها در فاکتورها ناموفق بود."),
                 )
                 self._logger.exception(
                     "Failed to update invoice product names."
@@ -116,15 +116,19 @@ class InventoryController(QObject):
                                 str(invoice_id) for invoice_id in invoice_ids
                             )
                             detail_lines.append(
-                                f"فاکتورهای تحت تاثیر: {invoice_text}"
+                                self.tr("فاکتورهای تحت تاثیر: {ids}").format(
+                                    ids=invoice_text
+                                )
                             )
                         detail_lines.append(
-                            f"تعداد ردیف‌های تغییرکرده: {updated}"
+                            self.tr("تعداد ردیف‌های تغییرکرده: {count}").format(
+                                count=updated
+                            )
                         )
                         details = "\n".join(detail_lines)
                         self.action_log_service.log_action(
                             "invoice_product_rename",
-                            "به‌روزرسانی نام کالا در فاکتورها",
+                            self.tr("به‌روزرسانی نام کالا در فاکتورها"),
                             details,
                             admin=admin,
                         )
@@ -132,19 +136,28 @@ class InventoryController(QObject):
                         str(invoice_id) for invoice_id in invoice_ids[:25]
                     )
                     if len(invoice_ids) > 25:
-                        shown_ids += f", ... (+{len(invoice_ids) - 25} more)"
+                        shown_ids += (
+                            f", ... (+{len(invoice_ids) - 25} "
+                            + self.tr("مورد دیگر")
+                            + ")"
+                        )
                     if shown_ids:
                         dialogs.show_info(
                             self.page,
-                            "Invoice Update",
+                            self.tr("به‌روزرسانی فاکتور"),
                             (
-                                f"Updated {updated} invoice line(s) in "
-                                f"{invoice_count} invoice(s).\n"
-                                f"Invoice IDs: {shown_ids}"
+                                self.tr(
+                                    "{updated} ردیف فاکتور در {count} فاکتور به‌روزرسانی شد.\n"
+                                ).format(updated=updated, count=invoice_count)
+                                + self.tr("شناسه فاکتورها: {ids}").format(
+                                    ids=shown_ids
+                                )
                             ),
                         )
                     self.toast.show(
-                        f"Updated {updated} line(s) in {invoice_count} invoice(s)",
+                        self.tr(
+                            "{updated} ردیف در {count} فاکتور به‌روزرسانی شد"
+                        ).format(updated=updated, count=invoice_count),
                         "success",
                     )
         if clear_changes:
@@ -152,30 +165,38 @@ class InventoryController(QObject):
         if old_df is not None:
             details = self._build_inventory_diff(old_df, df)
             if not details:
-                details = "تغییر مشخصی یافت نشد، اما ذخیره انجام شد."
+                details = self.tr("تغییر مشخصی یافت نشد، اما ذخیره انجام شد.")
             self.action_log_service.log_action(
                 "inventory_edit",
-                "ویرایش دستی موجودی",
+                self.tr("ویرایش دستی موجودی"),
                 details,
                 admin=admin,
             )
-        self.toast.show("Inventory saved", "success")
+        self.toast.show(self.tr("موجودی ذخیره شد"), "success")
 
     def export(self) -> None:
         df = self.page.get_dataframe()
         if df is None:
-            dialogs.show_error(self.page, "Inventory", "No inventory loaded.")
+            dialogs.show_error(
+                self.page,
+                self.tr("موجودی"),
+                self.tr("موجودی بارگذاری نشده است."),
+            )
             return
         if df.empty:
-            dialogs.show_error(self.page, "Inventory", "No data to export.")
+            dialogs.show_error(
+                self.page,
+                self.tr("موجودی"),
+                self.tr("داده‌ای برای خروجی وجود ندارد."),
+            )
             return
         from PySide6.QtWidgets import QFileDialog
 
         file_path, _ = QFileDialog.getSaveFileName(
             self.page,
-            "Export Inventory",
+            self.tr("خروجی موجودی"),
             "stock.xlsx",
-            "Excel Files (*.xlsx)",
+            self.tr("فایل‌های اکسل (*.xlsx)"),
         )
         if not file_path:
             return
@@ -187,7 +208,7 @@ class InventoryController(QObject):
             apply_banded_rows(file_path)
             autofit_columns(file_path)
         except Exception as exc:  # noqa: BLE001
-            dialogs.show_error(self.page, "Inventory", str(exc))
+            dialogs.show_error(self.page, self.tr("موجودی"), str(exc))
             self._logger.exception("Failed to export inventory")
             return
         if self.action_log_service:
@@ -198,14 +219,16 @@ class InventoryController(QObject):
             )
             self.action_log_service.log_action(
                 "inventory_export",
-                "خروجی موجودی",
-                f"تعداد ردیف‌ها: {len(df)}\nمسیر: {file_path}",
+                self.tr("خروجی موجودی"),
+                self.tr("تعداد ردیف‌ها: {count}\nمسیر: {path}").format(
+                    count=len(df),
+                    path=file_path,
+                ),
                 admin=admin,
             )
-        self.toast.show("Inventory exported", "success")
+        self.toast.show(self.tr("خروجی موجودی انجام شد"), "success")
 
-    @staticmethod
-    def _build_inventory_diff(old_df, new_df) -> str:  # noqa: ANN001
+    def _build_inventory_diff(self, old_df, new_df) -> str:  # noqa: ANN001
         def values_differ(a, b) -> bool:
             try:
                 if a is None and b is None:
@@ -234,7 +257,9 @@ class InventoryController(QObject):
                 qty = new_row.get("quantity", "")
                 avg = new_row.get("avg_buy_price", "")
                 changes.append(
-                    f"کالای جدید: {name} | تعداد={qty} | میانگین={avg}"
+                    self.tr(
+                        "کالای جدید: {name} | تعداد={qty} | میانگین={avg}"
+                    ).format(name=name, qty=qty, avg=avg)
                 )
                 continue
             diff_parts: list[str] = []
@@ -245,19 +270,26 @@ class InventoryController(QObject):
                 new_val = new_row.get(col)
                 if values_differ(old_val, new_val):
                     label = {
-                        "quantity": "تعداد",
-                        "avg_buy_price": "میانگین قیمت خرید",
-                        "last_buy_price": "آخرین قیمت خرید",
-                        "alarm": "آلارم",
-                        "source": "منبع",
+                        "quantity": self.tr("تعداد"),
+                        "avg_buy_price": self.tr("میانگین قیمت خرید"),
+                        "last_buy_price": self.tr("آخرین قیمت خرید"),
+                        "alarm": self.tr("آلارم"),
+                        "source": self.tr("منبع"),
                     }.get(col, col)
-                    diff_parts.append(f"{label}: {old_val} → {new_val}")
+                    diff_parts.append(
+                        self.tr("{label}: {old} → {new}").format(
+                            label=label, old=old_val, new=new_val
+                        )
+                    )
             if diff_parts:
-                changes.append(f"ویرایش {name}: " + "، ".join(diff_parts))
+                changes.append(
+                    self.tr("ویرایش {name}: ").format(name=name)
+                    + "، ".join(diff_parts)
+                )
 
         for key, old_row in old_map.items():
             if key not in new_map:
                 name = str(old_row.get("product_name", ""))
-                changes.append(f"حذف کالا: {name}")
+                changes.append(self.tr("حذف کالا: {name}").format(name=name))
 
         return "\n".join(changes[:200])
