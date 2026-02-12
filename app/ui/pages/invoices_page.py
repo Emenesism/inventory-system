@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import shutil
-
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -20,7 +18,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.action_log_service import ActionLogService
-from app.services.backup_sender import backup_batch
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService, InvoiceSummary
 from app.ui.widgets.invoice_batch_export_dialog import InvoiceBatchExportDialog
@@ -527,13 +524,6 @@ class InvoicesPage(QWidget):
                 dialogs.show_info(self, "Invoices", "Invoice updated.")
             self._after_invoice_change()
             return
-        updated_df, delta_map, error = self._apply_invoice_change(
-            invoice.invoice_type, lines, new_lines
-        )
-        if error:
-            dialogs.show_error(self, "Edit Invoice", error)
-            return
-        impact_text = self._format_stock_impact(delta_map)
         confirm_message = (
             f"Save changes to invoice #{invoice.invoice_id}?\n"
             f"Type: {self._format_type(invoice.invoice_type)}\n"
@@ -545,7 +535,7 @@ class InvoicesPage(QWidget):
             )
         confirm_message += (
             f"Lines: {len(lines)} → {len(new_lines)}\n"
-            f"Stock impact:\n{impact_text}"
+            "Stock reconciliation is handled by backend."
         )
         confirm = dialogs.ask_yes_no(
             self,
@@ -560,17 +550,16 @@ class InvoicesPage(QWidget):
             else None
         )
         admin_username = admin.username if admin else None
-        if not self._save_inventory_and_update_db(
-            updated_df,
-            lambda: self.invoice_service.update_invoice_lines(
+        try:
+            self.invoice_service.update_invoice_lines(
                 invoice.invoice_id,
                 invoice.invoice_type,
                 new_lines,
                 new_name,
                 admin_username=admin_username,
-            ),
-            admin_username=admin_username,
-        ):
+            )
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, "Edit Invoice", str(exc))
             return
         if self._action_log_service:
             before_block = self._format_lines_for_log(lines, "قبل")
@@ -586,7 +575,7 @@ class InvoicesPage(QWidget):
                 (
                     f"شماره فاکتور: {invoice.invoice_id}\n"
                     f"تعداد ردیف‌ها: {len(lines)} → {len(new_lines)}\n"
-                    f"تغییر موجودی:\n{impact_text}"
+                    "تغییر موجودی: اعمال در بک‌اند"
                     f"\n\n{before_block}\n\n{after_block}"
                 ),
                 admin=admin,
@@ -607,20 +596,6 @@ class InvoicesPage(QWidget):
         if invoice is None:
             dialogs.show_error(self, "Invoices", "Invoice not found.")
             return
-        lines = self.invoice_service.get_invoice_lines(invoice_id)
-        if not lines:
-            dialogs.show_error(self, "Invoices", "Invoice has no lines.")
-            return
-        if not self.inventory_service.is_loaded():
-            dialogs.show_error(self, "Inventory", "Inventory not loaded.")
-            return
-        updated_df, delta_map, error = self._apply_invoice_change(
-            invoice.invoice_type, lines, []
-        )
-        if error:
-            dialogs.show_error(self, "Delete Invoice", error)
-            return
-        impact_text = self._format_stock_impact(delta_map)
         confirm = dialogs.ask_yes_no(
             self,
             "Delete Invoice",
@@ -629,7 +604,7 @@ class InvoicesPage(QWidget):
                 f"Type: {self._format_type(invoice.invoice_type)}\n"
                 f"Date: {to_jalali_datetime(invoice.created_at)}\n"
                 f"Lines: {invoice.total_lines}\n"
-                f"Stock impact:\n{impact_text}"
+                "Stock reconciliation is handled by backend."
             ),
         )
         if not confirm:
@@ -640,13 +615,12 @@ class InvoicesPage(QWidget):
             else None
         )
         admin_username = admin.username if admin else None
-        if not self._save_inventory_and_update_db(
-            updated_df,
-            lambda: self.invoice_service.delete_invoice(
+        try:
+            self.invoice_service.delete_invoice(
                 invoice.invoice_id, admin_username=admin_username
-            ),
-            admin_username=admin_username,
-        ):
+            )
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, "Delete Invoice", str(exc))
             return
         if self._action_log_service:
             title = (
@@ -660,7 +634,7 @@ class InvoicesPage(QWidget):
                 (
                     f"شماره فاکتور: {invoice.invoice_id}\n"
                     f"تعداد ردیف‌ها: {invoice.total_lines}\n"
-                    f"تغییر موجودی:\n{impact_text}"
+                    "تغییر موجودی: اعمال در بک‌اند"
                 ),
                 admin=admin,
             )
@@ -757,125 +731,6 @@ class InvoicesPage(QWidget):
         else:
             self.refresh()
 
-    def _save_inventory_and_update_db(
-        self, updated_df, update_db, admin_username: str | None = None
-    ) -> bool:
-        backup_path = None
-        with backup_batch("invoice_change", admin_username=admin_username):
-            try:
-                backup_path = self.inventory_service.save(
-                    updated_df, admin_username=admin_username
-                )
-            except Exception as exc:  # noqa: BLE001
-                dialogs.show_error(self, "Inventory", str(exc))
-                return False
-            try:
-                update_db()
-            except Exception as exc:  # noqa: BLE001
-                if (
-                    backup_path
-                    and self.inventory_service.store.path is not None
-                ):
-                    shutil.copy2(backup_path, self.inventory_service.store.path)
-                    try:
-                        self.inventory_service.load()
-                    except Exception:  # noqa: BLE001
-                        pass
-                dialogs.show_error(self, "Invoices", str(exc))
-                return False
-        return True
-
-    def _apply_invoice_change(self, invoice_type, old_lines, new_lines):
-        inventory_df = self.inventory_service.get_dataframe().copy()
-        if invoice_type.startswith("sales"):
-            return self._apply_sales_change(inventory_df, old_lines, new_lines)
-        if invoice_type == "purchase":
-            return self._apply_purchase_change(
-                inventory_df, old_lines, new_lines
-            )
-        return None, {}, "Unsupported invoice type."
-
-    def _apply_sales_change(self, df, old_lines, new_lines):
-        old_map = self._aggregate_lines(old_lines, include_cost=False)
-        new_map = self._aggregate_lines(new_lines, include_cost=False)
-        inventory_index = {
-            normalize_text(name): idx
-            for idx, name in df["product_name"].items()
-        }
-        errors: list[str] = []
-        delta_map: dict[str, int] = {}
-        for key in set(old_map) | set(new_map):
-            old_qty = old_map.get(key, {}).get("qty", 0)
-            new_qty = new_map.get(key, {}).get("qty", 0)
-            delta = old_qty - new_qty
-            idx = inventory_index.get(key)
-            if idx is None:
-                errors.append(
-                    f"Product not found in inventory: {old_map.get(key, {}).get('name') or new_map.get(key, {}).get('name')}"
-                )
-                continue
-            current_qty = int(df.at[idx, "quantity"])
-            new_qty_total = current_qty + delta
-            df.at[idx, "quantity"] = int(new_qty_total)
-            if delta != 0:
-                delta_map[df.at[idx, "product_name"]] = int(delta)
-        if errors:
-            return None, {}, "\n".join(errors[:5])
-        return df, delta_map, ""
-
-    def _apply_purchase_change(self, df, old_lines, new_lines):
-        old_map = self._aggregate_lines(old_lines, include_cost=True)
-        new_map = self._aggregate_lines(new_lines, include_cost=True)
-        if "last_buy_price" not in df.columns:
-            df["last_buy_price"] = 0.0
-        latest_price_map: dict[str, float] = {}
-        for line in new_lines:
-            latest_price_map[normalize_text(line.product_name)] = float(
-                line.price
-            )
-        inventory_index = {
-            normalize_text(name): idx
-            for idx, name in df["product_name"].items()
-        }
-        errors: list[str] = []
-        delta_map: dict[str, int] = {}
-        for key in set(old_map) | set(new_map):
-            old_qty = old_map.get(key, {}).get("qty", 0)
-            old_cost = old_map.get(key, {}).get("cost", 0.0)
-            new_qty = new_map.get(key, {}).get("qty", 0)
-            new_cost = new_map.get(key, {}).get("cost", 0.0)
-            idx = inventory_index.get(key)
-            if idx is None:
-                errors.append(
-                    f"Product not found in inventory: {old_map.get(key, {}).get('name') or new_map.get(key, {}).get('name')}"
-                )
-                continue
-            current_qty = int(df.at[idx, "quantity"])
-            current_avg = float(df.at[idx, "avg_buy_price"])
-            total_cost = current_avg * current_qty
-            remaining_qty = current_qty - old_qty
-            remaining_cost = total_cost - float(old_cost)
-            avg_base_qty = remaining_qty if remaining_qty > 0 else 0
-            avg_base_cost = remaining_cost if remaining_qty > 0 else 0.0
-            avg_denominator = avg_base_qty + new_qty
-            new_avg = (
-                (avg_base_cost + float(new_cost)) / avg_denominator
-                if avg_denominator
-                else 0.0
-            )
-            new_qty_total = remaining_qty + new_qty
-            df.at[idx, "quantity"] = int(new_qty_total)
-            df.at[idx, "avg_buy_price"] = round(float(new_avg), 4)
-            last_price = latest_price_map.get(key)
-            if last_price is not None:
-                df.at[idx, "last_buy_price"] = round(float(last_price), 4)
-            delta = new_qty - old_qty
-            if delta != 0:
-                delta_map[df.at[idx, "product_name"]] = int(delta)
-        if errors:
-            return None, {}, "\n".join(errors[:5])
-        return df, delta_map, ""
-
     @staticmethod
     def _lines_equal(old_lines, new_lines) -> bool:
         if len(old_lines) != len(new_lines):
@@ -890,34 +745,6 @@ class InvoicesPage(QWidget):
             if abs(float(old.price) - float(new.price)) > 0.0001:
                 return False
         return True
-
-    @staticmethod
-    def _aggregate_lines(lines, include_cost: bool):
-        data: dict[str, dict[str, object]] = {}
-        for line in lines:
-            key = normalize_text(line.product_name)
-            if key not in data:
-                data[key] = {"name": line.product_name, "qty": 0, "cost": 0.0}
-            data[key]["qty"] += int(line.quantity)
-            if include_cost:
-                data[key]["cost"] += float(line.price) * int(line.quantity)
-        return data
-
-    @staticmethod
-    def _format_stock_impact(delta_map: dict[str, int]) -> str:
-        if not delta_map:
-            return "بدون تغییر موجودی."
-        lines = []
-        sorted_items = sorted(
-            delta_map.items(), key=lambda item: abs(item[1]), reverse=True
-        )
-        for name, delta in sorted_items[:6]:
-            sign = "+" if delta > 0 else "-"
-            lines.append(f"{sign}{abs(delta)} {name}")
-        remaining = len(delta_map) - len(lines)
-        if remaining > 0:
-            lines.append(f"... و {remaining} مورد دیگر")
-        return "\n".join(lines)
 
     @staticmethod
     def _format_lines_for_log(lines, label: str) -> str:
