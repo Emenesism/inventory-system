@@ -44,20 +44,20 @@ class ReportsPage(QWidget):
         content_layout.setSpacing(16)
 
         header = QHBoxLayout()
-        title = QLabel("Reports & Logs")
+        title = QLabel(self.tr("گزارش‌ها و لاگ‌ها"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         header.addWidget(title)
         header.addStretch(1)
 
-        refresh_button = QPushButton("Refresh All")
+        refresh_button = QPushButton(self.tr("بارگذاری کامل"))
         refresh_button.clicked.connect(self.load_logs_all)
         header.addWidget(refresh_button)
 
-        tail_button = QPushButton("Show Last 1000")
+        tail_button = QPushButton(self.tr("نمایش 1000 خط آخر"))
         tail_button.clicked.connect(self.load_logs_tail)
         header.addWidget(tail_button)
 
-        export_button = QPushButton("Export Last 1000")
+        export_button = QPushButton(self.tr("خروجی 1000 خط آخر"))
         export_button.clicked.connect(self.export_tail)
         header.addWidget(export_button)
 
@@ -90,7 +90,7 @@ class ReportsPage(QWidget):
     def load_logs_all(self) -> None:
         text = self._read_all_logs()
         if not text:
-            self._set_log_text("Log file not found yet.")
+            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
             return
         self._set_log_text(text)
         self._logger.info("Reports loaded full log history")
@@ -98,7 +98,7 @@ class ReportsPage(QWidget):
     def load_logs_tail(self, line_count: int = 1000) -> None:
         lines = self._read_all_logs().splitlines()
         if not lines:
-            self._set_log_text("Log file not found yet.")
+            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
             return
         tail = lines[-line_count:]
         self._set_log_text("\n".join(tail))
@@ -107,14 +107,14 @@ class ReportsPage(QWidget):
     def export_tail(self, line_count: int = 1000) -> None:
         lines = self._read_all_logs().splitlines()
         if not lines:
-            self._set_log_text("Log file not found yet.")
+            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
             return
         tail = lines[-line_count:]
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Log Tail",
+            self.tr("خروجی لاگ"),
             f"app_log_tail_{line_count}.txt",
-            "Text Files (*.txt);;All Files (*)",
+            self.tr("فایل متنی (*.txt);;همه فایل‌ها (*)"),
         )
         if not file_path:
             return
@@ -130,8 +130,10 @@ class ReportsPage(QWidget):
             )
             self.action_log_service.log_action(
                 "reports_export",
-                "خروجی گزارش‌ها",
-                f"تعداد خطوط: {line_count}\nمسیر: {file_path}",
+                self.tr("خروجی گزارش‌ها"),
+                self.tr("تعداد خطوط: {count}\nمسیر: {path}").format(
+                    count=line_count, path=file_path
+                ),
                 admin=admin,
             )
 
