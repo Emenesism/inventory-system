@@ -123,8 +123,9 @@ class InvoiceBatchExportDialog(QDialog):
         self._invoices: list[InvoiceSummary] = []
         self._product_map: dict[str, str] = {}
 
-        self.setWindowTitle("Factor Export")
+        self.setWindowTitle(self.tr("خروجی گروهی فاکتورها"))
         self.setModal(True)
+        self.setLayoutDirection(Qt.RightToLeft)
         if parent is not None:
             self.resize(parent.size())
         else:
@@ -134,7 +135,7 @@ class InvoiceBatchExportDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        title = QLabel("Export Invoices (Factor)")
+        title = QLabel(self.tr("خروجی فاکتورها"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
 
@@ -145,35 +146,35 @@ class InvoiceBatchExportDialog(QDialog):
         date_layout.setSpacing(10)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("From:"))
+        row.addWidget(QLabel(self.tr("از:")))
         self.from_date = JalaliDatePicker()
         row.addWidget(self.from_date)
         row.addSpacing(20)
-        row.addWidget(QLabel("Until:"))
+        row.addWidget(QLabel(self.tr("تا:")))
         self.to_date = JalaliDatePicker()
         row.addWidget(self.to_date)
         row.addStretch(1)
         date_layout.addLayout(row)
 
         id_row = QHBoxLayout()
-        id_row.addWidget(QLabel("Invoice ID From:"))
+        id_row.addWidget(QLabel(self.tr("شماره فاکتور از:")))
         self.invoice_id_from = QLineEdit()
-        self.invoice_id_from.setPlaceholderText("From (optional)")
+        self.invoice_id_from.setPlaceholderText(self.tr("از (اختیاری)"))
         self.invoice_id_from.setValidator(QIntValidator(1, 999999999, self))
         id_row.addWidget(self.invoice_id_from)
         id_row.addSpacing(20)
-        id_row.addWidget(QLabel("Invoice ID To:"))
+        id_row.addWidget(QLabel(self.tr("شماره فاکتور تا:")))
         self.invoice_id_to = QLineEdit()
-        self.invoice_id_to.setPlaceholderText("To (optional)")
+        self.invoice_id_to.setPlaceholderText(self.tr("تا (اختیاری)"))
         self.invoice_id_to.setValidator(QIntValidator(1, 999999999, self))
         id_row.addWidget(self.invoice_id_to)
         id_row.addStretch(1)
         date_layout.addLayout(id_row)
 
         product_row = QHBoxLayout()
-        product_row.addWidget(QLabel("Product:"))
+        product_row.addWidget(QLabel(self.tr("کالا:")))
         self.product_input = QLineEdit()
-        self.product_input.setPlaceholderText("Product (optional)")
+        self.product_input.setPlaceholderText(self.tr("کالا (اختیاری)"))
         product_row.addWidget(self.product_input, 1)
         date_layout.addLayout(product_row)
 
@@ -182,7 +183,7 @@ class InvoiceBatchExportDialog(QDialog):
         self.product_hint.setProperty("size", "small")
         date_layout.addWidget(self.product_hint)
 
-        self.summary_label = QLabel("Invoices: 0")
+        self.summary_label = QLabel(self.tr("فاکتورها: 0"))
         self.summary_label.setStyleSheet("font-weight: 600;")
         date_layout.addWidget(self.summary_label)
 
@@ -196,7 +197,14 @@ class InvoiceBatchExportDialog(QDialog):
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["ID", "Date (IR)", "Type", "Lines", "Qty", "Total"]
+            [
+                self.tr("شناسه"),
+                self.tr("تاریخ"),
+                self.tr("نوع"),
+                self.tr("ردیف"),
+                self.tr("تعداد"),
+                self.tr("مبلغ کل"),
+            ]
         )
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -207,10 +215,10 @@ class InvoiceBatchExportDialog(QDialog):
 
         action_row = QHBoxLayout()
         action_row.addStretch(1)
-        self.close_button = QPushButton("Close")
+        self.close_button = QPushButton(self.tr("بستن"))
         self.close_button.clicked.connect(self.reject)
         action_row.addWidget(self.close_button)
-        self.export_button = QPushButton("Export")
+        self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.clicked.connect(self._open_export_menu)
         action_row.addWidget(self.export_button)
         layout.addLayout(action_row)
@@ -235,7 +243,9 @@ class InvoiceBatchExportDialog(QDialog):
         start_dt = self.from_date.to_gregorian_datetime(end_of_day=False)
         end_dt = self.to_date.to_gregorian_datetime(end_of_day=True)
         if end_dt < start_dt:
-            self.summary_label.setText("End date must be after start date.")
+            self.summary_label.setText(
+                self.tr("تاریخ پایان باید بعد از تاریخ شروع باشد.")
+            )
             self.export_button.setEnabled(False)
             self.table.setRowCount(0)
             return
@@ -299,26 +309,27 @@ class InvoiceBatchExportDialog(QDialog):
             total_item = QTableWidgetItem(format_amount(invoice.total_amount))
             total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 5, total_item)
-        self.summary_label.setText(f"Invoices: {len(self._invoices)}")
+        self.summary_label.setText(
+            self.tr("فاکتورها: {count}").format(count=len(self._invoices))
+        )
 
-    @staticmethod
-    def _format_invoice_type(value: str) -> str:
+    def _format_invoice_type(self, value: str) -> str:
         if value == "purchase":
-            return "Purchase"
+            return self.tr("خرید")
         if value == "sales_manual":
-            return "Sales Manual"
+            return self.tr("فروش دستی")
         if value == "sales_basalam":
-            return "Sales Basalam"
+            return self.tr("فروش باسلام")
         if value == "sales_site":
-            return "Sales Site"
+            return self.tr("فروش سایت")
         if value.startswith("sales"):
-            return "Sales"
+            return self.tr("فروش")
         return value.title()
 
     def _setup_product_completer(self) -> None:
         if not self.inventory_service or not self.inventory_service.is_loaded():
             self.product_hint.setText(
-                "Inventory not loaded; product suggestions unavailable."
+                self.tr("موجودی بارگذاری نشده است؛ پیشنهاد کالا در دسترس نیست.")
             )
             return
         product_names = self.inventory_service.get_product_names()
@@ -329,13 +340,15 @@ class InvoiceBatchExportDialog(QDialog):
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         completer.setFilterMode(Qt.MatchContains)
         self.product_input.setCompleter(completer)
-        self.product_hint.setText("Type to search products.")
+        self.product_hint.setText(self.tr("برای جستجوی کالا تایپ کنید."))
 
     def _resolve_product_filter(self) -> tuple[str | None, bool]:
         text = self.product_input.text().strip()
         if not text:
             self.product_hint.setText(
-                "Type to search products." if self._product_map else ""
+                self.tr("برای جستجوی کالا تایپ کنید.")
+                if self._product_map
+                else ""
             )
             return None, False
         normalized = normalize_text(text)
@@ -344,7 +357,7 @@ class InvoiceBatchExportDialog(QDialog):
             return self._product_map[normalized], False
         if self._product_map:
             self.product_hint.setText(
-                "Product not found in inventory; using partial search."
+                self.tr("کالا در موجودی پیدا نشد؛ جستجوی جزئی انجام می‌شود.")
             )
         return text, True
 
@@ -358,25 +371,41 @@ class InvoiceBatchExportDialog(QDialog):
             try:
                 id_from = int(from_text)
             except ValueError:
-                return None, None, "Invoice ID From must be a number."
+                return (
+                    None,
+                    None,
+                    self.tr("شماره فاکتور «از» باید عدد باشد."),
+                )
         id_to = None
         if to_text:
             try:
                 id_to = int(to_text)
             except ValueError:
-                return None, None, "Invoice ID To must be a number."
+                return (
+                    None,
+                    None,
+                    self.tr("شماره فاکتور «تا» باید عدد باشد."),
+                )
         if id_from is not None and id_from < 1:
-            return None, None, "Invoice ID From must be a positive number."
+            return (
+                None,
+                None,
+                self.tr("شماره فاکتور «از» باید عدد مثبت باشد."),
+            )
         if id_to is not None and id_to < 1:
-            return None, None, "Invoice ID To must be a positive number."
+            return (
+                None,
+                None,
+                self.tr("شماره فاکتور «تا» باید عدد مثبت باشد."),
+            )
         if id_from is not None and id_to is not None and id_to < id_from:
-            return None, None, "Invoice ID range is invalid."
+            return None, None, self.tr("بازه شماره فاکتور نامعتبر است.")
         return id_from, id_to, None
 
     def _open_export_menu(self) -> None:
         menu = QMenu(self.export_button)
-        excel_action = menu.addAction("Excel (.xlsx)")
-        pdf_action = menu.addAction("PDF (.pdf)")
+        excel_action = menu.addAction(self.tr("اکسل (.xlsx)"))
+        pdf_action = menu.addAction(self.tr("پی‌دی‌اف (.pdf)"))
         action = menu.exec(
             self.export_button.mapToGlobal(
                 QPoint(0, self.export_button.height())
@@ -389,17 +418,21 @@ class InvoiceBatchExportDialog(QDialog):
 
     def _export(self, file_format: str) -> None:
         if not self._invoices:
-            dialogs.show_error(self, "Export", "No invoices to export.")
+            dialogs.show_error(
+                self,
+                self.tr("خروجی"),
+                self.tr("فاکتوری برای خروجی وجود ندارد."),
+            )
             return
         if file_format == "pdf":
             default_name = "invoices_export.pdf"
-            file_filter = "PDF Files (*.pdf)"
+            file_filter = self.tr("فایل‌های PDF (*.pdf)")
         else:
             default_name = "invoices_export.xlsx"
-            file_filter = "Excel Files (*.xlsx)"
+            file_filter = self.tr("فایل‌های اکسل (*.xlsx)")
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Invoices",
+            self.tr("خروجی فاکتورها"),
             default_name,
             file_filter,
         )
@@ -429,32 +462,52 @@ class InvoiceBatchExportDialog(QDialog):
             id_from, id_to, _ = self._parse_invoice_id_range()
             jy_from, jm_from, jd_from = self.from_date.jalali_date()
             jy_to, jm_to, jd_to = self.to_date.jalali_date()
-            filter_text = product_filter if product_filter else "همه کالاها"
-            filter_type = "دقیق" if product_filter and not fuzzy else "جزئی"
+            filter_text = (
+                product_filter if product_filter else self.tr("همه کالاها")
+            )
+            filter_type = (
+                self.tr("دقیق")
+                if product_filter and not fuzzy
+                else self.tr("جزئی")
+            )
             if id_from is None and id_to is None:
-                id_range_text = "همه"
+                id_range_text = self.tr("همه")
             elif id_from is not None and id_to is not None:
-                id_range_text = f"{id_from} تا {id_to}"
+                id_range_text = self.tr("{id_from} تا {id_to}").format(
+                    id_from=id_from, id_to=id_to
+                )
             elif id_from is not None:
-                id_range_text = f"از {id_from}"
+                id_range_text = self.tr("از {id_from}").format(id_from=id_from)
             else:
-                id_range_text = f"تا {id_to}"
+                id_range_text = self.tr("تا {id_to}").format(id_to=id_to)
             self.action_log_service.log_action(
                 "invoice_batch_export",
-                "خروجی گروهی فاکتور",
-                (
-                    f"بازه تاریخ: {jy_from:04d}/{jm_from:02d}/{jd_from:02d} "
-                    f"تا {jy_to:04d}/{jm_to:02d}/{jd_to:02d}\n"
-                    f"فیلتر شماره فاکتور: {id_range_text}\n"
-                    f"فیلتر کالا: {filter_text}\n"
-                    f"نوع فیلتر: {filter_type}\n"
-                    f"تعداد فاکتور: {len(invoices_with_lines)}\n"
-                    f"فرمت: {'PDF' if file_format == 'pdf' else 'Excel'}\n"
-                    f"مسیر: {file_path}"
+                self.tr("خروجی گروهی فاکتور"),
+                self.tr(
+                    "بازه تاریخ: {from_date} تا {to_date}\n"
+                    "فیلتر شماره فاکتور: {id_range}\n"
+                    "فیلتر کالا: {filter_text}\n"
+                    "نوع فیلتر: {filter_type}\n"
+                    "تعداد فاکتور: {invoice_count}\n"
+                    "فرمت: {fmt}\n"
+                    "مسیر: {path}"
+                ).format(
+                    from_date=f"{jy_from:04d}/{jm_from:02d}/{jd_from:02d}",
+                    to_date=f"{jy_to:04d}/{jm_to:02d}/{jd_to:02d}",
+                    id_range=id_range_text,
+                    filter_text=filter_text,
+                    filter_type=filter_type,
+                    invoice_count=len(invoices_with_lines),
+                    fmt=("PDF" if file_format == "pdf" else self.tr("اکسل")),
+                    path=file_path,
                 ),
                 admin=admin,
             )
         if self.toast:
-            self.toast.show("Invoices exported", "success")
+            self.toast.show(self.tr("خروجی فاکتورها انجام شد"), "success")
         else:
-            dialogs.show_info(self, "Export", "Invoices exported.")
+            dialogs.show_info(
+                self,
+                self.tr("خروجی"),
+                self.tr("خروجی فاکتورها انجام شد."),
+            )
