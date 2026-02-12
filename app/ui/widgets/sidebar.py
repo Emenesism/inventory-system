@@ -25,7 +25,7 @@ class Sidebar(QFrame):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(14)
 
-        brand = QLabel("Armkala")
+        brand = QLabel(self.tr("رضاکالا"))
         brand.setStyleSheet(
             "color: #FFFFFF; font-weight: 700; font-size: 18px;"
         )
@@ -47,16 +47,28 @@ class Sidebar(QFrame):
             "Settings": QStyle.SP_FileDialogContentsView,
         }
         hint_map = {
-            "Inventory": "View and edit stock",
-            "Sales Import": "Apply sales from Excel",
-            "Purchase Invoice": "Add new purchases",
-            "Invoices": "Browse saved invoices",
-            "Analytics": "Profit and trends",
-            "Low Stock": "Reorder list",
-            "Basalam": "Vendor parcels",
-            "Actions": "Audit trail",
-            "Reports/Logs": "App log",
-            "Settings": "Preferences and admins",
+            "Inventory": self.tr("مشاهده و ویرایش موجودی"),
+            "Sales Import": self.tr("اعمال فروش از فایل اکسل"),
+            "Purchase Invoice": self.tr("ثبت خرید جدید"),
+            "Invoices": self.tr("مرور فاکتورهای ثبت‌شده"),
+            "Analytics": self.tr("سود و روندها"),
+            "Low Stock": self.tr("لیست تامین"),
+            "Basalam": self.tr("مرسوله‌های فروشنده"),
+            "Actions": self.tr("ردیابی اقدامات"),
+            "Reports/Logs": self.tr("گزارش لاگ برنامه"),
+            "Settings": self.tr("تنظیمات و مدیران"),
+        }
+        title_map = {
+            "Inventory": self.tr("موجودی"),
+            "Sales Import": self.tr("ورود فروش"),
+            "Purchase Invoice": self.tr("فاکتور خرید"),
+            "Invoices": self.tr("فاکتورها"),
+            "Analytics": self.tr("تحلیل"),
+            "Low Stock": self.tr("کمبود موجودی"),
+            "Basalam": self.tr("باسلام"),
+            "Actions": self.tr("اقدامات"),
+            "Reports/Logs": self.tr("گزارش/لاگ"),
+            "Settings": self.tr("تنظیمات"),
         }
 
         for name in [
@@ -78,7 +90,7 @@ class Sidebar(QFrame):
 
             button = QToolButton()
             button.setObjectName("SidebarButton")
-            button.setText(name)
+            button.setText(title_map.get(name, name))
             button.setIcon(
                 self.style().standardIcon(
                     icon_map.get(name, QStyle.SP_FileIcon)
