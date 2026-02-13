@@ -40,7 +40,7 @@ class ProductNameDelegate(QStyledItemDelegate):
             return super().createEditor(parent, option, index)
         editor = QLineEdit(parent)
         editor.setLayoutDirection(Qt.RightToLeft)
-        editor.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        editor.setAlignment(Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter)
         completer = QCompleter(editor)
         completer.setCompletionMode(QCompleter.PopupCompletion)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -94,7 +94,7 @@ class QuantityDelegate(QStyledItemDelegate):
             return super().createEditor(parent, option, index)
         editor = QLineEdit(parent)
         editor.setValidator(QIntValidator(0, 1_000_000, editor))
-        editor.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        editor.setAlignment(Qt.AlignCenter)
         return editor
 
     def setEditorData(self, editor, index) -> None:  # noqa: ANN001
@@ -160,15 +160,12 @@ class SalesImportPage(QWidget):
             self.tr("فایل فروش اکسل/CSV را انتخاب کنید (نام کالا، تعداد)...")
         )
         self.file_input.textEdited.connect(self._on_file_text_edited)
+        self.file_input.returnPressed.connect(self._emit_preview)
         file_layout.addWidget(self.file_input, 1)
 
-        self.browse_button = QPushButton(self.tr("مرور"))
+        self.browse_button = QPushButton(self.tr("انتخاب"))
         self.browse_button.clicked.connect(self._browse_file)
         file_layout.addWidget(self.browse_button)
-
-        self.preview_button = QPushButton(self.tr("بارگذاری پیش‌نمایش"))
-        self.preview_button.clicked.connect(self._emit_preview)
-        file_layout.addWidget(self.preview_button)
 
         self.manual_invoice_button = QPushButton(self.tr("فاکتور دستی"))
         self.manual_invoice_button.clicked.connect(
@@ -226,6 +223,15 @@ class SalesImportPage(QWidget):
                 self.tr("پیام"),
             ]
         )
+        product_header = self.table.horizontalHeaderItem(0)
+        if product_header is not None:
+            product_header.setTextAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
+        for col in (1, 2, 3):
+            header_item = self.table.horizontalHeaderItem(col)
+            if header_item is not None:
+                header_item.setTextAlignment(Qt.AlignCenter)
         self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -308,7 +314,6 @@ class SalesImportPage(QWidget):
     def set_enabled_state(self, enabled: bool) -> None:
         self.file_input.setEnabled(enabled)
         self.browse_button.setEnabled(enabled)
-        self.preview_button.setEnabled(enabled)
         self.manual_invoice_button.setEnabled(enabled)
         self.apply_button.setEnabled(enabled)
         self.export_button.setEnabled(enabled and bool(self.preview_rows))
@@ -446,6 +451,7 @@ class SalesImportPage(QWidget):
                 status_item = QTableWidgetItem()
                 status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, 2, status_item)
+            status_item.setTextAlignment(Qt.AlignCenter)
             status_item.setText(self._display_status(row_data.status))
 
             message_item = self.table.item(row, 3)
@@ -453,6 +459,7 @@ class SalesImportPage(QWidget):
                 message_item = QTableWidgetItem()
                 message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, 3, message_item)
+            message_item.setTextAlignment(Qt.AlignCenter)
             message_item.setText(self._display_message(row_data.message))
         self._suppress_item_updates = False
 
@@ -475,7 +482,7 @@ class SalesImportPage(QWidget):
                 self._suppress_item_updates = False
             self.preview_rows[idx].product_name = text
             self._pending_rows.add(idx)
-            self._edit_timer.start()
+            self._emit_pending_updates()
             return
         raw_text = item.text()
         text = raw_text.strip()
@@ -533,6 +540,9 @@ class SalesImportPage(QWidget):
         self.table.setRowCount(len(self.preview_rows))
         for row_idx, row in enumerate(self.preview_rows):
             name_item = QTableWidgetItem(row.product_name)
+            name_item.setTextAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
             name_item.setData(Qt.UserRole, row_idx)
             if self._edit_enabled:
                 name_item.setFlags(name_item.flags() | Qt.ItemIsEditable)
@@ -541,6 +551,8 @@ class SalesImportPage(QWidget):
             self.table.setItem(row_idx, 0, name_item)
 
             qty_item = QTableWidgetItem(str(row.quantity_sold))
+            qty_item.setTextAlignment(Qt.AlignCenter)
+            qty_item.setData(Qt.UserRole, row_idx)
             if self._edit_enabled:
                 qty_item.setFlags(qty_item.flags() | Qt.ItemIsEditable)
             else:
@@ -548,11 +560,13 @@ class SalesImportPage(QWidget):
             self.table.setItem(row_idx, 1, qty_item)
 
             status_item = QTableWidgetItem(row.status)
+            status_item.setTextAlignment(Qt.AlignCenter)
             status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
             status_item.setText(self._display_status(row.status))
             self.table.setItem(row_idx, 2, status_item)
 
             message_item = QTableWidgetItem(self._display_message(row.message))
+            message_item.setTextAlignment(Qt.AlignCenter)
             message_item.setFlags(message_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row_idx, 3, message_item)
 

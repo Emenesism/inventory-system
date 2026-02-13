@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QEvent, QPoint, Qt, Signal
+from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -19,6 +21,31 @@ from PySide6.QtWidgets import (
 
 from app.services.fuzzy_search import get_fuzzy_matches
 from app.services.sales_manual_service import SalesManualLine
+from app.utils.numeric import normalize_numeric_text
+
+
+class QuantitySpinBox(QSpinBox):
+    def textFromValue(self, value: int) -> str:  # noqa: N802
+        if value == 0:
+            return ""
+        return str(value)
+
+    def valueFromText(self, text: str) -> int:  # noqa: N802
+        normalized = normalize_numeric_text(text)
+        if not normalized:
+            return 0
+        try:
+            return int(float(normalized))
+        except ValueError:
+            return 0
+
+    def validate(self, text: str, pos: int):  # noqa: ANN001, N802
+        normalized = normalize_numeric_text(text)
+        if normalized == "":
+            return (QValidator.Intermediate, text, pos)
+        if normalized.replace(".", "", 1).isdigit():
+            return (QValidator.Acceptable, text, pos)
+        return (QValidator.Invalid, text, pos)
 
 
 class SalesManualInvoiceDialog(QDialog):
@@ -71,7 +98,7 @@ class SalesManualInvoiceDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.verticalHeader().setDefaultSectionSize(42)
         table_layout.addWidget(self.table)
         self.table.installEventFilter(self)
 
@@ -131,7 +158,12 @@ class SalesManualInvoiceDialog(QDialog):
 
         product_input = QLineEdit()
         product_input.setPlaceholderText(self.tr("نام کالا را بنویسید..."))
-        product_input.setClearButtonEnabled(True)
+        product_input.setClearButtonEnabled(False)
+        product_input.setLayoutDirection(Qt.RightToLeft)
+        product_input.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
+        product_input.setMinimumHeight(32)
         product_input.textChanged.connect(
             lambda text, widget=product_input: self._update_completer(
                 text, widget
@@ -139,9 +171,20 @@ class SalesManualInvoiceDialog(QDialog):
         )
         product_input.installEventFilter(self)
 
-        quantity_input = QSpinBox()
-        quantity_input.setRange(1, 1_000_000)
-        quantity_input.setValue(1)
+        quantity_input = QuantitySpinBox()
+        quantity_input.setRange(0, 1_000_000)
+        quantity_input.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        quantity_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        quantity_input.setMinimumHeight(32)
+        quantity_input.setSingleStep(1)
+        quantity_input.setValue(0)
+        line_edit = quantity_input.lineEdit()
+        if line_edit is not None:
+            line_edit.setLayoutDirection(Qt.RightToLeft)
+            line_edit.setAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
+            line_edit.setPlaceholderText(self.tr("تعداد را وارد کنید"))
         quantity_input.installEventFilter(self)
 
         self.table.setCellWidget(row, 0, product_input)

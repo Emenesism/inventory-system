@@ -79,15 +79,8 @@ class SalesImportController(QObject):
             self._logger.exception("Failed to preview sales import")
             return
 
-        admin = (
-            self._current_admin_provider()
-            if self._current_admin_provider
-            else None
-        )
-        is_manager = bool(admin and admin.role == "manager")
-        editable = is_manager or admin is None
         self.page.set_edit_mode(
-            editable, self.inventory_service.get_product_names()
+            True, self.inventory_service.get_product_names()
         )
         self.page.set_preview(preview_rows, summary)
         self.toast.show(self.tr("پیش‌نمایش آماده است"), "success")

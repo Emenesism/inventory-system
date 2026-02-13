@@ -179,14 +179,6 @@ func applySalesChangeTx(ctx context.Context, tx pgx.Tx, oldLines, newLines []dom
 		}
 
 		updatedQty := currentQty + delta
-		if updatedQty < 0 {
-			return fmt.Errorf(
-				"insufficient stock for %s (available=%d, requested=%d)",
-				name,
-				currentQty+oldQty,
-				newQty,
-			)
-		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE products
 			SET quantity = $2, updated_at = NOW()
@@ -247,9 +239,6 @@ func applyPurchaseChangeTx(ctx context.Context, tx pgx.Tx, oldLines, newLines []
 			newAvg = (avgBaseCost + newCost) / float64(avgDenominator)
 		}
 		updatedQty := remainingQty + newQty
-		if updatedQty < 0 {
-			return fmt.Errorf("negative stock after purchase reconciliation for %s", name)
-		}
 		updatedLast := currentLast
 		if newQty > 0 && newLastPrice > 0 {
 			updatedLast = newLastPrice
@@ -932,19 +921,6 @@ func (r *Repository) PreviewSales(
 		sellPrice := row.SellPrice
 		if sellPrice <= 0 {
 			sellPrice = costPrice
-		}
-		if availableQty < row.QuantitySold {
-			result = append(result, domain.SalesPreviewRow{
-				ProductName:  name,
-				QuantitySold: row.QuantitySold,
-				SellPrice:    sellPrice,
-				CostPrice:    costPrice,
-				Status:       "Error",
-				Message:      "Insufficient stock",
-				ResolvedName: nameMap[key],
-			})
-			errorsCount++
-			continue
 		}
 		available[key] = availableQty - row.QuantitySold
 		result = append(result, domain.SalesPreviewRow{

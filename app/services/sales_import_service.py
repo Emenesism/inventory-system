@@ -207,24 +207,28 @@ class SalesImportService:
         for row in rows_data:
             if not isinstance(row, dict):
                 continue
+            status = str(row.get("status", "Error")).strip()
+            message = str(row.get("message", "")).strip()
+            if "insufficient stock" in message.lower():
+                status = "OK"
+                message = "Will update stock"
             preview_rows.append(
                 SalesPreviewRow(
                     product_name=str(row.get("product_name", "")),
                     quantity_sold=int(row.get("quantity_sold", 0) or 0),
                     sell_price=float(row.get("sell_price", 0.0) or 0.0),
                     cost_price=float(row.get("cost_price", 0.0) or 0.0),
-                    status=str(row.get("status", "Error")),
-                    message=str(row.get("message", "")),
+                    status=status,
+                    message=message,
                     resolved_name=str(row.get("resolved_name", "")),
                 )
             )
 
+        total_rows = len(preview_rows)
+        success_rows = sum(1 for row in preview_rows if row.status == "OK")
         summary = SalesPreviewSummary(
-            total=int(
-                summary_data.get("total", len(preview_rows))
-                or len(preview_rows)
-            ),
-            success=int(summary_data.get("success", 0) or 0),
-            errors=int(summary_data.get("errors", 0) or 0),
+            total=int(summary_data.get("total", total_rows) or total_rows),
+            success=success_rows,
+            errors=total_rows - success_rows,
         )
         return preview_rows, summary

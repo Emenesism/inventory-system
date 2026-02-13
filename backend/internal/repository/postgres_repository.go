@@ -567,9 +567,6 @@ func (r *Repository) CreateSalesInvoice(
 		if err != nil {
 			return 0, fmt.Errorf("load product %q for sales: %w", name, err)
 		}
-		if currentQty < line.Quantity {
-			return 0, fmt.Errorf("insufficient stock for %s (available=%d, requested=%d)", name, currentQty, line.Quantity)
-		}
 
 		newQty := currentQty - line.Quantity
 		if _, err := tx.Exec(ctx, `
