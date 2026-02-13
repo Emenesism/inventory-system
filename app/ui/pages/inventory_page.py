@@ -30,6 +30,8 @@ class InventoryPage(QWidget):
         super().__init__(parent)
         self._model: DataFrameTableModel | None = None
         self._proxy: NormalizedFilterProxyModel | None = None
+        self._column_names: list[str] = []
+        self._column_widths: dict[str, int] = {}
         self._editable_columns: list[str] | None = None
         self._blocked_columns: set[str] | None = None
         self._name_changes: dict[str, str] = {}
@@ -96,7 +98,9 @@ class InventoryPage(QWidget):
         self.table.setAlternatingRowColors(True)
         if hasattr(self.table, "setUniformRowHeights"):
             self.table.setUniformRowHeights(True)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.sectionResized.connect(self._remember_column_width)
         self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         self.table.verticalScrollBar().valueChanged.connect(
             self._maybe_fetch_more
@@ -122,6 +126,7 @@ class InventoryPage(QWidget):
         if blocked_columns is not None:
             self._blocked_columns = set(blocked_columns)
             self._editable_columns = None
+        self._column_names = [str(name) for name in dataframe.columns]
         filter_text = self.search_input.text()
         active_editable = self._editable_columns
         if active_editable is None and self._blocked_columns:
@@ -148,14 +153,15 @@ class InventoryPage(QWidget):
             self._model.set_lazy_loading(False)
             self._proxy.set_filter_text(filter_text)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        if row_count <= 2000:
-            for col in range(1, self._model.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        else:
-            for col in range(1, self._model.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.Interactive)
-                header.resizeSection(col, 140)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        for col in range(self._model.columnCount()):
+            column_name = self._column_names[col]
+            saved_width = self._column_widths.get(column_name)
+            if saved_width and saved_width > 24:
+                header.resizeSection(col, int(saved_width))
+                continue
+            header.resizeSection(col, self._default_column_width(column_name))
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
@@ -343,3 +349,25 @@ class InventoryPage(QWidget):
         if bar.value() >= bar.maximum() - 24:
             if self._proxy.canFetchMore(QModelIndex()):
                 self._proxy.fetchMore(QModelIndex())
+
+    def _remember_column_width(
+        self, logical_index: int, _old_size: int, new_size: int
+    ) -> None:
+        if (
+            logical_index < 0
+            or logical_index >= len(self._column_names)
+            or new_size <= 0
+        ):
+            return
+        self._column_widths[self._column_names[logical_index]] = int(new_size)
+
+    @staticmethod
+    def _default_column_width(column_name: str) -> int:
+        normalized = (
+            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+        if normalized in {"product_name", "نام_کالا", "کالا"}:
+            return 360
+        if normalized in {"source", "منبع"}:
+            return 180
+        return 140

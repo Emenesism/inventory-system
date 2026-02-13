@@ -203,7 +203,8 @@ class InventoryController(QObject):
         if not file_path.lower().endswith(".xlsx"):
             file_path = f"{file_path}.xlsx"
         try:
-            df.to_excel(file_path, index=False)
+            export_df = self._sort_for_export(df)
+            export_df.to_excel(file_path, index=False)
             ensure_sheet_rtl(file_path)
             apply_banded_rows(file_path)
             autofit_columns(file_path)
@@ -221,12 +222,40 @@ class InventoryController(QObject):
                 "inventory_export",
                 self.tr("خروجی موجودی"),
                 self.tr("تعداد ردیف‌ها: {count}\nمسیر: {path}").format(
-                    count=len(df),
+                    count=len(export_df),
                     path=file_path,
                 ),
                 admin=admin,
             )
         self.toast.show(self.tr("خروجی موجودی انجام شد"), "success")
+
+    @staticmethod
+    def _sort_for_export(df):  # noqa: ANN001
+        export_df = df.copy()
+        if export_df.empty:
+            return export_df
+
+        name_column = (
+            "product_name"
+            if "product_name" in export_df.columns
+            else str(export_df.columns[0])
+        )
+        sort_key = (
+            export_df[name_column]
+            .fillna("")
+            .map(lambda value: normalize_text(str(value)))
+        )
+        empty_key = sort_key == ""
+        return (
+            export_df.assign(_empty_sort=empty_key, _name_sort=sort_key)
+            .sort_values(
+                by=["_empty_sort", "_name_sort"],
+                ascending=[True, True],
+                kind="mergesort",
+            )
+            .drop(columns=["_empty_sort", "_name_sort"])
+            .reset_index(drop=True)
+        )
 
     def _build_inventory_diff(self, old_df, new_df) -> str:  # noqa: ANN001
         def values_differ(a, b) -> bool:
