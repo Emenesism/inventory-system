@@ -65,7 +65,7 @@ class Sidebar(QFrame):
         title_map = {
             "Inventory": self.tr("موجودی"),
             "Sales Import": self.tr("ثبت فاکتور فروش"),
-            "Purchase Invoice": self.tr("ثیت فاکتور خرید"),
+            "Purchase Invoice": self.tr("ثبت فاکتور خرید"),
             "Invoices": self.tr("فاکتورها"),
             "Analytics": self.tr("تحلیل"),
             "Low Stock": self.tr("کمبود موجودی"),

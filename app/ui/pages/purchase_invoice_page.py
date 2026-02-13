@@ -6,6 +6,7 @@ from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -115,7 +116,7 @@ class PurchaseInvoicePage(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.verticalHeader().setDefaultSectionSize(42)
         table_layout.addWidget(self.table)
         self.table.installEventFilter(self)
 
@@ -159,7 +160,12 @@ class PurchaseInvoicePage(QWidget):
 
         product_input = QLineEdit()
         product_input.setPlaceholderText(self.tr("نام کالا را بنویسید..."))
-        product_input.setClearButtonEnabled(True)
+        product_input.setClearButtonEnabled(False)
+        product_input.setLayoutDirection(Qt.RightToLeft)
+        product_input.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
+        product_input.setMinimumHeight(32)
         product_input.textChanged.connect(
             lambda text, widget=product_input: self._update_completer(
                 text, widget
@@ -170,12 +176,18 @@ class PurchaseInvoicePage(QWidget):
         quantity_input = QuantitySpinBox()
         quantity_input.setRange(0, 1_000_000)
         quantity_input.setSingleStep(1)
+        quantity_input.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        quantity_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        quantity_input.setMinimumHeight(32)
         quantity_input.setValue(0)
         quantity_input.installEventFilter(self)
 
         price_input = PriceSpinBox()
         price_input.setRange(0, 1_000_000_000)
         price_input.setSingleStep(100)
+        price_input.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        price_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        price_input.setMinimumHeight(32)
         price_input.setValue(0)
         price_input.setGroupSeparatorShown(True)
         price_input.installEventFilter(self)
