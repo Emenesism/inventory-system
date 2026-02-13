@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.header = HeaderBar()
         self.header.lock_requested.connect(self.lock)
         self.header.help_requested.connect(self._show_help)
+        self.header.menu_requested.connect(self._toggle_sidebar)
         main_layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
@@ -147,6 +148,9 @@ class MainWindow(QMainWindow):
         self.sidebar.set_active("Inventory")
         self.pages.setCurrentWidget(self.inventory_page)
         self._current_page_name = "Inventory"
+        self._compact_mode = False
+        self._compact_sidebar_visible = True
+        self._sidebar_compact_threshold = 1100
 
         self.inventory_controller = InventoryController(
             self.inventory_page,
@@ -197,12 +201,18 @@ class MainWindow(QMainWindow):
         self._idle_timer.setInterval(1000)
         self._idle_timer.timeout.connect(self._check_idle)
         # Auto-lock disabled per settings.
+        self._apply_responsive_layout(force=True)
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        self._apply_responsive_layout(force=True)
         if not self._lock_shown:
             self._lock_shown = True
             self._show_lock()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
 
     def _show_lock(self) -> None:
         if self._lock_open:
@@ -377,6 +387,28 @@ class MainWindow(QMainWindow):
             self.pages.setCurrentWidget(page)
             self.sidebar.set_active(name)
             self._current_page_name = name
+            if self._compact_mode:
+                self._set_sidebar_visible(False)
+
+    def _apply_responsive_layout(self, force: bool = False) -> None:
+        compact = self.width() <= self._sidebar_compact_threshold
+        if not force and compact == self._compact_mode:
+            return
+        self._compact_mode = compact
+        self.header.set_menu_button_visible(compact)
+        if compact:
+            self._set_sidebar_visible(False)
+            return
+        self._set_sidebar_visible(True)
+
+    def _toggle_sidebar(self) -> None:
+        if not self._compact_mode:
+            return
+        self._set_sidebar_visible(not self._compact_sidebar_visible)
+
+    def _set_sidebar_visible(self, visible: bool) -> None:
+        self._compact_sidebar_visible = visible
+        self.sidebar.setVisible(visible)
 
     def _show_help(self) -> None:
         content = get_help_content(self._current_page_name)

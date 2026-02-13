@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 class HeaderBar(QFrame):
     lock_requested = Signal()
     help_requested = Signal()
+    menu_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -21,6 +22,14 @@ class HeaderBar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 10, 20, 10)
         layout.setSpacing(10)
+
+        self.menu_button = QToolButton()
+        self.menu_button.setObjectName("MenuButton")
+        self.menu_button.setText(self.tr("منو"))
+        self.menu_button.setToolTip(self.tr("نمایش/پنهان کردن نوار کناری"))
+        self.menu_button.clicked.connect(self.menu_requested.emit)
+        self.menu_button.setVisible(False)
+        layout.addWidget(self.menu_button)
 
         title = QLabel(self.tr("حسابداری و انبار"))
         title.setObjectName("AppTitle")
@@ -50,3 +59,6 @@ class HeaderBar(QFrame):
 
     def set_theme_label(self, theme: str) -> None:
         pass
+
+    def set_menu_button_visible(self, visible: bool) -> None:
+        self.menu_button.setVisible(visible)
