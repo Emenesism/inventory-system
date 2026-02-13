@@ -265,12 +265,14 @@ class MainWindow(QMainWindow):
             )
             self.invoices_page.set_price_visibility(False)
             self.invoices_page.set_edit_enabled(False)
+            self.analytics_page.set_accessible(False)
             self.actions_page.set_accessible(False)
             self.reports_page.set_accessible(False)
         else:
             self.inventory_page.set_blocked_columns(None)
             self.invoices_page.set_price_visibility(True)
             self.invoices_page.set_edit_enabled(True)
+            self.analytics_page.set_accessible(True)
             self.actions_page.set_accessible(True)
             self.reports_page.set_accessible(True)
 

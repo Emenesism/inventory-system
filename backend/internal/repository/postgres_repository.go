@@ -842,6 +842,171 @@ func (r *Repository) GetMonthlySummary(ctx context.Context, limit int) ([]domain
 	return list, nil
 }
 
+func (r *Repository) GetMonthlyQuantitySummary(ctx context.Context, limit int) ([]domain.MonthlyQuantitySummary, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	if limit > 120 {
+		limit = 120
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
+			COALESCE(SUM(CASE WHEN invoice_type LIKE 'sales%' THEN total_qty ELSE 0 END), 0)::int AS sales_qty,
+			COALESCE(SUM(CASE WHEN invoice_type = 'purchase' THEN total_qty ELSE 0 END), 0)::int AS purchase_qty,
+			COUNT(CASE WHEN invoice_type LIKE 'sales%' THEN 1 END)::int AS sales_invoices,
+			COUNT(CASE WHEN invoice_type = 'purchase' THEN 1 END)::int AS purchase_invoices
+		FROM invoices
+		GROUP BY 1
+		ORDER BY month DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("monthly quantity summary query: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]domain.MonthlyQuantitySummary, 0, limit)
+	for rows.Next() {
+		var row domain.MonthlyQuantitySummary
+		if err := rows.Scan(
+			&row.Month,
+			&row.SalesQty,
+			&row.PurchaseQty,
+			&row.SalesInvoices,
+			&row.PurchaseInvoices,
+		); err != nil {
+			return nil, fmt.Errorf("scan monthly quantity summary: %w", err)
+		}
+		row.NetQty = row.PurchaseQty - row.SalesQty
+		list = append(list, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monthly quantity summary: %w", err)
+	}
+	return list, nil
+}
+
+func (r *Repository) GetTopSoldProducts(ctx context.Context, days, limit int) ([]domain.TopSoldProduct, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			il.product_name,
+			COALESCE(SUM(il.quantity), 0)::int AS sold_qty,
+			COUNT(DISTINCT i.id)::int AS invoice_count,
+			MAX(i.created_at) AS last_sold_at
+		FROM invoices i
+		JOIN invoice_lines il ON il.invoice_id = i.id
+		WHERE
+			i.invoice_type LIKE 'sales%'
+			AND ($1::int <= 0 OR i.created_at >= NOW() - ($1 * INTERVAL '1 day'))
+		GROUP BY il.product_name
+		ORDER BY sold_qty DESC, il.product_name ASC
+		LIMIT $2
+	`, days, limit)
+	if err != nil {
+		return nil, fmt.Errorf("top sold products query: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]domain.TopSoldProduct, 0, limit)
+	for rows.Next() {
+		var (
+			row      domain.TopSoldProduct
+			lastSold sql.NullTime
+		)
+		if err := rows.Scan(
+			&row.ProductName,
+			&row.SoldQty,
+			&row.InvoiceCount,
+			&lastSold,
+		); err != nil {
+			return nil, fmt.Errorf("scan top sold product: %w", err)
+		}
+		if lastSold.Valid {
+			value := lastSold.Time
+			row.LastSoldAt = &value
+		}
+		list = append(list, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top sold products: %w", err)
+	}
+	return list, nil
+}
+
+func (r *Repository) GetUnsoldProducts(ctx context.Context, days, limit int) ([]domain.UnsoldProduct, error) {
+	if days <= 0 {
+		days = 30
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		WITH sold_recent AS (
+			SELECT DISTINCT LOWER(TRIM(il.product_name)) AS product_name_normalized
+			FROM invoices i
+			JOIN invoice_lines il ON il.invoice_id = i.id
+			WHERE
+				i.invoice_type LIKE 'sales%'
+				AND i.created_at >= NOW() - ($1 * INTERVAL '1 day')
+		)
+		SELECT
+			p.product_name,
+			p.quantity,
+			p.avg_buy_price::double precision,
+			p.source,
+			p.updated_at
+		FROM products p
+		LEFT JOIN sold_recent s
+			ON s.product_name_normalized = LOWER(TRIM(p.product_name))
+		WHERE s.product_name_normalized IS NULL
+		ORDER BY p.quantity DESC, p.product_name ASC
+		LIMIT $2
+	`, days, limit)
+	if err != nil {
+		return nil, fmt.Errorf("unsold products query: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]domain.UnsoldProduct, 0, limit)
+	for rows.Next() {
+		var (
+			row    domain.UnsoldProduct
+			source sql.NullString
+		)
+		if err := rows.Scan(
+			&row.ProductName,
+			&row.Quantity,
+			&row.AvgBuyPrice,
+			&source,
+			&row.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan unsold product: %w", err)
+		}
+		if source.Valid {
+			value := source.String
+			row.Source = &value
+		}
+		list = append(list, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate unsold products: %w", err)
+	}
+	return list, nil
+}
+
 func scanProduct(rows pgx.CollectableRow) (domain.Product, error) {
 	return scanProductRow(rows)
 }

@@ -526,6 +526,58 @@ func (h *Handler) MonthlySummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": data, "count": len(data)})
 }
 
+func (h *Handler) MonthlyQuantitySummary(w http.ResponseWriter, r *http.Request) {
+	limit, err := parseOptionalInt(r.URL.Query().Get("limit"), 12)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	data, err := h.svc.MonthlyQuantitySummary(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": data, "count": len(data)})
+}
+
+func (h *Handler) TopSoldProducts(w http.ResponseWriter, r *http.Request) {
+	days, err := parseOptionalInt(r.URL.Query().Get("days"), 90)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := parseOptionalInt(r.URL.Query().Get("limit"), 10)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, err := h.svc.TopSoldProducts(r.Context(), days, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+}
+
+func (h *Handler) UnsoldProducts(w http.ResponseWriter, r *http.Request) {
+	days, err := parseOptionalInt(r.URL.Query().Get("days"), 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := parseOptionalInt(r.URL.Query().Get("limit"), 200)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, err := h.svc.UnsoldProducts(r.Context(), days, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+}
+
 type salesPreviewRequest struct {
 	Rows []domain.SalesPreviewRow `json:"rows"`
 }

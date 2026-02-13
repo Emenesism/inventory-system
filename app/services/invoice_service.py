@@ -295,6 +295,45 @@ class InvoiceService:
         items = payload.get("items", []) if isinstance(payload, dict) else []
         return [item for item in items if isinstance(item, dict)]
 
+    def get_monthly_quantity_summary(
+        self, limit: int = 12
+    ) -> list[dict[str, int | str]]:
+        try:
+            payload = self._client.get(
+                "/api/v1/analytics/monthly-qty",
+                params={"limit": limit},
+            )
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    def get_top_sold_products(
+        self, days: int = 90, limit: int = 10
+    ) -> list[dict[str, object]]:
+        try:
+            payload = self._client.get(
+                "/api/v1/analytics/top-products",
+                params={"days": days, "limit": limit},
+            )
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    def get_unsold_products(
+        self, days: int = 30, limit: int = 200
+    ) -> list[dict[str, object]]:
+        try:
+            payload = self._client.get(
+                "/api/v1/analytics/unsold-products",
+                params={"days": days, "limit": limit},
+            )
+        except BackendAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
     @staticmethod
     def _to_summary(raw: dict[str, object]) -> InvoiceSummary:
         return InvoiceSummary(

@@ -136,6 +136,18 @@ func (s *Service) MonthlySummary(ctx context.Context, limit int) ([]domain.Month
 	return s.repo.GetMonthlySummary(ctx, limit)
 }
 
+func (s *Service) MonthlyQuantitySummary(ctx context.Context, limit int) ([]domain.MonthlyQuantitySummary, error) {
+	return s.repo.GetMonthlyQuantitySummary(ctx, limit)
+}
+
+func (s *Service) TopSoldProducts(ctx context.Context, days, limit int) ([]domain.TopSoldProduct, error) {
+	return s.repo.GetTopSoldProducts(ctx, days, limit)
+}
+
+func (s *Service) UnsoldProducts(ctx context.Context, days, limit int) ([]domain.UnsoldProduct, error) {
+	return s.repo.GetUnsoldProducts(ctx, days, limit)
+}
+
 func (s *Service) InvoiceStats(ctx context.Context) (int, float64, error) {
 	return s.repo.GetInvoiceStats(ctx)
 }

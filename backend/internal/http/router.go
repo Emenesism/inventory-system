@@ -41,6 +41,9 @@ func NewRouter(handler *Handler) http.Handler {
 		r.Post("/invoices/rename-products", handler.RenameProducts)
 
 		r.Get("/analytics/monthly", handler.MonthlySummary)
+		r.Get("/analytics/monthly-qty", handler.MonthlyQuantitySummary)
+		r.Get("/analytics/top-products", handler.TopSoldProducts)
+		r.Get("/analytics/unsold-products", handler.UnsoldProducts)
 		r.Post("/sales/preview", handler.SalesPreview)
 		r.Post("/basalam/order-ids/check", handler.BasalamCheckExistingIDs)
 		r.Post("/basalam/order-ids/store", handler.BasalamStoreIDs)

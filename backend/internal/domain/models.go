@@ -43,6 +43,30 @@ type MonthlySummary struct {
 	InvoiceCount  int     `json:"invoice_count"`
 }
 
+type MonthlyQuantitySummary struct {
+	Month            string `json:"month"`
+	SalesQty         int    `json:"sales_qty"`
+	PurchaseQty      int    `json:"purchase_qty"`
+	NetQty           int    `json:"net_qty"`
+	SalesInvoices    int    `json:"sales_invoices"`
+	PurchaseInvoices int    `json:"purchase_invoices"`
+}
+
+type TopSoldProduct struct {
+	ProductName  string     `json:"product_name"`
+	SoldQty      int        `json:"sold_qty"`
+	InvoiceCount int        `json:"invoice_count"`
+	LastSoldAt   *time.Time `json:"last_sold_at,omitempty"`
+}
+
+type UnsoldProduct struct {
+	ProductName string    `json:"product_name"`
+	Quantity    int       `json:"quantity"`
+	AvgBuyPrice float64   `json:"avg_buy_price"`
+	Source      *string   `json:"source,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type PurchaseLineInput struct {
 	ProductName string  `json:"product_name"`
 	Price       float64 `json:"price"`
