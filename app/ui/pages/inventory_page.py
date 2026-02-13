@@ -138,9 +138,14 @@ class InventoryPage(QWidget):
         lazy_enabled = row_count > 500
         self._lazy_enabled_default = lazy_enabled
         chunk_size = 200 if row_count <= 2000 else 500
+        header_labels = {
+            str(column): self._localized_header_label(str(column))
+            for column in dataframe.columns
+        }
         self._model = DataFrameTableModel(
             dataframe,
             editable_columns=active_editable,
+            header_labels=header_labels,
             lazy_load=lazy_enabled,
             chunk_size=chunk_size,
         )
@@ -371,3 +376,17 @@ class InventoryPage(QWidget):
         if normalized in {"source", "منبع"}:
             return 180
         return 140
+
+    def _localized_header_label(self, column_name: str) -> str:
+        normalized = (
+            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+        mapping = {
+            "product_name": self.tr("نام کالا"),
+            "quantity": self.tr("تعداد"),
+            "avg_buy_price": self.tr("میانگین قیمت خرید"),
+            "last_buy_price": self.tr("آخرین قیمت خرید"),
+            "alarm": self.tr("آلارم"),
+            "source": self.tr("منبع"),
+        }
+        return mapping.get(normalized, str(column_name))

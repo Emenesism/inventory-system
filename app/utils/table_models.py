@@ -19,6 +19,7 @@ class DataFrameTableModel(QAbstractTableModel):
         self,
         dataframe: pd.DataFrame,
         editable_columns: list[str] | None = None,
+        header_labels: dict[str, str] | None = None,
         lazy_load: bool = False,
         chunk_size: int = 400,
     ) -> None:
@@ -26,6 +27,11 @@ class DataFrameTableModel(QAbstractTableModel):
         self._full_dataframe = dataframe.copy()
         self._editable_columns = (
             set(editable_columns) if editable_columns else None
+        )
+        self._header_labels = (
+            {str(key): str(value) for key, value in header_labels.items()}
+            if header_labels
+            else {}
         )
         self._lazy_enabled = bool(lazy_load)
         self._chunk_size = max(int(chunk_size), 1)
@@ -96,6 +102,10 @@ class DataFrameTableModel(QAbstractTableModel):
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal:
+            column_key = str(self._full_dataframe.columns[section])
+            localized = self._header_labels.get(column_key)
+            if localized:
+                return localized
             return (
                 str(self._full_dataframe.columns[section])
                 .replace("_", " ")
