@@ -43,3 +43,6 @@ backend/tmp/
 .DS_Store
 Thumbs.db
 *.sql
+
+
+*.pdf

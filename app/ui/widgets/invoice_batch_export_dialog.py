@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMenu,
@@ -209,6 +210,12 @@ class InvoiceBatchExportDialog(QDialog):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        for col in range(self.table.columnCount()):
+            header_item = self.table.horizontalHeaderItem(col)
+            if header_item is not None:
+                header_item.setTextAlignment(Qt.AlignCenter)
         self.table.verticalHeader().setDefaultSectionSize(30)
         table_layout.addWidget(self.table)
         layout.addWidget(table_card, 1)
@@ -285,29 +292,28 @@ class InvoiceBatchExportDialog(QDialog):
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self._invoices))
         for row_idx, invoice in enumerate(self._invoices):
-            self.table.setItem(
-                row_idx, 0, QTableWidgetItem(str(invoice.invoice_id))
+            id_item = QTableWidgetItem(str(invoice.invoice_id))
+            id_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_idx, 0, id_item)
+
+            date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
+            date_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_idx, 1, date_item)
+
+            type_item = QTableWidgetItem(
+                self._format_invoice_type(invoice.invoice_type)
             )
-            self.table.setItem(
-                row_idx,
-                1,
-                QTableWidgetItem(to_jalali_datetime(invoice.created_at)),
-            )
-            self.table.setItem(
-                row_idx,
-                2,
-                QTableWidgetItem(
-                    self._format_invoice_type(invoice.invoice_type)
-                ),
-            )
+            type_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_idx, 2, type_item)
+
             lines_item = QTableWidgetItem(str(invoice.total_lines))
-            lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lines_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 3, lines_item)
             qty_item = QTableWidgetItem(str(invoice.total_qty))
-            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            qty_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 4, qty_item)
             total_item = QTableWidgetItem(format_amount(invoice.total_amount))
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            total_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 5, total_item)
         self.summary_label.setText(
             self.tr("فاکتورها: {count}").format(count=len(self._invoices))

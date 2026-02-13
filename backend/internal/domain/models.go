@@ -56,12 +56,12 @@ type SalesLineInput struct {
 }
 
 type InventoryImportRow struct {
-	ProductName  string
-	Quantity     int
-	AvgBuyPrice  float64
-	LastBuyPrice float64
-	Alarm        *int
-	Source       *string
+	ProductName  string  `json:"product_name"`
+	Quantity     int     `json:"quantity"`
+	AvgBuyPrice  float64 `json:"avg_buy_price"`
+	LastBuyPrice float64 `json:"last_buy_price"`
+	Alarm        *int    `json:"alarm,omitempty"`
+	Source       *string `json:"source,omitempty"`
 }
 
 type LowStockRow struct {
