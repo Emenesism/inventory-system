@@ -112,12 +112,19 @@ class InvoiceService:
         return int(response.get("invoice_id", 0))
 
     def list_invoices(
-        self, limit: int = 200, offset: int = 0
+        self,
+        limit: int = 200,
+        offset: int = 0,
+        invoice_type: str | None = None,
     ) -> list[InvoiceSummary]:
+        params: dict[str, object] = {"limit": limit, "offset": offset}
+        selected_type = str(invoice_type or "").strip()
+        if selected_type:
+            params["type"] = selected_type
         try:
             payload = self._client.get(
                 "/api/v1/invoices",
-                params={"limit": limit, "offset": offset},
+                params=params,
             )
         except BackendAPIError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -250,9 +257,15 @@ class InvoiceService:
         count, _ = self.get_invoice_stats()
         return count
 
-    def get_invoice_stats(self) -> tuple[int, float]:
+    def get_invoice_stats(
+        self, invoice_type: str | None = None
+    ) -> tuple[int, float]:
+        params: dict[str, object] = {}
+        selected_type = str(invoice_type or "").strip()
+        if selected_type:
+            params["type"] = selected_type
         try:
-            payload = self._client.get("/api/v1/invoices/stats")
+            payload = self._client.get("/api/v1/invoices/stats", params=params)
         except BackendAPIError as exc:
             raise RuntimeError(str(exc)) from exc
         return int(payload.get("count", 0)), float(
