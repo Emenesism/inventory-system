@@ -78,6 +78,7 @@ class PurchaseInvoicePage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.product_provider: Callable[[], list[str]] | None = None
+        self.sell_price_provider: Callable[[str], float | None] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -154,6 +155,11 @@ class PurchaseInvoicePage(QWidget):
     def set_product_provider(self, provider: Callable[[], list[str]]) -> None:
         self.product_provider = provider
 
+    def set_sell_price_provider(
+        self, provider: Callable[[str], float | None]
+    ) -> None:
+        self.sell_price_provider = provider
+
     def add_row(self) -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -167,7 +173,7 @@ class PurchaseInvoicePage(QWidget):
         )
         product_input.setMinimumHeight(32)
         product_input.textChanged.connect(
-            lambda text, widget=product_input: self._update_completer(
+            lambda text, widget=product_input: self._on_product_text_changed(
                 text, widget
             )
         )
@@ -192,10 +198,25 @@ class PurchaseInvoicePage(QWidget):
         price_input.setGroupSeparatorShown(True)
         price_input.installEventFilter(self)
 
+        price_cell = QWidget()
+        price_layout = QHBoxLayout(price_cell)
+        price_layout.setContentsMargins(0, 0, 0, 0)
+        price_layout.setSpacing(8)
+        sell_price_hint = QLabel(self.tr("فروش: -"))
+        sell_price_hint.setProperty("sellPriceHint", True)
+        sell_price_hint.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        sell_price_hint.setMinimumHeight(32)
+        sell_price_hint.setMinimumWidth(140)
+        price_layout.addWidget(price_input, 1)
+        price_layout.addWidget(sell_price_hint, 0)
+        price_cell.setProperty("price_input", price_input)
+        price_cell.setProperty("sell_price_hint", sell_price_hint)
+
         self.table.setCellWidget(row, 0, product_input)
         self.table.setCellWidget(row, 1, quantity_input)
-        self.table.setCellWidget(row, 2, price_input)
+        self.table.setCellWidget(row, 2, price_cell)
         product_input.setFocus()
+        self._set_sell_price_hint_for_row(row, "")
 
     def _advance_row(self) -> None:
         row = self.table.currentRow()
@@ -234,11 +255,17 @@ class PurchaseInvoicePage(QWidget):
             if not isinstance(product_widget, QLineEdit):
                 continue
             product_name = product_widget.text().strip()
-            price = (
-                price_widget.value()
-                if isinstance(price_widget, QSpinBox)
-                else 0
-            )
+            price = 0
+            if isinstance(price_widget, QSpinBox):
+                price = price_widget.value()
+            else:
+                price_input = (
+                    price_widget.property("price_input")
+                    if price_widget is not None
+                    else None
+                )
+                if isinstance(price_input, QSpinBox):
+                    price = price_input.value()
             quantity = (
                 qty_widget.value() if isinstance(qty_widget, QSpinBox) else 0
             )
@@ -261,6 +288,13 @@ class PurchaseInvoicePage(QWidget):
 
     def _emit_submit(self) -> None:
         self.submit_requested.emit(self.collect_lines())
+
+    def _on_product_text_changed(self, text: str, widget: QLineEdit) -> None:
+        self._update_completer(text, widget)
+        row = self._row_for_product_widget(widget)
+        if row is None:
+            return
+        self._set_sell_price_hint_for_row(row, text)
 
     def _update_completer(self, text: str, widget: QLineEdit) -> None:
         if not self.product_provider:
@@ -290,3 +324,28 @@ class PurchaseInvoicePage(QWidget):
             else:
                 completer.setModel(QStringListModel(matches))
         completer.complete()
+
+    def _row_for_product_widget(self, widget: QLineEdit) -> int | None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 0) is widget:
+                return row
+        return None
+
+    def _set_sell_price_hint_for_row(self, row: int, product_name: str) -> None:
+        price_cell = self.table.cellWidget(row, 2)
+        if price_cell is None:
+            return
+        hint = price_cell.property("sell_price_hint")
+        if not isinstance(hint, QLabel):
+            return
+        name = str(product_name or "").strip()
+        if not name or self.sell_price_provider is None:
+            hint.setText(self.tr("فروش: -"))
+            return
+        sell_price = self.sell_price_provider(name)
+        if sell_price is None:
+            hint.setText(self.tr("فروش: -"))
+            return
+        hint.setText(
+            self.tr("فروش: {amount}").format(amount=format_amount(sell_price))
+        )
