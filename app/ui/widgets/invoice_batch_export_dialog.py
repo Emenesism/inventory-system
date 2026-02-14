@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -46,11 +47,17 @@ class JalaliDatePicker(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self.year_combo = QComboBox()
         self.month_combo = QComboBox()
         self.day_combo = QComboBox()
+        self.year_combo.setMinimumWidth(84)
+        self.month_combo.setMinimumWidth(58)
+        self.day_combo.setMinimumWidth(58)
+        self.year_combo.setMinimumHeight(32)
+        self.month_combo.setMinimumHeight(32)
+        self.day_combo.setMinimumHeight(32)
 
         for year in range(1390, 1451):
             self.year_combo.addItem(str(year), year)
@@ -144,40 +151,55 @@ class InvoiceBatchExportDialog(QDialog):
         date_card.setObjectName("Card")
         date_layout = QVBoxLayout(date_card)
         date_layout.setContentsMargins(16, 16, 16, 16)
-        date_layout.setSpacing(10)
+        date_layout.setSpacing(12)
 
-        row = QHBoxLayout()
-        row.addWidget(QLabel(self.tr("از:")))
         self.from_date = JalaliDatePicker()
-        row.addWidget(self.from_date)
-        row.addSpacing(20)
-        row.addWidget(QLabel(self.tr("تا:")))
         self.to_date = JalaliDatePicker()
-        row.addWidget(self.to_date)
-        row.addStretch(1)
-        date_layout.addLayout(row)
-
-        id_row = QHBoxLayout()
-        id_row.addWidget(QLabel(self.tr("شماره فاکتور از:")))
         self.invoice_id_from = QLineEdit()
         self.invoice_id_from.setPlaceholderText(self.tr("از (اختیاری)"))
         self.invoice_id_from.setValidator(QIntValidator(1, 999999999, self))
-        id_row.addWidget(self.invoice_id_from)
-        id_row.addSpacing(20)
-        id_row.addWidget(QLabel(self.tr("شماره فاکتور تا:")))
+        self.invoice_id_from.setMaximumWidth(280)
         self.invoice_id_to = QLineEdit()
         self.invoice_id_to.setPlaceholderText(self.tr("تا (اختیاری)"))
         self.invoice_id_to.setValidator(QIntValidator(1, 999999999, self))
-        id_row.addWidget(self.invoice_id_to)
-        id_row.addStretch(1)
-        date_layout.addLayout(id_row)
-
-        product_row = QHBoxLayout()
-        product_row.addWidget(QLabel(self.tr("کالا:")))
+        self.invoice_id_to.setMaximumWidth(280)
         self.product_input = QLineEdit()
         self.product_input.setPlaceholderText(self.tr("کالا (اختیاری)"))
-        product_row.addWidget(self.product_input, 1)
-        date_layout.addLayout(product_row)
+
+        filters_grid = QGridLayout()
+        filters_grid.setContentsMargins(0, 0, 0, 0)
+        filters_grid.setHorizontalSpacing(14)
+        filters_grid.setVerticalSpacing(10)
+        filters_grid.addWidget(
+            self._create_filter_field(self.tr("از تاریخ"), self.from_date), 0, 0
+        )
+        filters_grid.addWidget(
+            self._create_filter_field(self.tr("تا تاریخ"), self.to_date), 0, 1
+        )
+        filters_grid.addWidget(
+            self._create_filter_field(
+                self.tr("شماره فاکتور از"), self.invoice_id_from
+            ),
+            1,
+            0,
+        )
+        filters_grid.addWidget(
+            self._create_filter_field(
+                self.tr("شماره فاکتور تا"), self.invoice_id_to
+            ),
+            1,
+            1,
+        )
+        filters_grid.addWidget(
+            self._create_filter_field(self.tr("کالا"), self.product_input),
+            2,
+            0,
+            1,
+            2,
+        )
+        filters_grid.setColumnStretch(0, 1)
+        filters_grid.setColumnStretch(1, 1)
+        date_layout.addLayout(filters_grid)
 
         self.product_hint = QLabel("")
         self.product_hint.setProperty("textRole", "muted")
@@ -245,6 +267,17 @@ class InvoiceBatchExportDialog(QDialog):
         self.product_input.textChanged.connect(self._reload)
         self._setup_product_completer()
         self._reload()
+
+    def _create_filter_field(self, label_text: str, field: QWidget) -> QWidget:
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(6)
+        label = QLabel(label_text)
+        label.setProperty("fieldLabel", True)
+        wrapper_layout.addWidget(label)
+        wrapper_layout.addWidget(field)
+        return wrapper
 
     def _reload(self) -> None:
         start_dt = self.from_date.to_gregorian_datetime(end_of_day=False)

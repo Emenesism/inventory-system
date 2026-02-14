@@ -238,6 +238,11 @@ QProgressBar::chunk {
 QLabel[textRole="muted"] {
     color: #6B7280;
 }
+QLabel[fieldLabel="true"] {
+    color: #334155;
+    font-size: 11px;
+    font-weight: 600;
+}
 QLabel[textRole="muted"][size="small"] {
     color: #6B7280;
     font-size: 11px;
@@ -548,6 +553,11 @@ QProgressBar::chunk {
 }
 QLabel[textRole="muted"] {
     color: #94A3B8;
+}
+QLabel[fieldLabel="true"] {
+    color: #CBD5E1;
+    font-size: 11px;
+    font-weight: 600;
 }
 QLabel[textRole="muted"][size="small"] {
     color: #94A3B8;
