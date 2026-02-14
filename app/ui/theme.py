@@ -156,6 +156,25 @@ QPushButton[variant="secondary"] {
 QPushButton[variant="secondary"]:hover {
     background: #D1D5DB;
 }
+QPushButton[chip="true"] {
+    background: #F8FAFC;
+    color: #334155;
+    border: 1px solid #CBD5E1;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-weight: 600;
+}
+QPushButton[chip="true"]:hover {
+    background: #F1F5F9;
+}
+QPushButton[chip="true"][active="true"] {
+    background: #DBEAFE;
+    color: #1D4ED8;
+    border: 1px solid #93C5FD;
+}
+QPushButton[chip="true"][active="true"]:hover {
+    background: #BFDBFE;
+}
 QTableView {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
@@ -417,6 +436,25 @@ QPushButton[variant="secondary"] {
 }
 QPushButton[variant="secondary"]:hover {
     background: #334155;
+}
+QPushButton[chip="true"] {
+    background: #0F172A;
+    color: #CBD5E1;
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-weight: 600;
+}
+QPushButton[chip="true"]:hover {
+    background: #1E293B;
+}
+QPushButton[chip="true"][active="true"] {
+    background: #1E3A8A;
+    color: #DBEAFE;
+    border: 1px solid #3B82F6;
+}
+QPushButton[chip="true"][active="true"]:hover {
+    background: #1D4ED8;
 }
 QTableView {
     background: #0B1220;
