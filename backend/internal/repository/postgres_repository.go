@@ -664,7 +664,11 @@ func (r *Repository) ListInvoices(ctx context.Context, filter InvoiceListFilter)
 			invoice_name,
 			admin_username
 		FROM invoices
-		WHERE ($1 = '' OR invoice_type = $1)
+		WHERE (
+			$1 = ''
+			OR ($1 = 'sales' AND invoice_type LIKE 'sales%')
+			OR invoice_type = $1
+		)
 	`
 	args := []any{strings.TrimSpace(filter.InvoiceType)}
 	idx := 2
