@@ -59,6 +59,17 @@ class InvoicesPage(QWidget):
         self._loading_more = False
         self._show_prices = True
         self._can_edit = False
+        self._invoice_filters: list[tuple[str, str, str]] = [
+            ("all", self.tr("همه"), ""),
+            ("sales_all", self.tr("همه فروش‌ها"), "sales"),
+            ("purchase", self.tr("همه خریدها"), "purchase"),
+            ("sales_manual", self.tr("فروش دستی"), "sales_manual"),
+            ("sales_site", self.tr("فروش سایت"), "sales_site"),
+            ("sales_basalam", self.tr("فروش باسلام"), "sales_basalam"),
+        ]
+        self._active_filter_key = "all"
+        self._active_filter_type = ""
+        self._filter_buttons: dict[str, QPushButton] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -116,6 +127,35 @@ class InvoicesPage(QWidget):
         summary_layout.addWidget(self.total_amount_label)
         summary_layout.addStretch(1)
         layout.addWidget(summary_card)
+
+        filter_card = QFrame()
+        filter_card.setObjectName("Card")
+        filter_layout = QVBoxLayout(filter_card)
+        filter_layout.setContentsMargins(16, 12, 16, 12)
+        filter_layout.setSpacing(8)
+
+        filter_title = QLabel(self.tr("فیلتر نمایش"))
+        filter_title.setStyleSheet("font-weight: 600;")
+        filter_layout.addWidget(filter_title)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        for key, label, _ in self._invoice_filters:
+            button = QPushButton(label)
+            button.setProperty("chip", True)
+            button.clicked.connect(
+                lambda _=False, selected=key: self._set_filter(selected)
+            )
+            filter_row.addWidget(button)
+            self._filter_buttons[key] = button
+        filter_row.addStretch(1)
+        filter_layout.addLayout(filter_row)
+
+        self.filter_hint_label = QLabel("")
+        self.filter_hint_label.setProperty("textRole", "muted")
+        filter_layout.addWidget(self.filter_hint_label)
+        layout.addWidget(filter_card)
+        self._update_filter_buttons()
 
         list_card = QFrame()
         list_card.setObjectName("Card")
@@ -219,13 +259,17 @@ class InvoicesPage(QWidget):
     def refresh(self) -> None:
         self.invoices = []
         self._loaded_count = 0
+        self._loading_more = False
         self._total_count, self._total_amount = (
-            self.invoice_service.get_invoice_stats()
+            self.invoice_service.get_invoice_stats(
+                invoice_type=self._active_filter_type
+            )
         )
         self.total_invoices_label.setText(
             self.tr("تعداد فاکتورها: {count}").format(count=self._total_count)
         )
         self._set_total_amount_label()
+        self._set_filter_hint()
         self.invoices_table.blockSignals(True)
         self.invoices_table.setRowCount(0)
         self.invoices_table.blockSignals(False)
@@ -235,6 +279,56 @@ class InvoicesPage(QWidget):
         self.lines_table.setRowCount(0)
         self._load_more()
         self._update_action_buttons()
+
+    def _set_filter(self, filter_key: str) -> None:
+        if filter_key == self._active_filter_key:
+            return
+        if self._filter_meta(filter_key) is None:
+            return
+        self._active_filter_key = filter_key
+        self._active_filter_type = self._filter_type(filter_key)
+        self._update_filter_buttons()
+        self.refresh()
+
+    def _filter_meta(self, filter_key: str) -> tuple[str, str, str] | None:
+        for key, label, invoice_type in self._invoice_filters:
+            if key == filter_key:
+                return key, label, invoice_type
+        return None
+
+    def _filter_label(self, filter_key: str) -> str:
+        meta = self._filter_meta(filter_key)
+        if meta is None:
+            return self.tr("همه")
+        return meta[1]
+
+    def _filter_type(self, filter_key: str) -> str:
+        meta = self._filter_meta(filter_key)
+        if meta is None:
+            return ""
+        return meta[2]
+
+    def _set_filter_hint(self) -> None:
+        self.filter_hint_label.setText(
+            self.tr("فیلتر فعال: {label} | نتیجه: {count}").format(
+                label=self._filter_label(self._active_filter_key),
+                count=self._total_count,
+            )
+        )
+
+    def _update_filter_buttons(self) -> None:
+        for key, button in self._filter_buttons.items():
+            button.setProperty("active", key == self._active_filter_key)
+            self._refresh_widget_style(button)
+
+    @staticmethod
+    def _refresh_widget_style(widget: QWidget) -> None:
+        style = widget.style()
+        if style is None:
+            return
+        style.unpolish(widget)
+        style.polish(widget)
+        widget.update()
 
     def _show_selected_details(self) -> None:
         row = self.invoices_table.currentRow()
@@ -319,7 +413,9 @@ class InvoicesPage(QWidget):
             return
         self._loading_more = True
         batch = self.invoice_service.list_invoices(
-            limit=self._page_size, offset=self._loaded_count
+            limit=self._page_size,
+            offset=self._loaded_count,
+            invoice_type=self._active_filter_type,
         )
         if not batch:
             self._loading_more = False
