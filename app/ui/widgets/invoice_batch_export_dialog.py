@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import QPoint, Qt
@@ -306,12 +307,23 @@ class InvoiceBatchExportDialog(QDialog):
         details_layout.addWidget(inventory_title)
 
         self.inventory_details_label = QLabel(
-            self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+            self._muted_html(
+                self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+            )
         )
         self.inventory_details_label.setProperty("textRole", "muted")
         self.inventory_details_label.setWordWrap(True)
+        self.inventory_details_label.setTextFormat(Qt.RichText)
         self.inventory_details_label.setTextInteractionFlags(
             Qt.TextSelectableByMouse
+        )
+        self.inventory_details_label.setStyleSheet(
+            "QLabel {"
+            "background: #f8fafc;"
+            "border: 1px solid #e2e8f0;"
+            "border-radius: 8px;"
+            "padding: 10px;"
+            "}"
         )
         details_layout.addWidget(self.inventory_details_label)
 
@@ -320,12 +332,25 @@ class InvoiceBatchExportDialog(QDialog):
         details_layout.addWidget(action_title)
 
         self.action_details_label = QLabel(
-            self.tr("برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید.")
+            self._muted_html(
+                self.tr(
+                    "برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید."
+                )
+            )
         )
         self.action_details_label.setProperty("textRole", "muted")
         self.action_details_label.setWordWrap(True)
+        self.action_details_label.setTextFormat(Qt.RichText)
         self.action_details_label.setTextInteractionFlags(
             Qt.TextSelectableByMouse
+        )
+        self.action_details_label.setStyleSheet(
+            "QLabel {"
+            "background: #f8fafc;"
+            "border: 1px solid #e2e8f0;"
+            "border-radius: 8px;"
+            "padding: 10px;"
+            "}"
         )
         details_layout.addWidget(self.action_details_label)
 
@@ -612,15 +637,19 @@ class InvoiceBatchExportDialog(QDialog):
     ) -> None:
         if match is None:
             self.inventory_details_label.setText(
-                self.tr(
-                    "برای مشاهده جزئیات موجودی، یک کالای معتبر انتخاب کنید."
+                self._muted_html(
+                    self.tr(
+                        "برای مشاهده جزئیات موجودی، یک کالای معتبر انتخاب کنید."
+                    )
                 )
             )
             return
         if not self.inventory_service or not self.inventory_service.is_loaded():
             self.inventory_details_label.setText(
-                self.tr(
-                    "موجودی بارگذاری نشده است؛ جزئیات موجودی در دسترس نیست."
+                self._muted_html(
+                    self.tr(
+                        "موجودی بارگذاری نشده است؛ جزئیات موجودی در دسترس نیست."
+                    )
                 )
             )
             return
@@ -628,8 +657,10 @@ class InvoiceBatchExportDialog(QDialog):
         idx = self.inventory_service.find_index(match.product_name)
         if idx is None:
             self.inventory_details_label.setText(
-                self.tr("کالا در موجودی پیدا نشد: {name}").format(
-                    name=match.product_name
+                self._muted_html(
+                    self.tr("کالا در موجودی پیدا نشد: {name}").format(
+                        name=match.product_name
+                    )
                 )
             )
             return
@@ -637,13 +668,15 @@ class InvoiceBatchExportDialog(QDialog):
             df = self.inventory_service.get_dataframe()
         except Exception:  # noqa: BLE001
             self.inventory_details_label.setText(
-                self.tr("خواندن جزئیات موجودی ناموفق بود.")
+                self._muted_html(self.tr("خواندن جزئیات موجودی ناموفق بود."))
             )
             return
         if idx not in df.index:
             self.inventory_details_label.setText(
-                self.tr("کالا در موجودی پیدا نشد: {name}").format(
-                    name=match.product_name
+                self._muted_html(
+                    self.tr("کالا در موجودی پیدا نشد: {name}").format(
+                        name=match.product_name
+                    )
                 )
             )
             return
@@ -661,34 +694,30 @@ class InvoiceBatchExportDialog(QDialog):
             else str(source_raw).strip()
         )
         self.inventory_details_label.setText(
-            self.tr(
-                "کالا: {name}\n"
-                "موجودی فعلی: {qty}\n"
-                "میانگین خرید: {avg}\n"
-                "آخرین خرید: {last}\n"
-                "قیمت فروش: {sell}\n"
-                "حد هشدار: {alarm}\n"
-                "منبع: {source}"
-            ).format(
-                name=match.product_name,
-                qty=f"{self._safe_int(row.get('quantity')):,}",
-                avg=format_amount(self._safe_float(row.get("avg_buy_price"))),
-                last=format_amount(self._safe_float(row.get("last_buy_price"))),
-                sell=format_amount(self._safe_float(row.get("sell_price"))),
-                alarm=alarm,
-                source=source,
+            self._format_inventory_details_html(
+                match.product_name,
+                f"{self._safe_int(row.get('quantity')):,}",
+                format_amount(self._safe_float(row.get("avg_buy_price"))),
+                format_amount(self._safe_float(row.get("last_buy_price"))),
+                format_amount(self._safe_float(row.get("sell_price"))),
+                alarm,
+                source,
             )
         )
 
     def _show_inventory_action_details(self, product_name: str) -> None:
         if not product_name:
             self.action_details_label.setText(
-                self.tr("برای مشاهده تغییرات موجودی، یک کالا را انتخاب کنید.")
+                self._muted_html(
+                    self.tr(
+                        "برای مشاهده تغییرات موجودی، یک کالا را انتخاب کنید."
+                    )
+                )
             )
             return
         if not self.action_log_service:
             self.action_details_label.setText(
-                self.tr("اطلاعات اقدامات در دسترس نیست.")
+                self._muted_html(self.tr("اطلاعات اقدامات در دسترس نیست."))
             )
             return
         cache_key = normalize_text(product_name)
@@ -722,8 +751,8 @@ class InvoiceBatchExportDialog(QDialog):
             return
 
         fallback = self.tr("برای این کالا تغییر موجودی ثبت نشده است.")
-        self._action_cache[cache_key] = fallback
-        self.action_details_label.setText(fallback)
+        self._action_cache[cache_key] = self._muted_html(fallback)
+        self.action_details_label.setText(self._action_cache[cache_key])
 
     def _extract_inventory_action_block(
         self, details: str, product_name: str
@@ -817,33 +846,112 @@ class InvoiceBatchExportDialog(QDialog):
         date_text = to_jalali_datetime(action.created_at)
         before_text = self._format_inventory_snapshot(before_snapshot)
         after_text = self._format_inventory_snapshot(after_snapshot)
-        return self.tr(
-            "آخرین تغییر موجودی برای {name}\n"
-            "تاریخ: {date}\n"
-            "ادمین: {admin}\n"
-            "اقدام: {title}\n"
-            "جزئیات: {section}\n"
-            "قبل:\n{before}\n"
-            "بعد:\n{after}"
-        ).format(
-            name=product_name,
-            date=date_text,
-            admin=admin,
-            title=action.title or action.action_type,
-            section=section_title,
-            before=before_text,
-            after=after_text,
+        before_html = self._htmlize_multiline(before_text)
+        after_html = self._htmlize_multiline(after_text)
+        header = escape(action.title or action.action_type)
+        section = escape(section_title)
+        return (
+            "<div style='text-align:right;'>"
+            "<div style='font-weight:700; color:#0f172a; margin-bottom:4px;'>"
+            + escape(product_name)
+            + "</div>"
+            "<div style='color:#64748b; font-size:12px; margin-bottom:6px;'>"
+            + escape(date_text)
+            + " | "
+            + escape(admin)
+            + "</div>"
+            "<div style='font-weight:600; margin-bottom:4px;'>"
+            + header
+            + "</div>"
+            "<div style='color:#94a3b8; margin-bottom:8px;'>"
+            + section
+            + "</div>"
+            "<table style='width:100%; border-collapse:separate; border-spacing:6px;'>"
+            "<tr>"
+            "<td style='vertical-align:top; border:1px solid #e2e8f0; "
+            "border-radius:8px; padding:6px;'>"
+            "<div style='font-weight:700; margin-bottom:4px;'>"
+            + escape(self.tr("قبل"))
+            + "</div>"
+            "<div style='color:#0f172a; font-size:12px; line-height:1.6;'>"
+            + before_html
+            + "</div>"
+            "</td>"
+            "<td style='vertical-align:top; border:1px solid #e2e8f0; "
+            "border-radius:8px; padding:6px;'>"
+            "<div style='font-weight:700; margin-bottom:4px;'>"
+            + escape(self.tr("بعد"))
+            + "</div>"
+            "<div style='color:#0f172a; font-size:12px; line-height:1.6;'>"
+            + after_html
+            + "</div>"
+            "</td>"
+            "</tr>"
+            "</table>"
+            "</div>"
         )
+
+    def _format_inventory_details_html(
+        self,
+        product_name: str,
+        qty: str,
+        avg: str,
+        last: str,
+        sell: str,
+        alarm: str,
+        source: str,
+    ) -> str:
+        rows = [
+            (self.tr("موجودی فعلی"), qty),
+            (self.tr("میانگین خرید"), avg),
+            (self.tr("آخرین خرید"), last),
+            (self.tr("قیمت فروش"), sell),
+            (self.tr("حد هشدار"), alarm),
+            (self.tr("منبع"), source),
+        ]
+        row_html = "".join(
+            "<tr>"
+            "<td style='padding:2px 6px; color:#64748b; white-space:nowrap;'>"
+            + escape(label)
+            + "</td>"
+            "<td style='padding:2px 6px; color:#0f172a; font-weight:600;'>"
+            + escape(value)
+            + "</td>"
+            "</tr>"
+            for label, value in rows
+        )
+        return (
+            "<div style='text-align:right;'>"
+            "<div style='font-weight:700; color:#0f172a; margin-bottom:6px;'>"
+            + escape(product_name)
+            + "</div>"
+            "<table style='width:100%; border-collapse:separate; "
+            "border-spacing:0 4px;'>" + row_html + "</table>"
+            "</div>"
+        )
+
+    def _htmlize_multiline(self, text: str) -> str:
+        lines = [escape(line) for line in str(text).splitlines() if line != ""]
+        return "<br>".join(lines) if lines else escape(str(text))
+
+    def _muted_html(self, text: str) -> str:
+        return "<span style='color:#64748b;'>" + escape(text) + "</span>"
 
     def _clear_product_details(self, message: str) -> None:
         self.details_label.setText(message)
         self.product_details_table.setRowCount(0)
         self._current_detail_matches = []
         self.inventory_details_label.setText(
-            self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+            self._muted_html(
+                self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+            )
         )
         self.action_details_label.setText(
-            self.tr("برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید.")
+            self._muted_html(
+                self.tr(
+                    "برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید."
+                )
+            )
         )
 
     @staticmethod
