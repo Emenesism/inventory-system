@@ -323,6 +323,8 @@ class InvoiceBatchExportDialog(QDialog):
             "border: 1px solid #e2e8f0;"
             "border-radius: 8px;"
             "padding: 10px;"
+            "direction: rtl;"
+            "text-align: right;"
             "}"
         )
         details_layout.addWidget(self.inventory_details_label)
@@ -350,6 +352,8 @@ class InvoiceBatchExportDialog(QDialog):
             "border: 1px solid #e2e8f0;"
             "border-radius: 8px;"
             "padding: 10px;"
+            "direction: rtl;"
+            "text-align: right;"
             "}"
         )
         details_layout.addWidget(self.action_details_label)
@@ -851,38 +855,38 @@ class InvoiceBatchExportDialog(QDialog):
         header = escape(action.title or action.action_type)
         section = escape(section_title)
         return (
-            "<div style='text-align:right;'>"
-            "<div style='font-weight:700; color:#0f172a; margin-bottom:4px;'>"
+            "<div style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            "<div style='font-weight:700; color:#0f172a; margin-bottom:4px; text-align:right;'>"
             + escape(product_name)
             + "</div>"
-            "<div style='color:#64748b; font-size:12px; margin-bottom:6px;'>"
+            "<div style='color:#64748b; font-size:12px; margin-bottom:6px; text-align:right; unicode-bidi:plaintext;'>"
             + escape(date_text)
             + " | "
             + escape(admin)
             + "</div>"
-            "<div style='font-weight:600; margin-bottom:4px;'>"
+            "<div style='font-weight:600; margin-bottom:4px; text-align:right;'>"
             + header
             + "</div>"
-            "<div style='color:#94a3b8; margin-bottom:8px;'>"
+            "<div style='color:#94a3b8; margin-bottom:8px; text-align:right; unicode-bidi:plaintext;'>"
             + section
             + "</div>"
-            "<table style='width:100%; border-collapse:separate; border-spacing:6px;'>"
+            "<table style='width:100%; border-collapse:separate; border-spacing:6px; direction:rtl;'>"
             "<tr>"
             "<td style='vertical-align:top; border:1px solid #e2e8f0; "
             "border-radius:8px; padding:6px;'>"
-            "<div style='font-weight:700; margin-bottom:4px;'>"
+            "<div style='font-weight:700; margin-bottom:4px; text-align:right;'>"
             + escape(self.tr("قبل"))
             + "</div>"
-            "<div style='color:#0f172a; font-size:12px; line-height:1.6;'>"
+            "<div style='color:#0f172a; font-size:12px; line-height:1.6; text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
             + before_html
             + "</div>"
             "</td>"
             "<td style='vertical-align:top; border:1px solid #e2e8f0; "
             "border-radius:8px; padding:6px;'>"
-            "<div style='font-weight:700; margin-bottom:4px;'>"
+            "<div style='font-weight:700; margin-bottom:4px; text-align:right;'>"
             + escape(self.tr("بعد"))
             + "</div>"
-            "<div style='color:#0f172a; font-size:12px; line-height:1.6;'>"
+            "<div style='color:#0f172a; font-size:12px; line-height:1.6; text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
             + after_html
             + "</div>"
             "</td>"
@@ -911,22 +915,22 @@ class InvoiceBatchExportDialog(QDialog):
         ]
         row_html = "".join(
             "<tr>"
-            "<td style='padding:2px 6px; color:#64748b; white-space:nowrap;'>"
+            "<td style='padding:2px 6px; color:#64748b; white-space:nowrap; text-align:right;'>"
             + escape(label)
             + "</td>"
-            "<td style='padding:2px 6px; color:#0f172a; font-weight:600;'>"
+            "<td style='padding:2px 6px; color:#0f172a; font-weight:600; text-align:right;'>"
             + escape(value)
             + "</td>"
             "</tr>"
             for label, value in rows
         )
         return (
-            "<div style='text-align:right;'>"
-            "<div style='font-weight:700; color:#0f172a; margin-bottom:6px;'>"
+            "<div style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            "<div style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
             + escape(product_name)
             + "</div>"
             "<table style='width:100%; border-collapse:separate; "
-            "border-spacing:0 4px;'>" + row_html + "</table>"
+            "border-spacing:0 4px; direction:rtl;'>" + row_html + "</table>"
             "</div>"
         )
 
