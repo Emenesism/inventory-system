@@ -30,6 +30,8 @@ class PurchaseService:
         updated_df = inventory_df.copy()
         if "last_buy_price" not in updated_df.columns:
             updated_df["last_buy_price"] = 0.0
+        if "sell_price" not in updated_df.columns:
+            updated_df["sell_price"] = 0.0
         name_to_index = {
             str(name).strip().lower(): idx
             for idx, name in updated_df["product_name"].items()
@@ -71,6 +73,7 @@ class PurchaseService:
                     "quantity": line.quantity,
                     "avg_buy_price": round(line.price, 4),
                     "last_buy_price": round(line.price, 4),
+                    "sell_price": 0.0,
                 }
                 updated_df = pd.concat(
                     [updated_df, pd.DataFrame([new_row])], ignore_index=True

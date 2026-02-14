@@ -15,12 +15,13 @@ class InventoryStore:
     dataframe: pd.DataFrame | None = None
 
     REQUIRED_COLUMNS = ["product_name", "quantity", "avg_buy_price"]
-    OPTIONAL_COLUMNS = ["last_buy_price"]
+    OPTIONAL_COLUMNS = ["last_buy_price", "sell_price"]
     COLUMN_ORDER = [
         "product_name",
         "quantity",
         "avg_buy_price",
         "last_buy_price",
+        "sell_price",
         "alarm",
         "source",
     ]
@@ -34,6 +35,10 @@ class InventoryStore:
         "آخرين قيمت خريد": "last_buy_price",
         "Last Buy Price": "last_buy_price",
         "last buy price": "last_buy_price",
+        "قیمت فروش": "sell_price",
+        "قيمت فروش": "sell_price",
+        "Sell Price": "sell_price",
+        "sell price": "sell_price",
         "آلارم": "alarm",
         "منبع": "source",
     }
@@ -96,6 +101,8 @@ class InventoryStore:
         alias_map = {
             "last buy price": "last_buy_price",
             "last_buy_price": "last_buy_price",
+            "sell price": "sell_price",
+            "sell_price": "sell_price",
         }
         for alias, target in alias_map.items():
             if alias in lower_map and target not in rename_map.values():
@@ -140,6 +147,11 @@ class InventoryStore:
                 df["last_buy_price"], errors="coerce"
             ).fillna(0)
             df["last_buy_price"] = last_buy.astype(float)
+        if "sell_price" in df.columns:
+            sell_price = pd.to_numeric(
+                df["sell_price"], errors="coerce"
+            ).fillna(0)
+            df["sell_price"] = sell_price.astype(float)
 
     def _ensure_optional_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()

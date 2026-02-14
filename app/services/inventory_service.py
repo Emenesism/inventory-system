@@ -86,6 +86,7 @@ class InventoryService:
                         "last_buy_price": float(
                             item.get("last_buy_price", 0.0) or 0.0
                         ),
+                        "sell_price": float(item.get("sell_price", 0.0) or 0.0),
                         "alarm": item.get("alarm"),
                         "source": item.get("source"),
                     }
@@ -98,6 +99,7 @@ class InventoryService:
                         "quantity",
                         "avg_buy_price",
                         "last_buy_price",
+                        "sell_price",
                         "alarm",
                         "source",
                     ]
@@ -123,6 +125,8 @@ class InventoryService:
         df_to_save = df.copy()
         if "last_buy_price" not in df_to_save.columns:
             df_to_save["last_buy_price"] = 0.0
+        if "sell_price" not in df_to_save.columns:
+            df_to_save["sell_price"] = 0.0
         if "alarm" not in df_to_save.columns:
             df_to_save["alarm"] = None
         if "source" not in df_to_save.columns:
@@ -141,6 +145,9 @@ class InventoryService:
             last_value = pd.to_numeric(
                 row.get("last_buy_price", 0), errors="coerce"
             )
+            sell_value = pd.to_numeric(
+                row.get("sell_price", 0), errors="coerce"
+            )
             alarm_value = row.get("alarm")
             source_value = row.get("source")
             rows.append(
@@ -154,6 +161,9 @@ class InventoryService:
                     ),
                     "last_buy_price": (
                         float(last_value) if pd.notna(last_value) else 0.0
+                    ),
+                    "sell_price": (
+                        float(sell_value) if pd.notna(sell_value) else 0.0
                     ),
                     "alarm": (
                         int(alarm_value)
@@ -203,6 +213,22 @@ class InventoryService:
     def find_index(self, product_name: str) -> int | None:
         key = self._normalize_name(product_name)
         return self._name_index.get(key)
+
+    def get_sell_price_for_product(self, product_name: str) -> float | None:
+        if not self.is_loaded():
+            return None
+        idx = self.find_index(product_name)
+        if idx is None:
+            return None
+        df = self.store.dataframe
+        if df is None or idx not in df.index:
+            return None
+        if "sell_price" not in df.columns:
+            return 0.0
+        value = pd.to_numeric(df.at[idx, "sell_price"], errors="coerce")
+        if pd.isna(value):
+            return 0.0
+        return float(value)
 
     def get_low_stock_rows(self, threshold: int) -> list[dict[str, object]]:
         try:

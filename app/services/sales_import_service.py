@@ -46,6 +46,8 @@ class SalesImportService:
         "sales price": "sell_price",
         "unit price": "sell_price",
         "price": "sell_price",
+        "قیمت فروش": "sell_price",
+        "قيمت فروش": "sell_price",
     }
 
     def __init__(self) -> None:
