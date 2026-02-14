@@ -159,8 +159,15 @@ class InventoryPage(QWidget):
             self._proxy.set_filter_text(filter_text)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(QHeaderView.Interactive)
+        product_col = self._product_column_index()
         for col in range(self._model.columnCount()):
+            if product_col is not None and col == product_col:
+                header.setSectionResizeMode(col, QHeaderView.Stretch)
+            else:
+                header.setSectionResizeMode(col, QHeaderView.Interactive)
+        for col in range(self._model.columnCount()):
+            if product_col is not None and col == product_col:
+                continue
             column_name = self._column_names[col]
             saved_width = self._column_widths.get(column_name)
             if saved_width and saved_width > 24:
@@ -225,7 +232,7 @@ class InventoryPage(QWidget):
                 new_row[col] = ""
             elif col in {"quantity"}:
                 new_row[col] = 0
-            elif col in {"avg_buy_price", "last_buy_price"}:
+            elif col in {"avg_buy_price", "last_buy_price", "sell_price"}:
                 new_row[col] = 0.0
             else:
                 new_row[col] = ""
@@ -386,7 +393,29 @@ class InventoryPage(QWidget):
             "quantity": self.tr("تعداد"),
             "avg_buy_price": self.tr("میانگین قیمت خرید"),
             "last_buy_price": self.tr("آخرین قیمت خرید"),
+            "sell_price": self.tr("قیمت فروش"),
             "alarm": self.tr("آلارم"),
             "source": self.tr("منبع"),
         }
         return mapping.get(normalized, str(column_name))
+
+    def _product_column_index(self) -> int | None:
+        for idx, column_name in enumerate(self._column_names):
+            normalized = (
+                str(column_name)
+                .strip()
+                .lower()
+                .replace("-", "_")
+                .replace(" ", "_")
+            )
+            if normalized in {
+                "product_name",
+                "product",
+                "name",
+                "نام_محصول",
+                "نام_کالا",
+                "کالا",
+                "محصول",
+            }:
+                return idx
+        return None
