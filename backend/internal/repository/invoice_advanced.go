@@ -873,11 +873,13 @@ func (r *Repository) PreviewSales(
 	}
 	available := map[string]int{}
 	costMap := map[string]float64{}
+	sellMap := map[string]float64{}
 	nameMap := map[string]string{}
 	for _, product := range products {
 		key := normalizeName(product.ProductName)
 		available[key] = product.Quantity
 		costMap[key] = product.AvgBuyPrice
+		sellMap[key] = product.SellPrice
 		if _, exists := nameMap[key]; !exists {
 			nameMap[key] = product.ProductName
 		}
@@ -929,7 +931,11 @@ func (r *Repository) PreviewSales(
 		costPrice := costMap[key]
 		sellPrice := row.SellPrice
 		if sellPrice <= 0 {
-			sellPrice = costPrice
+			if storedSell := sellMap[key]; storedSell > 0 {
+				sellPrice = storedSell
+			} else {
+				sellPrice = costPrice
+			}
 		}
 		available[key] = availableQty - row.QuantitySold
 		result = append(result, domain.SalesPreviewRow{

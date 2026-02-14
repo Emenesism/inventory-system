@@ -28,6 +28,7 @@ type ProductCreateInput struct {
 	Quantity     int
 	AvgBuyPrice  float64
 	LastBuyPrice float64
+	SellPrice    float64
 	Alarm        *int
 	Source       *string
 }
@@ -37,6 +38,7 @@ type ProductPatchInput struct {
 	Quantity     *int
 	AvgBuyPrice  *float64
 	LastBuyPrice *float64
+	SellPrice    *float64
 	Alarm        *int
 	Source       *string
 }
@@ -82,6 +84,7 @@ func (r *Repository) ListProducts(ctx context.Context, filter ProductListFilter)
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
@@ -127,6 +130,7 @@ func (r *Repository) GetProductByID(ctx context.Context, id int64) (*domain.Prod
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
@@ -152,7 +156,7 @@ func (r *Repository) CreateProduct(ctx context.Context, input ProductCreateInput
 	if input.Quantity < 0 {
 		return domain.Product{}, fmt.Errorf("quantity cannot be negative")
 	}
-	if input.AvgBuyPrice < 0 || input.LastBuyPrice < 0 {
+	if input.AvgBuyPrice < 0 || input.LastBuyPrice < 0 || input.SellPrice < 0 {
 		return domain.Product{}, fmt.Errorf("prices cannot be negative")
 	}
 
@@ -162,15 +166,17 @@ func (r *Repository) CreateProduct(ctx context.Context, input ProductCreateInput
 			quantity,
 			avg_buy_price,
 			last_buy_price,
+			sell_price,
 			alarm,
 			source
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT ON CONSTRAINT uq_products_name_normalized
 		DO UPDATE SET
 			quantity = EXCLUDED.quantity,
 			avg_buy_price = EXCLUDED.avg_buy_price,
 			last_buy_price = EXCLUDED.last_buy_price,
+			sell_price = EXCLUDED.sell_price,
 			alarm = EXCLUDED.alarm,
 			source = EXCLUDED.source,
 			updated_at = NOW()
@@ -180,11 +186,12 @@ func (r *Repository) CreateProduct(ctx context.Context, input ProductCreateInput
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
 			updated_at
-	`, name, input.Quantity, input.AvgBuyPrice, input.LastBuyPrice, input.Alarm, input.Source)
+	`, name, input.Quantity, input.AvgBuyPrice, input.LastBuyPrice, input.SellPrice, input.Alarm, input.Source)
 
 	product, err := scanProductRow(row)
 	if err != nil {
@@ -207,6 +214,7 @@ func (r *Repository) PatchProduct(ctx context.Context, id int64, input ProductPa
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
@@ -248,6 +256,12 @@ func (r *Repository) PatchProduct(ctx context.Context, id int64, input ProductPa
 		}
 		product.LastBuyPrice = *input.LastBuyPrice
 	}
+	if input.SellPrice != nil {
+		if *input.SellPrice < 0 {
+			return nil, fmt.Errorf("sell_price cannot be negative")
+		}
+		product.SellPrice = *input.SellPrice
+	}
 	if input.Alarm != nil {
 		product.Alarm = input.Alarm
 	}
@@ -262,8 +276,9 @@ func (r *Repository) PatchProduct(ctx context.Context, id int64, input ProductPa
 			quantity = $3,
 			avg_buy_price = $4,
 			last_buy_price = $5,
-			alarm = $6,
-			source = $7,
+			sell_price = $6,
+			alarm = $7,
+			source = $8,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING
@@ -272,6 +287,7 @@ func (r *Repository) PatchProduct(ctx context.Context, id int64, input ProductPa
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
@@ -282,6 +298,7 @@ func (r *Repository) PatchProduct(ctx context.Context, id int64, input ProductPa
 		product.Quantity,
 		product.AvgBuyPrice,
 		product.LastBuyPrice,
+		product.SellPrice,
 		product.Alarm,
 		product.Source,
 	)
@@ -338,14 +355,16 @@ func (r *Repository) UpsertInventoryRows(ctx context.Context, rows []domain.Inve
 					quantity,
 					avg_buy_price,
 					last_buy_price,
+					sell_price,
 					alarm,
 					source
-				) VALUES ($1, $2, $3, $4, $5, $6)
+				) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			`,
 				name,
 				line.Quantity,
 				line.AvgBuyPrice,
 				line.LastBuyPrice,
+				line.SellPrice,
 				line.Alarm,
 				line.Source,
 			); err != nil {
@@ -362,8 +381,9 @@ func (r *Repository) UpsertInventoryRows(ctx context.Context, rows []domain.Inve
 				quantity = $3,
 				avg_buy_price = $4,
 				last_buy_price = $5,
-				alarm = $6,
-				source = $7,
+				sell_price = $6,
+				alarm = $7,
+				source = $8,
 				updated_at = NOW()
 			WHERE id = $1
 		`,
@@ -372,6 +392,7 @@ func (r *Repository) UpsertInventoryRows(ctx context.Context, rows []domain.Inve
 			line.Quantity,
 			line.AvgBuyPrice,
 			line.LastBuyPrice,
+			line.SellPrice,
 			line.Alarm,
 			line.Source,
 		); err != nil {
@@ -454,10 +475,11 @@ func (r *Repository) CreatePurchaseInvoice(
 					product_name,
 					quantity,
 					avg_buy_price,
-					last_buy_price
-				) VALUES ($1, $2, $3, $4)
+					last_buy_price,
+					sell_price
+				) VALUES ($1, $2, $3, $4, $5)
 				RETURNING id
-			`, name, line.Quantity, line.Price, line.Price).Scan(&productID); err != nil {
+			`, name, line.Quantity, line.Price, line.Price, 0).Scan(&productID); err != nil {
 				return 0, fmt.Errorf("insert product %q during purchase: %w", name, err)
 			}
 		} else {
@@ -551,16 +573,17 @@ func (r *Repository) CreateSalesInvoice(
 		}
 
 		var (
-			productID  int64
-			currentQty int
-			avgCost    float64
+			productID    int64
+			currentQty   int
+			avgCost      float64
+			productPrice float64
 		)
 		err := tx.QueryRow(ctx, `
-			SELECT id, quantity, avg_buy_price::double precision
+			SELECT id, quantity, avg_buy_price::double precision, sell_price::double precision
 			FROM products
 			WHERE LOWER(product_name) = LOWER($1)
 			FOR UPDATE
-		`, name).Scan(&productID, &currentQty, &avgCost)
+		`, name).Scan(&productID, &currentQty, &avgCost, &productPrice)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, fmt.Errorf("product not found: %s", name)
 		}
@@ -579,7 +602,11 @@ func (r *Repository) CreateSalesInvoice(
 
 		sellPrice := line.Price
 		if sellPrice <= 0 {
-			sellPrice = avgCost
+			if productPrice > 0 {
+				sellPrice = productPrice
+			} else {
+				sellPrice = avgCost
+			}
 		}
 		lineTotal := sellPrice * float64(line.Quantity)
 		invoiceLines = append(invoiceLines, domain.InvoiceLine{
@@ -970,6 +997,7 @@ func (r *Repository) GetUnsoldProducts(ctx context.Context, days, limit int) ([]
 			p.product_name,
 			p.quantity,
 			p.avg_buy_price::double precision,
+			p.sell_price::double precision,
 			p.source,
 			p.updated_at
 		FROM products p
@@ -994,6 +1022,7 @@ func (r *Repository) GetUnsoldProducts(ctx context.Context, days, limit int) ([]
 			&row.ProductName,
 			&row.Quantity,
 			&row.AvgBuyPrice,
+			&row.SellPrice,
 			&source,
 			&row.UpdatedAt,
 		); err != nil {
@@ -1027,6 +1056,7 @@ func scanProductRow(row pgx.Row) (domain.Product, error) {
 		&product.Quantity,
 		&product.AvgBuyPrice,
 		&product.LastBuyPrice,
+		&product.SellPrice,
 		&alarm,
 		&source,
 		&product.CreatedAt,
