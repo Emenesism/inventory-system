@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -35,6 +36,7 @@ class SettingsPage(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setLayoutDirection(Qt.RightToLeft)
         self.config = config
         self.invoice_service = invoice_service
         self.admin_service = admin_service
@@ -48,20 +50,26 @@ class SettingsPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
+        header = QHBoxLayout()
+        title_col = QVBoxLayout()
+        title_col.setSpacing(4)
         title = QLabel(self.tr("تنظیمات"))
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        layout.addWidget(title)
+        title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        subtitle = QLabel(self.tr("تنظیمات نمایش، حساب کاربری و مدیریت مدیران"))
+        subtitle.setProperty("textRole", "muted")
+        title_col.addWidget(title)
+        title_col.addWidget(subtitle)
+        header.addLayout(title_col)
+        header.addStretch(1)
 
-        card = QFrame()
-        card.setObjectName("Card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
-
-        theme_row = QHBoxLayout()
-        theme_label = QLabel(self.tr("پوسته:"))
-        theme_row.addWidget(theme_label)
-
+        theme_card = QFrame()
+        theme_card.setObjectName("Card")
+        theme_layout = QHBoxLayout(theme_card)
+        theme_layout.setContentsMargins(12, 8, 12, 8)
+        theme_layout.setSpacing(8)
+        theme_label = QLabel(self.tr("پوسته"))
+        theme_label.setStyleSheet("font-weight: 600;")
+        theme_layout.addWidget(theme_label)
         self.theme_combo = QComboBox()
         self.theme_combo.addItem(self.tr("روشن"), "light")
         self.theme_combo.addItem(self.tr("تیره"), "dark")
@@ -69,11 +77,9 @@ class SettingsPage(QWidget):
             1 if self.config.theme == "dark" else 0
         )
         self.theme_combo.currentIndexChanged.connect(self._apply_theme)
-        theme_row.addWidget(self.theme_combo)
-        theme_row.addStretch(1)
-
-        card_layout.addLayout(theme_row)
-        layout.addWidget(card)
+        theme_layout.addWidget(self.theme_combo)
+        header.addWidget(theme_card)
+        layout.addLayout(header)
 
         account_card = QFrame()
         account_card.setObjectName("Card")
@@ -82,39 +88,54 @@ class SettingsPage(QWidget):
         account_layout.setSpacing(12)
 
         account_title = QLabel(self.tr("حساب کاربری"))
-        account_title.setStyleSheet("font-weight: 600;")
+        account_title.setStyleSheet("font-size: 15px; font-weight: 700;")
         account_layout.addWidget(account_title)
 
-        user_row = QHBoxLayout()
-        user_label = QLabel(self.tr("کاربر فعلی:"))
-        user_row.addWidget(user_label)
-        self.user_value = QLabel("-")
-        user_row.addWidget(self.user_value, 1)
-        account_layout.addLayout(user_row)
+        account_form = QGridLayout()
+        account_form.setHorizontalSpacing(12)
+        account_form.setVerticalSpacing(8)
 
-        current_row = QHBoxLayout()
-        current_label = QLabel(self.tr("رمز عبور فعلی:"))
-        current_row.addWidget(current_label)
+        user_label = QLabel(self.tr("کاربر فعلی"))
+        user_label.setProperty("fieldLabel", True)
+        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.user_value = QLabel("-")
+        self.user_value.setStyleSheet("font-weight: 600;")
+        account_form.addWidget(user_label, 0, 0)
+        account_form.addWidget(self.user_value, 0, 1)
+
+        current_label = QLabel(self.tr("رمز عبور فعلی"))
+        current_label.setProperty("fieldLabel", True)
+        current_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.current_password_input = QLineEdit()
         self.current_password_input.setEchoMode(QLineEdit.Password)
-        current_row.addWidget(self.current_password_input, 1)
-        account_layout.addLayout(current_row)
+        account_form.addWidget(current_label, 1, 0)
+        account_form.addWidget(self.current_password_input, 1, 1)
 
-        new_row = QHBoxLayout()
-        new_label = QLabel(self.tr("رمز عبور جدید:"))
-        new_row.addWidget(new_label)
+        new_label = QLabel(self.tr("رمز عبور جدید"))
+        new_label.setProperty("fieldLabel", True)
+        new_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_password_input = QLineEdit()
         self.new_password_input.setEchoMode(QLineEdit.Password)
-        new_row.addWidget(self.new_password_input, 1)
-        account_layout.addLayout(new_row)
+        account_form.addWidget(new_label, 2, 0)
+        account_form.addWidget(self.new_password_input, 2, 1)
 
-        confirm_row = QHBoxLayout()
-        confirm_label = QLabel(self.tr("تکرار رمز عبور:"))
-        confirm_row.addWidget(confirm_label)
+        confirm_label = QLabel(self.tr("تکرار رمز عبور"))
+        confirm_label.setProperty("fieldLabel", True)
+        confirm_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.confirm_password_input = QLineEdit()
         self.confirm_password_input.setEchoMode(QLineEdit.Password)
-        confirm_row.addWidget(self.confirm_password_input, 1)
-        account_layout.addLayout(confirm_row)
+        account_form.addWidget(confirm_label, 3, 0)
+        account_form.addWidget(self.confirm_password_input, 3, 1)
+
+        account_form.setColumnStretch(0, 1)
+        account_form.setColumnStretch(1, 3)
+        account_layout.addLayout(account_form)
+
+        password_hint = QLabel(
+            self.tr("برای امنیت بهتر، رمز عبور حداقل ۶ کاراکتر باشد.")
+        )
+        password_hint.setProperty("textRole", "muted")
+        account_layout.addWidget(password_hint)
 
         pass_button_row = QHBoxLayout()
         pass_button_row.addStretch(1)
@@ -123,8 +144,6 @@ class SettingsPage(QWidget):
         pass_button_row.addWidget(update_password_button)
         account_layout.addLayout(pass_button_row)
 
-        layout.addWidget(account_card)
-
         self.admin_card = QFrame()
         self.admin_card.setObjectName("Card")
         admin_layout = QVBoxLayout(self.admin_card)
@@ -132,28 +151,49 @@ class SettingsPage(QWidget):
         admin_layout.setSpacing(12)
 
         admin_title = QLabel(self.tr("مدیریت مدیران"))
-        admin_title.setStyleSheet("font-weight: 600;")
+        admin_title.setStyleSheet("font-size: 15px; font-weight: 700;")
         admin_layout.addWidget(admin_title)
 
-        create_row = QHBoxLayout()
+        create_form = QGridLayout()
+        create_form.setHorizontalSpacing(10)
+        create_form.setVerticalSpacing(8)
+
+        username_label = QLabel(self.tr("نام کاربری"))
+        username_label.setProperty("fieldLabel", True)
+        username_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_admin_username = QLineEdit()
         self.new_admin_username.setPlaceholderText(self.tr("نام کاربری"))
-        create_row.addWidget(self.new_admin_username)
+        create_form.addWidget(username_label, 0, 0)
+        create_form.addWidget(self.new_admin_username, 0, 1)
 
+        password_label = QLabel(self.tr("رمز عبور"))
+        password_label.setProperty("fieldLabel", True)
+        password_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_admin_password = QLineEdit()
         self.new_admin_password.setPlaceholderText(self.tr("رمز عبور"))
         self.new_admin_password.setEchoMode(QLineEdit.Password)
-        create_row.addWidget(self.new_admin_password)
+        create_form.addWidget(password_label, 1, 0)
+        create_form.addWidget(self.new_admin_password, 1, 1)
 
+        role_label = QLabel(self.tr("نقش"))
+        role_label.setProperty("fieldLabel", True)
+        role_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_admin_role = QComboBox()
         self.new_admin_role.addItem(self.tr("کارمند"), "employee")
         self.new_admin_role.addItem(self.tr("مدیر"), "manager")
-        create_row.addWidget(self.new_admin_role)
+        create_form.addWidget(role_label, 2, 0)
+        create_form.addWidget(self.new_admin_role, 2, 1)
 
+        create_form.setColumnStretch(0, 1)
+        create_form.setColumnStretch(1, 3)
+        admin_layout.addLayout(create_form)
+
+        create_button_row = QHBoxLayout()
+        create_button_row.addStretch(1)
         create_button = QPushButton(self.tr("ایجاد مدیر"))
         create_button.clicked.connect(self._create_admin)
-        create_row.addWidget(create_button)
-        admin_layout.addLayout(create_row)
+        create_button_row.addWidget(create_button)
+        admin_layout.addLayout(create_button_row)
 
         self.admin_table = QTableWidget(0, 2)
         self.admin_table.setHorizontalHeaderLabels(
@@ -161,6 +201,7 @@ class SettingsPage(QWidget):
         )
         self.admin_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.admin_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.admin_table.setAlternatingRowColors(True)
         self.admin_table.horizontalHeader().setStretchLastSection(True)
         self.admin_table.verticalHeader().setDefaultSectionSize(30)
         admin_layout.addWidget(self.admin_table)
@@ -172,7 +213,12 @@ class SettingsPage(QWidget):
         admin_button_row.addWidget(delete_button)
         admin_layout.addLayout(admin_button_row)
 
-        layout.addWidget(self.admin_card)
+        content_row = QHBoxLayout()
+        content_row.setSpacing(16)
+        content_row.addWidget(account_card, 3)
+        content_row.addWidget(self.admin_card, 2)
+        layout.addLayout(content_row, 1)
+
         self.admin_card.hide()
 
         layout.addStretch(1)

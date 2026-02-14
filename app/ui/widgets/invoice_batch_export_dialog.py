@@ -937,7 +937,7 @@ class InvoiceBatchExportDialog(QDialog):
             "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
             + escape(product_name)
             + "</div>"
-            "<table dir='rtl' align='right' width='100%' "
+            + "<table dir='rtl' align='right' width='100%' "
             "style='width:100%; border-collapse:separate; border-spacing:0 4px;'>"
             + self._format_inventory_kv_rows(rows)
             + "</table>"
