@@ -106,6 +106,13 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     border-radius: 10px;
     padding: 6px 10px;
 }
+QLabel[sellPriceHint="true"] {
+    background: #F8FAFC;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    padding: 6px 10px;
+    color: #475569;
+}
 QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
     color: #9CA3AF;
 }
@@ -386,6 +393,13 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     border-radius: 10px;
     padding: 6px 10px;
     color: #F8FAFC;
+}
+QLabel[sellPriceHint="true"] {
+    background: #0B1220;
+    border: 1px solid #1F2937;
+    border-radius: 10px;
+    padding: 6px 10px;
+    color: #CBD5E1;
 }
 QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
     color: #94A3B8;
