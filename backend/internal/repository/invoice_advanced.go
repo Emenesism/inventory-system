@@ -413,17 +413,26 @@ func (r *Repository) DeleteInvoiceReconciled(ctx context.Context, invoiceID int6
 	return nil
 }
 
-func (r *Repository) GetInvoiceStats(ctx context.Context) (int, float64, error) {
+func (r *Repository) GetInvoiceStats(
+	ctx context.Context,
+	invoiceType string,
+) (int, float64, error) {
 	var (
 		count int
 		total float64
 	)
+	invoiceType = strings.TrimSpace(invoiceType)
 	if err := r.pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*)::int,
 			COALESCE(SUM(total_amount), 0)::double precision
 		FROM invoices
-	`).Scan(&count, &total); err != nil {
+		WHERE (
+			$1 = ''
+			OR ($1 = 'sales' AND invoice_type LIKE 'sales%')
+			OR invoice_type = $1
+		)
+	`, invoiceType).Scan(&count, &total); err != nil {
 		return 0, 0, fmt.Errorf("get invoice stats: %w", err)
 	}
 	return count, total, nil
