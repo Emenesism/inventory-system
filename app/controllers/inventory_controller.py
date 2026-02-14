@@ -285,10 +285,11 @@ class InventoryController(QObject):
             if old_row is None:
                 qty = new_row.get("quantity", "")
                 avg = new_row.get("avg_buy_price", "")
+                sell = new_row.get("sell_price", "")
                 changes.append(
                     self.tr(
-                        "کالای جدید: {name} | تعداد={qty} | میانگین={avg}"
-                    ).format(name=name, qty=qty, avg=avg)
+                        "کالای جدید: {name} | تعداد={qty} | میانگین={avg} | قیمت فروش={sell}"
+                    ).format(name=name, qty=qty, avg=avg, sell=sell)
                 )
                 continue
             diff_parts: list[str] = []
@@ -302,6 +303,7 @@ class InventoryController(QObject):
                         "quantity": self.tr("تعداد"),
                         "avg_buy_price": self.tr("میانگین قیمت خرید"),
                         "last_buy_price": self.tr("آخرین قیمت خرید"),
+                        "sell_price": self.tr("قیمت فروش"),
                         "alarm": self.tr("آلارم"),
                         "source": self.tr("منبع"),
                     }.get(col, col)

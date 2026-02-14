@@ -190,6 +190,9 @@ class MainWindow(QMainWindow):
         self.purchase_page.set_product_provider(
             self.inventory_service.get_product_names
         )
+        self.purchase_page.set_sell_price_provider(
+            self.inventory_service.get_sell_price_for_product
+        )
 
         self.apply_theme(self.config.theme)
         self.initialize_inventory()
@@ -271,7 +274,7 @@ class MainWindow(QMainWindow):
             return
         if admin.role == "employee":
             self.inventory_page.set_blocked_columns(
-                ["quantity", "avg_buy_price", "last_buy_price"]
+                ["quantity", "avg_buy_price", "last_buy_price", "sell_price"]
             )
             self.invoices_page.set_price_visibility(False)
             self.invoices_page.set_edit_enabled(False)
@@ -347,6 +350,9 @@ class MainWindow(QMainWindow):
         self.inventory_page.set_inventory(df)
         self.purchase_page.set_product_provider(
             self.inventory_service.get_product_names
+        )
+        self.purchase_page.set_sell_price_provider(
+            self.inventory_service.get_sell_price_for_product
         )
         self.sales_page.set_enabled_state(True)
         self.purchase_page.set_enabled_state(True)

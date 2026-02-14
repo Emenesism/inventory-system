@@ -311,6 +311,8 @@ class SalesImportController(QObject):
                 "product_name": self.tr("نام محصول"),
                 "quantity": self.tr("تعداد"),
                 "avg_buy_price": self.tr("میانگین قیمت خرید"),
+                "last_buy_price": self.tr("آخرین قیمت خرید"),
+                "sell_price": self.tr("قیمت فروش"),
                 "alarm": self.tr("آلارم"),
                 "source": self.tr("منبع"),
                 "category": self.tr("دسته‌بندی"),
