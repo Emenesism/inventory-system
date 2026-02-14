@@ -31,14 +31,16 @@ func (r *Repository) ReplaceInventory(ctx context.Context, rows []domain.Invento
 				quantity,
 				avg_buy_price,
 				last_buy_price,
+				sell_price,
 				alarm,
 				source
-			) VALUES ($1, $2, $3, $4, $5, $6)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		`,
 			name,
 			line.Quantity,
 			line.AvgBuyPrice,
 			line.LastBuyPrice,
+			line.SellPrice,
 			line.Alarm,
 			line.Source,
 		); err != nil {
@@ -60,6 +62,7 @@ func (r *Repository) ListAllProducts(ctx context.Context) ([]domain.Product, err
 			quantity,
 			avg_buy_price::double precision,
 			last_buy_price::double precision,
+			sell_price::double precision,
 			alarm,
 			source,
 			created_at,
@@ -97,6 +100,7 @@ func (r *Repository) GetLowStock(ctx context.Context, threshold int) ([]domain.L
 			COALESCE(alarm, $1) AS alarm,
 			(COALESCE(alarm, $1) - quantity) AS needed,
 			avg_buy_price::double precision,
+			sell_price::double precision,
 			source
 		FROM products
 		WHERE quantity < COALESCE(alarm, $1)
@@ -119,6 +123,7 @@ func (r *Repository) GetLowStock(ctx context.Context, threshold int) ([]domain.L
 			&row.Alarm,
 			&row.Needed,
 			&row.AvgBuyPrice,
+			&row.SellPrice,
 			&source,
 		); err != nil {
 			return nil, fmt.Errorf("scan low stock row: %w", err)

@@ -452,14 +452,16 @@ func upsertStock(
 				quantity,
 				avg_buy_price,
 				last_buy_price,
+				sell_price,
 				alarm,
 				source
-			) VALUES ($1, $2, $3, $4, $5, $6)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT ON CONSTRAINT uq_stock_name_normalized
 			DO UPDATE SET
 				quantity = EXCLUDED.quantity,
 				avg_buy_price = EXCLUDED.avg_buy_price,
 				last_buy_price = EXCLUDED.last_buy_price,
+				sell_price = EXCLUDED.sell_price,
 				alarm = EXCLUDED.alarm,
 				source = EXCLUDED.source,
 				imported_at = NOW(),
@@ -469,6 +471,7 @@ func upsertStock(
 			row.Quantity,
 			row.AvgBuyPrice,
 			row.LastBuyPrice,
+			row.SellPrice,
 			row.Alarm,
 			row.Source,
 		); err != nil {
@@ -484,14 +487,16 @@ func upsertStock(
 				quantity,
 				avg_buy_price,
 				last_buy_price,
+				sell_price,
 				alarm,
 				source
-			) VALUES ($1, $2, $3, $4, $5, $6)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT ON CONSTRAINT uq_products_name_normalized
 			DO UPDATE SET
 				quantity = EXCLUDED.quantity,
 				avg_buy_price = EXCLUDED.avg_buy_price,
 				last_buy_price = EXCLUDED.last_buy_price,
+				sell_price = EXCLUDED.sell_price,
 				alarm = EXCLUDED.alarm,
 				source = EXCLUDED.source,
 				updated_at = NOW()
@@ -500,6 +505,7 @@ func upsertStock(
 			row.Quantity,
 			row.AvgBuyPrice,
 			row.LastBuyPrice,
+			row.SellPrice,
 			row.Alarm,
 			row.Source,
 		); err != nil {

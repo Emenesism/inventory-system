@@ -76,5 +76,19 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
+	if _, err := pool.Exec(ctx, `
+		ALTER TABLE products
+		ADD COLUMN IF NOT EXISTS sell_price NUMERIC(14,4) NOT NULL DEFAULT 0
+	`); err != nil {
+		return fmt.Errorf("ensure products.sell_price: %w", err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		ALTER TABLE stock
+		ADD COLUMN IF NOT EXISTS sell_price NUMERIC(14,4) NOT NULL DEFAULT 0
+	`); err != nil {
+		return fmt.Errorf("ensure stock.sell_price: %w", err)
+	}
+
 	return nil
 }

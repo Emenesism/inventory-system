@@ -90,6 +90,7 @@ type createProductRequest struct {
 	Quantity     int     `json:"quantity"`
 	AvgBuyPrice  float64 `json:"avg_buy_price"`
 	LastBuyPrice float64 `json:"last_buy_price"`
+	SellPrice    float64 `json:"sell_price"`
 	Alarm        *int    `json:"alarm"`
 	Source       *string `json:"source"`
 }
@@ -108,6 +109,7 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		Quantity:     req.Quantity,
 		AvgBuyPrice:  req.AvgBuyPrice,
 		LastBuyPrice: req.LastBuyPrice,
+		SellPrice:    req.SellPrice,
 		Alarm:        req.Alarm,
 		Source:       req.Source,
 	})
@@ -123,6 +125,7 @@ type patchProductRequest struct {
 	Quantity     *int     `json:"quantity"`
 	AvgBuyPrice  *float64 `json:"avg_buy_price"`
 	LastBuyPrice *float64 `json:"last_buy_price"`
+	SellPrice    *float64 `json:"sell_price"`
 	Alarm        *int     `json:"alarm"`
 	Source       *string  `json:"source"`
 }
@@ -145,6 +148,7 @@ func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
 		Quantity:     req.Quantity,
 		AvgBuyPrice:  req.AvgBuyPrice,
 		LastBuyPrice: req.LastBuyPrice,
+		SellPrice:    req.SellPrice,
 		Alarm:        req.Alarm,
 		Source:       req.Source,
 	})

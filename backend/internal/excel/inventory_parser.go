@@ -31,6 +31,11 @@ var headerAliases = map[string]string{
 	"last buy price":    "last_buy_price",
 	"آخرین قیمت خرید":   "last_buy_price",
 	"آخرين قيمت خريد":   "last_buy_price",
+	"sell_price":        "sell_price",
+	"sell price":        "sell_price",
+	"sales price":       "sell_price",
+	"قیمت فروش":         "sell_price",
+	"قيمت فروش":         "sell_price",
 	"alarm":             "alarm",
 	"آلارم":             "alarm",
 	"source":            "source",
@@ -99,6 +104,18 @@ func ParseInventoryRows(reader io.Reader) ([]domain.InventoryImportRow, error) {
 			}
 		}
 
+		sellPrice := 0.0
+		if idx, ok := colMap["sell_price"]; ok {
+			raw := strings.TrimSpace(readCell(cells, idx))
+			if raw != "" {
+				parsed, err := parseFloat(raw)
+				if err != nil {
+					return nil, fmt.Errorf("row %d invalid sell_price: %w", index+1, err)
+				}
+				sellPrice = parsed
+			}
+		}
+
 		var alarm *int
 		if idx, ok := colMap["alarm"]; ok {
 			raw := strings.TrimSpace(readCell(cells, idx))
@@ -124,6 +141,7 @@ func ParseInventoryRows(reader io.Reader) ([]domain.InventoryImportRow, error) {
 			Quantity:     qty,
 			AvgBuyPrice:  avgPrice,
 			LastBuyPrice: lastPrice,
+			SellPrice:    sellPrice,
 			Alarm:        alarm,
 			Source:       source,
 		})

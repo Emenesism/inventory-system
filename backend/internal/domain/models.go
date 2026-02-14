@@ -8,6 +8,7 @@ type Product struct {
 	Quantity     int       `json:"quantity"`
 	AvgBuyPrice  float64   `json:"avg_buy_price"`
 	LastBuyPrice float64   `json:"last_buy_price"`
+	SellPrice    float64   `json:"sell_price"`
 	Alarm        *int      `json:"alarm,omitempty"`
 	Source       *string   `json:"source,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -63,6 +64,7 @@ type UnsoldProduct struct {
 	ProductName string    `json:"product_name"`
 	Quantity    int       `json:"quantity"`
 	AvgBuyPrice float64   `json:"avg_buy_price"`
+	SellPrice   float64   `json:"sell_price"`
 	Source      *string   `json:"source,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -84,6 +86,7 @@ type InventoryImportRow struct {
 	Quantity     int     `json:"quantity"`
 	AvgBuyPrice  float64 `json:"avg_buy_price"`
 	LastBuyPrice float64 `json:"last_buy_price"`
+	SellPrice    float64 `json:"sell_price"`
 	Alarm        *int    `json:"alarm,omitempty"`
 	Source       *string `json:"source,omitempty"`
 }
@@ -94,6 +97,7 @@ type LowStockRow struct {
 	Alarm       int     `json:"alarm"`
 	Needed      int     `json:"needed"`
 	AvgBuyPrice float64 `json:"avg_buy_price"`
+	SellPrice   float64 `json:"sell_price"`
 	Source      *string `json:"source,omitempty"`
 }
 
