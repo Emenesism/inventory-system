@@ -76,6 +76,7 @@ python -m app.main
 
 ## Operating Notes
 - Inventory file must include: `product_name`, `quantity`, `avg_buy_price`.
+- Optional inventory columns: `last_buy_price`, `sell_price`, `alarm`, `source`.
 - Basalam fetch requires `access_token` in `config.json`.
 - Excel exports are RTL/Persian and auto-fit columns.
 

@@ -75,7 +75,7 @@ Supported columns (English/Persian aliases):
 - `product_name`
 - `quantity`
 - `avg_buy_price`
-- optional: `last_buy_price`, `alarm`, `source`
+- optional: `last_buy_price`, `sell_price`, `alarm`, `source`
 
 ## One-shot legacy import script (stock.xlsx + invoices.db)
 For repeatable migrations from old local files into PostgreSQL:
