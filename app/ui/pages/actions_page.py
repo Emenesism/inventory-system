@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from html import escape
 
 from PySide6.QtCore import QCoreApplication, Qt
@@ -116,6 +117,9 @@ class ActionsPage(QWidget):
         details_layout.setSpacing(12)
 
         self.details_label = QLabel(self.tr("جزئیات اقدام را انتخاب کنید."))
+        self.details_label.setStyleSheet(
+            "font-size: 15px; font-weight: 700; color: #334155;"
+        )
         details_layout.addWidget(self.details_label)
 
         self.details_text = QTextEdit()
@@ -192,32 +196,70 @@ class ActionsPage(QWidget):
         self._show_action_details(action)
 
     def _show_action_details(self, action: ActionEntry) -> None:
+        rendered: str | None = None
         if action.action_type == "inventory_edit":
             rendered = self._render_inventory_edit_details(action.details)
-            if rendered:
-                self._set_html_details(rendered)
-                return
-        self._set_plain_details(action.details)
+        if not rendered:
+            rendered = self._render_structured_action_details(action.details)
+        if rendered:
+            self._set_html_details(self._wrap_action_body(action, rendered))
+            return
+        plain = escape(action.details or "")
+        fallback = (
+            "<div class='action-root'>"
+            "<div class='action-card'>"
+            "<div class='action-text'>" + plain.replace("\n", "<br>") + "</div>"
+            "</div>"
+            "</div>"
+        )
+        self._set_html_details(self._wrap_action_body(action, fallback))
 
     def _set_html_details(self, body_html: str) -> None:
         html = (
             "<html><head><meta charset='utf-8'>"
             "<style>"
             "body{font-family:Vazirmatn,Tahoma,sans-serif; text-align:right; margin:0; padding:0;}"
-            "table{width:100%; border-collapse:collapse; table-layout:fixed;}"
-            "th,td{text-align:right; vertical-align:middle;}"
+            ".action-shell{padding:2px 0 4px 0;}"
+            ".action-meta{margin-bottom:10px; padding:4px 6px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;}"
+            ".action-meta-table{width:100%; border-collapse:separate; border-spacing:6px 2px; table-layout:fixed;}"
+            ".action-meta-table td{text-align:right; vertical-align:middle;}"
+            ".action-meta-type-cell{width:34%;}"
+            ".action-meta-admin-cell{width:33%;}"
+            ".action-meta-date-cell{width:33%;}"
+            ".action-chip{display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid transparent; white-space:nowrap;}"
+            ".action-chip-type{background:#e0ecff; color:#1d4ed8; border-color:#bfdbfe;}"
+            ".action-chip-admin{background:#f1f5f9; color:#334155; border-color:#cbd5e1;}"
+            ".action-chip-date{background:#f8fafc; color:#475569; border-color:#e2e8f0;}"
+            ".action-main-title{margin-bottom:12px; padding:8px 12px; border-radius:10px; border:1px solid #dbeafe; background:#f8fbff; color:#0f172a; font-weight:700; line-height:1.75;}"
+            ".action-root{display:block; color:#0f172a;}"
+            ".action-card{margin-top:12px; padding:12px; border:1px solid #cbd5e1; border-radius:10px; background:#f8fafc;}"
+            ".action-card:first-child{margin-top:0;}"
+            ".action-card-title{font-weight:700; margin-bottom:8px; color:#0f172a;}"
+            ".action-card-before{border-color:#bfdbfe; background:#eff6ff;}"
+            ".action-card-before .action-card-title{color:#1d4ed8;}"
+            ".action-card-after{border-color:#bbf7d0; background:#f0fdf4;}"
+            ".action-card-after .action-card-title{color:#15803d;}"
+            ".action-text{line-height:1.75; white-space:pre-wrap; color:#1f2937;}"
+            ".action-subtitle{margin-top:8px; margin-bottom:6px; padding-bottom:4px; border-bottom:1px dashed #cbd5e1; font-weight:700; color:#1e293b;}"
+            ".action-note{margin-top:8px; padding:8px 10px; border-radius:8px; border:1px solid #dbeafe; background:#f8fbff; color:#1e40af; font-weight:700; line-height:1.7;}"
+            ".action-empty{padding:8px; border:1px dashed #cbd5e1; border-radius:8px; color:#475569; background:#ffffff;}"
+            ".action-kv-wrap{margin-top:8px; border:1px solid #d1d5db; border-radius:8px; background:#ffffff; overflow:hidden;}"
+            ".action-kv-table{width:100%; border-collapse:collapse; table-layout:fixed;}"
+            ".action-kv-table td{border-top:1px solid #e5e7eb; padding:7px 10px; text-align:right; vertical-align:top;}"
+            ".action-kv-table tr:first-child td{border-top:none;}"
+            ".action-kv-key-cell{width:34%; background:#f8fafc; color:#334155; font-weight:700;}"
+            ".action-kv-value-cell{width:66%; color:#0f172a; unicode-bidi:plaintext;}"
+            ".action-list{margin:8px 0 0 0; padding-right:18px; color:#1f2937;}"
+            ".action-list li{margin:4px 0;}"
+            ".action-table-wrap{margin-top:8px; border:1px solid #d1d5db; border-radius:8px; background:#ffffff; overflow:hidden;}"
+            ".action-table{width:100%; border-collapse:collapse; table-layout:fixed;}"
+            ".action-table th,.action-table td{text-align:right; vertical-align:top; border:1px solid #e5e7eb; padding:6px 8px;}"
+            ".action-table th{background:#f3f4f6; font-weight:700; color:#0f172a;}"
+            ".action-table tbody tr:nth-child(even){background:#f8fafc;}"
             "</style></head><body>" + body_html + "</body></html>"
         )
         self.details_text.setHtml(html)
         self.details_text.setAlignment(Qt.AlignRight)
-
-    def _set_plain_details(self, text: str) -> None:
-        safe = escape(text or "")
-        self._set_html_details(
-            "<div style='text-align:right; white-space:pre-wrap;'>"
-            + safe
-            + "</div>"
-        )
 
     def _render_inventory_edit_details(self, details: str) -> str | None:
         text = str(details or "").strip()
@@ -274,6 +316,38 @@ class ActionsPage(QWidget):
             + "</div>"
         )
 
+    def _wrap_action_body(self, action: ActionEntry, body_html: str) -> str:
+        action_type = self._format_action(action)
+        admin = action.admin_username or self.tr("نامشخص")
+        created_at = to_jalali_datetime(action.created_at)
+        return (
+            "<div class='action-shell'>"
+            "<div class='action-meta'>"
+            "<table class='action-meta-table'><tr>"
+            "<td class='action-meta-type-cell'>"
+            "<span class='action-chip action-chip-type'>"
+            + escape(self.tr("نوع: {type}").format(type=action_type))
+            + "</span>"
+            "</td>"
+            "<td class='action-meta-admin-cell'>"
+            "<span class='action-chip action-chip-admin'>"
+            + escape(self.tr("ادمین: {admin}").format(admin=admin))
+            + "</span>"
+            "</td>"
+            "<td class='action-meta-date-cell'>"
+            "<span class='action-chip action-chip-date'>"
+            + escape(self.tr("تاریخ: {date}").format(date=created_at))
+            + "</span>"
+            "</td>"
+            "</tr></table>"
+            "</div>"
+            "<div class='action-main-title'>"
+            + escape(action.title or action_type)
+            + "</div>"
+            + body_html
+            + "</div>"
+        )
+
     def _inventory_snapshot_to_html(self, lines: list[str]) -> str:
         if not lines:
             return (
@@ -323,6 +397,294 @@ class ActionsPage(QWidget):
             "</table>"
             "</div>"
         )
+
+    def _render_structured_action_details(self, details: str) -> str | None:
+        text = str(details or "").strip()
+        if not text:
+            return None
+
+        blocks = [part.strip() for part in text.split("\n\n") if part.strip()]
+        if not blocks:
+            blocks = [text]
+
+        cards: list[str] = []
+        for block in blocks:
+            lines = [
+                line.strip() for line in block.splitlines() if line.strip()
+            ]
+            if not lines:
+                continue
+
+            lead_lines, sections = self._extract_before_after_sections(lines)
+            if lead_lines:
+                cards.append(self._render_detail_card(None, lead_lines))
+            if sections:
+                for title, section_lines in sections:
+                    cards.append(self._render_detail_card(title, section_lines))
+                continue
+
+            cards.append(self._render_detail_card(None, lines))
+
+        if not cards:
+            return None
+
+        return "<div class='action-root'>" + "".join(cards) + "</div>"
+
+    def _extract_before_after_sections(
+        self, lines: list[str]
+    ) -> tuple[list[str], list[tuple[str, list[str]]]]:
+        lead_lines: list[str] = []
+        sections: list[tuple[str, list[str]]] = []
+        current_title: str | None = None
+        current_lines: list[str] = []
+
+        for line in lines:
+            marker = self._section_marker(line)
+            if marker:
+                if current_title is not None:
+                    sections.append((current_title, current_lines))
+                elif current_lines:
+                    lead_lines.extend(current_lines)
+                current_title = marker
+                current_lines = []
+                continue
+            current_lines.append(line)
+
+        if current_title is not None:
+            sections.append((current_title, current_lines))
+        elif current_lines:
+            lead_lines.extend(current_lines)
+
+        return lead_lines, sections
+
+    def _section_marker(self, line: str) -> str | None:
+        normalized = line.strip().rstrip(":").strip().lower()
+        if normalized in {"before", "قبل"}:
+            return self.tr("قبل")
+        if normalized in {"after", "بعد"}:
+            return self.tr("بعد")
+        return None
+
+    def _render_detail_card(self, title: str | None, lines: list[str]) -> str:
+        card_class = "action-card"
+        if title:
+            normalized = title.strip().lower()
+            if normalized in {"قبل", "before"}:
+                card_class += " action-card-before"
+            elif normalized in {"بعد", "after"}:
+                card_class += " action-card-after"
+        title_html = (
+            "<div class='action-card-title'>" + escape(title) + "</div>"
+            if title
+            else ""
+        )
+        body_html = self._render_detail_lines(lines)
+        return (
+            "<div class='"
+            + card_class
+            + "'>"
+            + title_html
+            + body_html
+            + "</div>"
+        )
+
+    def _render_detail_lines(self, lines: list[str]) -> str:
+        clean_lines = [line.strip() for line in lines if line.strip()]
+        if not clean_lines:
+            return "<div class='action-empty'>(هیچ)</div>"
+
+        marker_set = {"(هیچ)", "(وجود ندارد)", "(حذف شد)"}
+        if len(clean_lines) == 1 and clean_lines[0] in marker_set:
+            return (
+                "<div class='action-empty'>" + escape(clean_lines[0]) + "</div>"
+            )
+
+        segments: list[tuple[str, list[object]]] = []
+
+        def append_segment(kind: str, item: object) -> None:
+            if segments and segments[-1][0] == kind:
+                segments[-1][1].append(item)
+            else:
+                segments.append((kind, [item]))
+
+        for line in clean_lines:
+            if line in marker_set:
+                append_segment("empty", line)
+                continue
+
+            line_item = self._parse_line_item(line)
+            if line_item is not None:
+                append_segment("line_items", line_item)
+                continue
+
+            if line.startswith("- "):
+                append_segment("bullets", line[2:].strip())
+                continue
+            if line.startswith("• "):
+                append_segment("bullets", line[2:].strip())
+                continue
+            if line.startswith("تغییر موجودی:"):
+                append_segment("note", line)
+                continue
+            if line.endswith(":") and len(line.rstrip(":").strip()) >= 2:
+                append_segment("subtitle", line.rstrip(":").strip())
+                continue
+
+            pair = self._split_key_value_line(line)
+            if pair is not None:
+                append_segment("kv", pair)
+                continue
+
+            append_segment("text", line)
+
+        html_parts: list[str] = []
+        for kind, values in segments:
+            if kind == "kv":
+                pairs = [
+                    pair
+                    for pair in values
+                    if isinstance(pair, tuple) and len(pair) == 2
+                ]
+                html_parts.append(self._render_key_value_table(pairs))
+                continue
+
+            if kind == "line_items":
+                rows = [row for row in values if isinstance(row, list)]
+                html_parts.append(self._render_line_items_table(rows))
+                continue
+
+            if kind == "bullets":
+                items = "".join(
+                    "<li>" + escape(str(item)) + "</li>"
+                    for item in values
+                    if str(item).strip()
+                )
+                if items:
+                    html_parts.append(
+                        "<ul class='action-list'>" + items + "</ul>"
+                    )
+                continue
+
+            if kind == "subtitle":
+                html_parts.extend(
+                    "<div class='action-subtitle'>"
+                    + escape(str(value))
+                    + "</div>"
+                    for value in values
+                    if str(value).strip()
+                )
+                continue
+
+            if kind == "note":
+                html_parts.extend(
+                    "<div class='action-note'>" + escape(str(value)) + "</div>"
+                    for value in values
+                    if str(value).strip()
+                )
+                continue
+
+            if kind == "empty":
+                html_parts.extend(
+                    "<div class='action-empty'>" + escape(str(value)) + "</div>"
+                    for value in values
+                )
+                continue
+
+            text_html = "<br>".join(
+                escape(str(value)) for value in values if str(value).strip()
+            )
+            if text_html:
+                html_parts.append(
+                    "<div class='action-text'>" + text_html + "</div>"
+                )
+
+        if not html_parts:
+            return "<div class='action-empty'>(هیچ)</div>"
+        return "".join(html_parts)
+
+    def _render_key_value_table(self, rows: list[tuple[str, str]]) -> str:
+        if not rows:
+            return ""
+        row_html = "".join(
+            "<tr><td class='action-kv-key-cell'>"
+            + escape(key)
+            + "</td><td class='action-kv-value-cell'>"
+            + escape(value)
+            + "</td></tr>"
+            for key, value in rows
+        )
+        return (
+            "<div class='action-kv-wrap'><table class='action-kv-table'>"
+            + row_html
+            + "</table></div>"
+        )
+
+    def _render_line_items_table(
+        self, rows: list[list[tuple[str, str]]]
+    ) -> str:
+        if not rows:
+            return ""
+
+        columns: list[str] = []
+        for row in rows:
+            for key, _ in row:
+                if key not in columns:
+                    columns.append(key)
+        if not columns:
+            return ""
+
+        display_columns = list(reversed(columns))
+        head_html = "".join(
+            "<th>" + escape(column) + "</th>" for column in display_columns
+        )
+
+        body_rows: list[str] = []
+        for row in rows:
+            row_map = {key: value for key, value in row}
+            cell_html = "".join(
+                "<td>" + escape(str(row_map.get(column, "-"))) + "</td>"
+                for column in display_columns
+            )
+            body_rows.append("<tr>" + cell_html + "</tr>")
+
+        return (
+            "<div class='action-table-wrap'>"
+            "<table class='action-table'>"
+            "<thead><tr>" + head_html + "</tr></thead>"
+            "<tbody>" + "".join(body_rows) + "</tbody></table></div>"
+        )
+
+    def _parse_line_item(self, line: str) -> list[tuple[str, str]] | None:
+        parts = [part.strip() for part in line.split("|") if part.strip()]
+        if not parts:
+            return None
+        match = re.match(r"^(\d+)\)\s*(.+)$", parts[0])
+        if not match:
+            return None
+
+        row: list[tuple[str, str]] = [
+            (self.tr("ردیف"), match.group(1).strip()),
+            (self.tr("کالا"), match.group(2).strip()),
+        ]
+        for part in parts[1:]:
+            pair = self._split_key_value_line(part)
+            if pair is not None:
+                row.append(pair)
+            else:
+                row.append((self.tr("شرح"), part))
+        return row
+
+    def _split_key_value_line(self, line: str) -> tuple[str, str] | None:
+        if ":" not in line:
+            return None
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(key) < 2 or not value:
+            return None
+        if re.fullmatch(r"[0-9۰-۹\-/\s.]+", key):
+            return None
+        return key, value
 
     def _maybe_load_more(self) -> None:
         if self._loading_more or self._loaded_count >= self._total_count:
