@@ -476,7 +476,10 @@ func (h *Handler) DeleteInvoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) InvoiceStats(w http.ResponseWriter, r *http.Request) {
-	count, total, err := h.svc.InvoiceStats(r.Context())
+	count, total, err := h.svc.InvoiceStats(
+		r.Context(),
+		r.URL.Query().Get("type"),
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
