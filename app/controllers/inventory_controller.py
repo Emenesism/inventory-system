@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from PySide6.QtCore import QObject
 
@@ -36,6 +37,8 @@ class InventoryController(QObject):
         self.invoice_service = invoice_service
         self._refresh_history_views = refresh_history_views
         self._logger = logging.getLogger(self.__class__.__name__)
+        self._last_inventory_log_details: str | None = None
+        self._last_inventory_log_at: float = 0.0
 
         self.page.reload_requested.connect(self.reload)
         self.page.save_requested.connect(self.save)
@@ -108,8 +111,19 @@ class InventoryController(QObject):
                     if self._refresh_history_views is not None:
                         self._refresh_history_views()
                     if self.action_log_service:
+                        before_names = "\n".join(
+                            f"- {old}" for old, _ in name_changes
+                        )
+                        after_names = "\n".join(
+                            f"- {new}" for _, new in name_changes
+                        )
                         detail_lines = [
-                            f"{old} → {new}" for old, new in name_changes
+                            self.tr("قبل:\n{before_names}").format(
+                                before_names=before_names or self.tr("(هیچ)")
+                            ),
+                            self.tr("بعد:\n{after_names}").format(
+                                after_names=after_names or self.tr("(هیچ)")
+                            ),
                         ]
                         if invoice_ids:
                             invoice_text = ", ".join(
@@ -164,14 +178,16 @@ class InventoryController(QObject):
             self.page.clear_name_changes()
         if old_df is not None:
             details = self._build_inventory_diff(old_df, df)
-            if not details:
-                details = self.tr("تغییر مشخصی یافت نشد، اما ذخیره انجام شد.")
-            self.action_log_service.log_action(
-                "inventory_edit",
-                self.tr("ویرایش دستی موجودی"),
-                details,
-                admin=admin,
-            )
+            if details and self.action_log_service:
+                if not self._is_duplicate_inventory_log(details):
+                    self.action_log_service.log_action(
+                        "inventory_edit",
+                        self.tr("ویرایش دستی موجودی"),
+                        details,
+                        admin=admin,
+                    )
+                    self._last_inventory_log_details = details
+                    self._last_inventory_log_at = time.monotonic()
         self.toast.show(self.tr("موجودی ذخیره شد"), "success")
 
     def export(self) -> None:
@@ -258,16 +274,6 @@ class InventoryController(QObject):
         )
 
     def _build_inventory_diff(self, old_df, new_df) -> str:  # noqa: ANN001
-        def values_differ(a, b) -> bool:
-            try:
-                if a is None and b is None:
-                    return False
-                if isinstance(a, (int, float)) or isinstance(b, (int, float)):
-                    return abs(float(a) - float(b)) > 1e-6
-            except Exception:  # noqa: BLE001
-                pass
-            return str(a) != str(b)
-
         def key_map(df):
             return {
                 normalize_text(str(row["product_name"])): row
@@ -275,52 +281,150 @@ class InventoryController(QObject):
                 if str(row.get("product_name", "")).strip()
             }
 
+        columns: list[str] = []
+        for col in list(old_df.columns) + list(new_df.columns):
+            col_name = str(col)
+            if col_name not in columns:
+                columns.append(col_name)
+        if "product_name" in columns:
+            columns = ["product_name"] + [
+                col for col in columns if col != "product_name"
+            ]
+
         old_map = key_map(old_df)
         new_map = key_map(new_df)
-        changes: list[str] = []
+
+        sections: list[str] = []
+        added = 0
+        edited = 0
+        removed = 0
 
         for key, new_row in new_map.items():
             old_row = old_map.get(key)
-            name = str(new_row.get("product_name", ""))
+            name = str(new_row.get("product_name", "")).strip() or key
             if old_row is None:
-                qty = new_row.get("quantity", "")
-                avg = new_row.get("avg_buy_price", "")
-                sell = new_row.get("sell_price", "")
-                changes.append(
+                added += 1
+                sections.append(
                     self.tr(
-                        "کالای جدید: {name} | تعداد={qty} | میانگین={avg} | قیمت فروش={sell}"
-                    ).format(name=name, qty=qty, avg=avg, sell=sell)
+                        "[افزودن کالا] {name}\n"
+                        "قبل:\n"
+                        "(وجود ندارد)\n"
+                        "بعد:\n"
+                        "{after_block}"
+                    ).format(
+                        name=name,
+                        after_block=self._format_inventory_row_block(
+                            new_row, columns
+                        ),
+                    )
                 )
                 continue
-            diff_parts: list[str] = []
-            for col in new_df.columns:
-                if col == "product_name":
-                    continue
-                old_val = old_row.get(col)
-                new_val = new_row.get(col)
-                if values_differ(old_val, new_val):
-                    label = {
-                        "quantity": self.tr("تعداد"),
-                        "avg_buy_price": self.tr("میانگین قیمت خرید"),
-                        "last_buy_price": self.tr("آخرین قیمت خرید"),
-                        "sell_price": self.tr("قیمت فروش"),
-                        "alarm": self.tr("آلارم"),
-                        "source": self.tr("منبع"),
-                    }.get(col, col)
-                    diff_parts.append(
-                        self.tr("{label}: {old} → {new}").format(
-                            label=label, old=old_val, new=new_val
-                        )
-                    )
-            if diff_parts:
-                changes.append(
-                    self.tr("ویرایش {name}: ").format(name=name)
-                    + "، ".join(diff_parts)
+
+            changed = any(
+                self._values_differ(old_row.get(col), new_row.get(col))
+                for col in columns
+                if col != "product_name"
+            )
+            if not changed:
+                continue
+
+            edited += 1
+            sections.append(
+                self.tr(
+                    "[ویرایش کالا] {name}\n"
+                    "قبل:\n"
+                    "{before_block}\n"
+                    "بعد:\n"
+                    "{after_block}"
+                ).format(
+                    name=name,
+                    before_block=self._format_inventory_row_block(
+                        old_row, columns
+                    ),
+                    after_block=self._format_inventory_row_block(
+                        new_row, columns
+                    ),
                 )
+            )
 
         for key, old_row in old_map.items():
-            if key not in new_map:
-                name = str(old_row.get("product_name", ""))
-                changes.append(self.tr("حذف کالا: {name}").format(name=name))
+            if key in new_map:
+                continue
+            removed += 1
+            name = str(old_row.get("product_name", "")).strip() or key
+            sections.append(
+                self.tr(
+                    "[حذف کالا] {name}\nقبل:\n{before_block}\nبعد:\n(حذف شد)"
+                ).format(
+                    name=name,
+                    before_block=self._format_inventory_row_block(
+                        old_row, columns
+                    ),
+                )
+            )
 
-        return "\n".join(changes[:200])
+        if not sections:
+            return ""
+
+        summary = self.tr(
+            "خلاصه تغییرات موجودی | افزودن: {added} | ویرایش: {edited} | حذف: {removed}"
+        ).format(added=added, edited=edited, removed=removed)
+        return summary + "\n\n" + "\n\n".join(sections)
+
+    def _inventory_column_label(self, column_name: str) -> str:
+        return {
+            "product_name": self.tr("نام کالا"),
+            "quantity": self.tr("تعداد"),
+            "avg_buy_price": self.tr("میانگین قیمت خرید"),
+            "last_buy_price": self.tr("آخرین قیمت خرید"),
+            "sell_price": self.tr("قیمت فروش"),
+            "alarm": self.tr("آلارم"),
+            "source": self.tr("منبع"),
+        }.get(column_name, column_name)
+
+    @staticmethod
+    def _value_missing(value) -> bool:  # noqa: ANN001
+        if value is None:
+            return True
+        try:
+            compare = value != value
+            if isinstance(compare, bool):
+                if compare:
+                    return True
+            elif str(compare).strip().lower() == "true":
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        return str(value).strip().lower() in {"nan", "none", "<na>", "nat"}
+
+    def _values_differ(self, a, b) -> bool:  # noqa: ANN001
+        if self._value_missing(a) and self._value_missing(b):
+            return False
+        try:
+            if isinstance(a, (int, float)) or isinstance(b, (int, float)):
+                return abs(float(a) - float(b)) > 1e-6
+        except Exception:  # noqa: BLE001
+            pass
+        return str(a) != str(b)
+
+    def _format_inventory_value(self, value) -> str:  # noqa: ANN001
+        if self._value_missing(value):
+            return "-"
+        if isinstance(value, float):
+            rounded = round(value)
+            if abs(value - rounded) < 1e-6:
+                return f"{int(rounded):,}"
+            return f"{value:,.4f}".rstrip("0").rstrip(".")
+        return str(value)
+
+    def _format_inventory_row_block(self, row, columns: list[str]) -> str:  # noqa: ANN001
+        headers = [self._inventory_column_label(col) for col in columns]
+        values = [self._format_inventory_value(row.get(col)) for col in columns]
+        header_row = " | ".join(headers)
+        value_row = " | ".join(values)
+        return header_row + "\n" + value_row
+
+    def _is_duplicate_inventory_log(self, details: str) -> bool:
+        if self._last_inventory_log_details != details:
+            return False
+        return (time.monotonic() - self._last_inventory_log_at) < 2.0

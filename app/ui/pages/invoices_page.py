@@ -642,14 +642,13 @@ class InvoicesPage(QWidget):
                     if invoice.invoice_type.startswith("sales")
                     else self.tr("ویرایش نام فاکتور خرید")
                 )
-                details = self.tr(
-                    "شماره فاکتور: {invoice_id}\n"
-                    "نام قبلی: {old_name}\n"
-                    "نام جدید: {new_name}"
-                ).format(
-                    invoice_id=invoice.invoice_id,
-                    old_name=invoice.invoice_name or "",
-                    new_name=new_name or "",
+                details = self._build_invoice_before_after_log(
+                    invoice=invoice,
+                    before_lines=lines,
+                    after_lines=lines,
+                    before_name=invoice.invoice_name,
+                    after_name=new_name,
+                    inventory_note=self.tr("تغییر موجودی: ندارد"),
                 )
                 self._action_log_service.log_action(
                     "invoice_edit",
@@ -711,26 +710,23 @@ class InvoicesPage(QWidget):
             dialogs.show_error(self, self.tr("ویرایش فاکتور"), str(exc))
             return
         if self._action_log_service:
-            before_block = self._format_lines_for_log(lines, self.tr("قبل"))
-            after_block = self._format_lines_for_log(new_lines, self.tr("بعد"))
             title = (
                 self.tr("ویرایش فاکتور فروش")
                 if invoice.invoice_type.startswith("sales")
                 else self.tr("ویرایش فاکتور خرید")
             )
+            details = self._build_invoice_before_after_log(
+                invoice=invoice,
+                before_lines=lines,
+                after_lines=new_lines,
+                before_name=invoice.invoice_name,
+                after_name=new_name,
+                inventory_note=self.tr("تغییر موجودی: اعمال در بک‌اند"),
+            )
             self._action_log_service.log_action(
                 "invoice_edit",
                 title,
-                self.tr(
-                    "شماره فاکتور: {invoice_id}\n"
-                    "تعداد ردیف‌ها: {old_count} → {new_count}\n"
-                    "تغییر موجودی: اعمال در بک‌اند"
-                ).format(
-                    invoice_id=invoice.invoice_id,
-                    old_count=len(lines),
-                    new_count=len(new_lines),
-                )
-                + f"\n\n{before_block}\n\n{after_block}",
+                details,
                 admin=admin,
             )
         if self.toast:
@@ -755,6 +751,12 @@ class InvoicesPage(QWidget):
                 self, self.tr("فاکتورها"), self.tr("فاکتور پیدا نشد.")
             )
             return
+        try:
+            lines = self.invoice_service.get_invoice_lines(invoice_id)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, self.tr("حذف فاکتور"), str(exc))
+            return
+        line_count = len(lines) if lines else invoice.total_lines
         confirm = dialogs.ask_yes_no(
             self,
             self.tr("حذف فاکتور"),
@@ -766,9 +768,7 @@ class InvoicesPage(QWidget):
                 + self.tr("تاریخ: {date}\n").format(
                     date=to_jalali_datetime(invoice.created_at)
                 )
-                + self.tr("تعداد ردیف: {count}\n").format(
-                    count=invoice.total_lines
-                )
+                + self.tr("تعداد ردیف: {count}\n").format(count=line_count)
                 + self.tr("تطبیق موجودی توسط بک‌اند انجام می‌شود.")
             ),
         )
@@ -793,17 +793,15 @@ class InvoicesPage(QWidget):
                 if invoice.invoice_type.startswith("sales")
                 else self.tr("حذف فاکتور خرید")
             )
+            details = self._build_invoice_delete_log(
+                invoice=invoice,
+                before_lines=lines,
+                before_name=invoice.invoice_name,
+            )
             self._action_log_service.log_action(
                 "invoice_delete",
                 title,
-                self.tr(
-                    "شماره فاکتور: {invoice_id}\n"
-                    "تعداد ردیف‌ها: {line_count}\n"
-                    "تغییر موجودی: اعمال در بک‌اند"
-                ).format(
-                    invoice_id=invoice.invoice_id,
-                    line_count=invoice.total_lines,
-                ),
+                details,
                 admin=admin,
             )
         if self.toast:
@@ -931,12 +929,11 @@ class InvoicesPage(QWidget):
                 return False
         return True
 
-    def _format_lines_for_log(self, lines, label: str) -> str:
-        header = self.tr("{label}:").format(label=label)
+    def _format_lines_for_log(self, lines) -> str:  # noqa: ANN001
         if not lines:
-            return self.tr("{header}\n(هیچ)").format(header=header)
+            return self.tr("(هیچ)")
         rows = []
-        for idx, line in enumerate(lines[:60], start=1):
+        for idx, line in enumerate(lines, start=1):
             total = float(line.price) * int(line.quantity)
             rows.append(
                 self.tr(
@@ -949,8 +946,109 @@ class InvoicesPage(QWidget):
                     total=f"{total:,.0f}",
                 )
             )
-        if len(lines) > 60:
-            rows.append(
-                self.tr("... {count} ردیف دیگر").format(count=len(lines) - 60)
-            )
-        return header + "\n" + "\n".join(rows)
+        return "\n".join(rows)
+
+    @staticmethod
+    def _invoice_totals(lines) -> tuple[int, float]:  # noqa: ANN001
+        total_qty = sum(int(line.quantity) for line in lines)
+        total_amount = sum(
+            float(line.price) * int(line.quantity) for line in lines
+        )
+        return total_qty, total_amount
+
+    def _format_invoice_snapshot_for_log(
+        self,
+        invoice: InvoiceSummary,
+        lines,
+        invoice_name: str | None,
+        label: str,
+    ) -> str:  # noqa: ANN001
+        total_qty, total_amount = self._invoice_totals(lines)
+        return self.tr(
+            "{label}:\n"
+            "شماره فاکتور: {invoice_id}\n"
+            "نوع: {invoice_type}\n"
+            "نام: {invoice_name}\n"
+            "تعداد ردیف‌ها: {line_count}\n"
+            "تعداد کل: {total_qty}\n"
+            "مبلغ کل: {total_amount}\n"
+            "ردیف‌ها:\n"
+            "{lines_block}"
+        ).format(
+            label=label,
+            invoice_id=invoice.invoice_id,
+            invoice_type=self._format_type(invoice.invoice_type),
+            invoice_name=invoice_name or "-",
+            line_count=len(lines),
+            total_qty=total_qty,
+            total_amount=self._format_amount(total_amount),
+            lines_block=self._format_lines_for_log(lines),
+        )
+
+    def _format_deleted_invoice_snapshot_for_log(
+        self, invoice: InvoiceSummary, label: str
+    ) -> str:
+        return self.tr(
+            "{label}:\n"
+            "شماره فاکتور: {invoice_id}\n"
+            "نوع: {invoice_type}\n"
+            "نام: (حذف شد)\n"
+            "وضعیت: حذف شده\n"
+            "تعداد ردیف‌ها: 0\n"
+            "تعداد کل: 0\n"
+            "مبلغ کل: {total_amount}\n"
+            "ردیف‌ها:\n"
+            "(هیچ)"
+        ).format(
+            label=label,
+            invoice_id=invoice.invoice_id,
+            invoice_type=self._format_type(invoice.invoice_type),
+            total_amount=self._format_amount(0),
+        )
+
+    def _build_invoice_before_after_log(
+        self,
+        invoice: InvoiceSummary,
+        before_lines,
+        after_lines,
+        before_name: str | None,
+        after_name: str | None,
+        inventory_note: str,
+    ) -> str:  # noqa: ANN001
+        before_block = self._format_invoice_snapshot_for_log(
+            invoice=invoice,
+            lines=before_lines,
+            invoice_name=before_name,
+            label=self.tr("قبل"),
+        )
+        after_block = self._format_invoice_snapshot_for_log(
+            invoice=invoice,
+            lines=after_lines,
+            invoice_name=after_name,
+            label=self.tr("بعد"),
+        )
+        return before_block + "\n\n" + after_block + "\n\n" + inventory_note
+
+    def _build_invoice_delete_log(
+        self,
+        invoice: InvoiceSummary,
+        before_lines,
+        before_name: str | None,
+    ) -> str:  # noqa: ANN001
+        before_block = self._format_invoice_snapshot_for_log(
+            invoice=invoice,
+            lines=before_lines,
+            invoice_name=before_name,
+            label=self.tr("قبل"),
+        )
+        after_block = self._format_deleted_invoice_snapshot_for_log(
+            invoice=invoice,
+            label=self.tr("بعد"),
+        )
+        return (
+            before_block
+            + "\n\n"
+            + after_block
+            + "\n\n"
+            + self.tr("تغییر موجودی: اعمال در بک‌اند")
+        )

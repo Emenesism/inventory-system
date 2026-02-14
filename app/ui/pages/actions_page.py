@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -9,10 +11,10 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -116,8 +118,10 @@ class ActionsPage(QWidget):
         self.details_label = QLabel(self.tr("جزئیات اقدام را انتخاب کنید."))
         details_layout.addWidget(self.details_label)
 
-        self.details_text = QPlainTextEdit()
+        self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
+        self.details_text.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.details_text.setLayoutDirection(Qt.RightToLeft)
         details_layout.addWidget(self.details_text)
         content_layout.addWidget(details_card)
 
@@ -185,7 +189,140 @@ class ActionsPage(QWidget):
             return
         header = f"{action.title} | {to_jalali_datetime(action.created_at)}"
         self.details_label.setText(header)
-        self.details_text.setPlainText(action.details)
+        self._show_action_details(action)
+
+    def _show_action_details(self, action: ActionEntry) -> None:
+        if action.action_type == "inventory_edit":
+            rendered = self._render_inventory_edit_details(action.details)
+            if rendered:
+                self._set_html_details(rendered)
+                return
+        self._set_plain_details(action.details)
+
+    def _set_html_details(self, body_html: str) -> None:
+        html = (
+            "<html><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Vazirmatn,Tahoma,sans-serif; text-align:right; margin:0; padding:0;}"
+            "table{width:100%; border-collapse:collapse; table-layout:fixed;}"
+            "th,td{text-align:right; vertical-align:middle;}"
+            "</style></head><body>" + body_html + "</body></html>"
+        )
+        self.details_text.setHtml(html)
+        self.details_text.setAlignment(Qt.AlignRight)
+
+    def _set_plain_details(self, text: str) -> None:
+        safe = escape(text or "")
+        self._set_html_details(
+            "<div style='text-align:right; white-space:pre-wrap;'>"
+            + safe
+            + "</div>"
+        )
+
+    def _render_inventory_edit_details(self, details: str) -> str | None:
+        text = str(details or "").strip()
+        if not text:
+            return None
+        blocks = [part.strip() for part in text.split("\n\n") if part.strip()]
+        if len(blocks) < 2:
+            return None
+
+        summary = blocks[0]
+        section_html: list[str] = []
+        for block in blocks[1:]:
+            lines = [
+                line.strip() for line in block.splitlines() if line.strip()
+            ]
+            if not lines:
+                continue
+
+            title = lines[0]
+            try:
+                before_idx = lines.index("قبل:")
+                after_idx = lines.index("بعد:")
+            except ValueError:
+                continue
+            if after_idx <= before_idx:
+                continue
+
+            before_lines = lines[before_idx + 1 : after_idx]
+            after_lines = lines[after_idx + 1 :]
+
+            before_table = self._inventory_snapshot_to_html(before_lines)
+            after_table = self._inventory_snapshot_to_html(after_lines)
+            section_html.append(
+                "<div style='margin-top:12px; padding:12px; border:1px solid #cbd5e1; border-radius:10px; background:#f8fafc; direction:rtl; text-align:right;'>"
+                f"<div style='font-weight:700; margin-bottom:10px;'>{escape(title)}</div>"
+                "<div style='margin-bottom:12px; padding:8px; border:1px solid #d1d5db; border-radius:8px; background:#ffffff;'>"
+                "<div style='font-weight:700; margin-bottom:8px;'>قبل</div>"
+                f"{before_table}"
+                "</div>"
+                "<div style='padding:8px; border:1px solid #d1d5db; border-radius:8px; background:#ffffff;'>"
+                "<div style='font-weight:700; margin-bottom:8px;'>بعد</div>"
+                f"{after_table}"
+                "</div>"
+                "</div>"
+            )
+
+        if not section_html:
+            return None
+
+        return (
+            "<div style='text-align:right;'>"
+            f"<div style='font-weight:700; margin-bottom:10px; line-height:1.6;'>{escape(summary)}</div>"
+            + "".join(section_html)
+            + "</div>"
+        )
+
+    def _inventory_snapshot_to_html(self, lines: list[str]) -> str:
+        if not lines:
+            return (
+                "<div style='padding:8px; border:1px dashed #cbd5e1; "
+                "border-radius:6px; color:#475569;'>(هیچ)</div>"
+            )
+        marker = lines[0].strip()
+        if marker in {"(هیچ)", "(وجود ندارد)", "(حذف شد)"}:
+            return (
+                "<div style='padding:8px; border:1px dashed #cbd5e1; "
+                "border-radius:6px; color:#475569;'>"
+                + escape(marker)
+                + "</div>"
+            )
+
+        header_parts = [part.strip() for part in lines[0].split("|")]
+        value_parts: list[str] = []
+        if len(lines) > 1:
+            value_parts = [part.strip() for part in lines[1].split("|")]
+        if not value_parts:
+            value_parts = [""] * len(header_parts)
+        if len(value_parts) < len(header_parts):
+            value_parts.extend([""] * (len(header_parts) - len(value_parts)))
+        if len(value_parts) > len(header_parts):
+            value_parts = value_parts[: len(header_parts)]
+        # QTextEdit rich-text tables often ignore RTL column flow; reverse explicitly.
+        header_parts = list(reversed(header_parts))
+        value_parts = list(reversed(value_parts))
+
+        head_html = "".join(
+            "<th style='border:1px solid #d1d5db; background:#f3f4f6; padding:6px; text-align:right;'>"
+            f"{escape(part)}"
+            "</th>"
+            for part in header_parts
+        )
+        row_html = "".join(
+            "<td style='border:1px solid #d1d5db; padding:6px; text-align:right;'>"
+            f"{escape(part)}"
+            "</td>"
+            for part in value_parts
+        )
+        return (
+            "<div style='display:block; width:100%;'>"
+            "<table width='100%' cellspacing='0' cellpadding='0' "
+            "style='width:100%; border-collapse:collapse; table-layout:fixed;'>"
+            f"<tr>{head_html}</tr><tr>{row_html}</tr>"
+            "</table>"
+            "</div>"
+        )
 
     def _maybe_load_more(self) -> None:
         if self._loading_more or self._loaded_count >= self._total_count:
@@ -244,10 +381,11 @@ class ActionsPage(QWidget):
             "sales_import": t("ثبت فروش"),
             "sales_manual_invoice": t("ثبت فاکتور فروش دستی"),
             "sales_import_export": t("خروجی مغایرت‌های فروش"),
-            "purchase_invoice": t("ثبت خرید"),
+            "purchase_invoice": t("ثبت فاکتور خرید"),
             "inventory_edit": t("ویرایش موجودی"),
             "invoice_edit": t("ویرایش فاکتور"),
             "invoice_delete": t("حذف فاکتور"),
+            "invoice_product_rename": t("به‌روزرسانی نام کالا در فاکتورها"),
             "invoice_export": t("خروجی فاکتور"),
             "invoice_batch_export": t("خروجی گروهی فاکتورها"),
             "low_stock_export": t("خروجی کمبود موجودی"),

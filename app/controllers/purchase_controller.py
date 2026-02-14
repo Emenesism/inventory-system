@@ -99,20 +99,10 @@ class PurchaseInvoiceController(QObject):
             self.inventory_service.load()
             self.on_inventory_updated()
             if self._action_log_service:
-                total_qty = sum(line.quantity for line in valid_lines)
-                total_amount = sum(
-                    line.price * line.quantity for line in valid_lines
-                )
-                details = self.tr(
-                    "شماره فاکتور: {invoice_id}\n"
-                    "تعداد ردیف‌ها: {line_count}\n"
-                    "تعداد کل: {total_qty}\n"
-                    "مبلغ کل: {total_amount}"
-                ).format(
+                details = self._build_purchase_audit_details(
                     invoice_id=invoice_id,
-                    line_count=len(valid_lines),
-                    total_qty=total_qty,
-                    total_amount=f"{total_amount:,.0f}",
+                    invoice_name=invoice_name,
+                    lines=valid_lines,
                 )
                 self._action_log_service.log_action(
                     "purchase_invoice",
@@ -164,4 +154,60 @@ class PurchaseInvoiceController(QObject):
             total_cost=total_cost,
             invalid_count=invalid_count,
             projections=[],
+        )
+
+    def _format_purchase_lines_for_log(self, lines: list[PurchaseLine]) -> str:
+        if not lines:
+            return self.tr("(هیچ)")
+        rows: list[str] = []
+        for idx, line in enumerate(lines, start=1):
+            total = float(line.price) * int(line.quantity)
+            rows.append(
+                self.tr(
+                    "{idx}) {name} | قیمت: {price} | تعداد: {qty} | جمع: {total}"
+                ).format(
+                    idx=idx,
+                    name=line.product_name,
+                    price=f"{float(line.price):,.0f}",
+                    qty=int(line.quantity),
+                    total=f"{total:,.0f}",
+                )
+            )
+        return "\n".join(rows)
+
+    def _build_purchase_audit_details(
+        self,
+        invoice_id: int,
+        invoice_name: str | None,
+        lines: list[PurchaseLine],
+    ) -> str:
+        total_qty = sum(int(line.quantity) for line in lines)
+        total_amount = sum(
+            float(line.price) * int(line.quantity) for line in lines
+        )
+        before_block = self.tr("قبل:\nوضعیت: فاکتور وجود نداشت\nردیف‌ها:\n(هیچ)")
+        after_block = self.tr(
+            "بعد:\n"
+            "شماره فاکتور: {invoice_id}\n"
+            "نوع: خرید\n"
+            "نام: {invoice_name}\n"
+            "تعداد ردیف‌ها: {line_count}\n"
+            "تعداد کل: {total_qty}\n"
+            "مبلغ کل: {total_amount}\n"
+            "ردیف‌ها:\n"
+            "{lines_block}"
+        ).format(
+            invoice_id=invoice_id,
+            invoice_name=invoice_name or "-",
+            line_count=len(lines),
+            total_qty=total_qty,
+            total_amount=f"{total_amount:,.0f}",
+            lines_block=self._format_purchase_lines_for_log(lines),
+        )
+        return (
+            before_block
+            + "\n\n"
+            + after_block
+            + "\n\n"
+            + self.tr("تغییر موجودی: اعمال در بک‌اند")
         )

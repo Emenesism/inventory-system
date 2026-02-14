@@ -176,20 +176,11 @@ class SalesImportController(QObject):
                     invoice_type=invoice_type,
                 )
                 if self._action_log_service:
-                    total_qty = sum(line.quantity for line in sales_lines)
-                    total_amount = sum(
-                        line.price * line.quantity for line in sales_lines
-                    )
-                    details = self.tr(
-                        "شماره فاکتور: {invoice_id}\n"
-                        "تعداد ردیف‌ها: {line_count}\n"
-                        "تعداد کل: {total_qty}\n"
-                        "مبلغ کل: {total_amount}"
-                    ).format(
+                    details = self._build_sales_audit_details(
                         invoice_id=invoice_id,
-                        line_count=len(sales_lines),
-                        total_qty=total_qty,
-                        total_amount=f"{total_amount:,.0f}",
+                        invoice_name=invoice_name,
+                        invoice_type=invoice_type,
+                        lines=sales_lines,
                     )
                     self._action_log_service.log_action(
                         "sales_import",
@@ -543,20 +534,11 @@ class SalesImportController(QObject):
                 invoice_type="sales_manual",
             )
             if self._action_log_service:
-                total_qty = sum(line.quantity for line in sales_lines)
-                total_amount = sum(
-                    line.price * line.quantity for line in sales_lines
-                )
-                details = self.tr(
-                    "شماره فاکتور: {invoice_id}\n"
-                    "تعداد ردیف‌ها: {line_count}\n"
-                    "تعداد کل: {total_qty}\n"
-                    "مبلغ کل: {total_amount}"
-                ).format(
+                details = self._build_sales_audit_details(
                     invoice_id=invoice_id,
-                    line_count=len(sales_lines),
-                    total_qty=total_qty,
-                    total_amount=f"{total_amount:,.0f}",
+                    invoice_name=invoice_name,
+                    invoice_type="sales_manual",
+                    lines=sales_lines,
                 )
                 self._action_log_service.log_action(
                     "sales_manual_invoice",
@@ -613,4 +595,73 @@ class SalesImportController(QObject):
             total_amount=total_amount,
             invalid_count=invalid_count,
             projections=[],
+        )
+
+    def _format_sales_lines_for_log(self, lines: list[SalesLine]) -> str:
+        if not lines:
+            return self.tr("(هیچ)")
+        rows: list[str] = []
+        for idx, line in enumerate(lines, start=1):
+            total = float(line.price) * int(line.quantity)
+            rows.append(
+                self.tr(
+                    "{idx}) {name} | قیمت: {price} | تعداد: {qty} | جمع: {total}"
+                ).format(
+                    idx=idx,
+                    name=line.product_name,
+                    price=f"{float(line.price):,.0f}",
+                    qty=int(line.quantity),
+                    total=f"{total:,.0f}",
+                )
+            )
+        return "\n".join(rows)
+
+    def _format_invoice_type_for_log(self, invoice_type: str) -> str:
+        if invoice_type == "sales_manual":
+            return self.tr("فروش دستی")
+        if invoice_type == "sales_site":
+            return self.tr("فروش سایت")
+        if invoice_type == "sales_basalam":
+            return self.tr("فروش باسلام")
+        if invoice_type.startswith("sales"):
+            return self.tr("فروش")
+        return invoice_type
+
+    def _build_sales_audit_details(
+        self,
+        invoice_id: int,
+        invoice_name: str | None,
+        invoice_type: str,
+        lines: list[SalesLine],
+    ) -> str:
+        total_qty = sum(int(line.quantity) for line in lines)
+        total_amount = sum(
+            float(line.price) * int(line.quantity) for line in lines
+        )
+        before_block = self.tr("قبل:\nوضعیت: فاکتور وجود نداشت\nردیف‌ها:\n(هیچ)")
+        after_block = self.tr(
+            "بعد:\n"
+            "شماره فاکتور: {invoice_id}\n"
+            "نوع: {invoice_type}\n"
+            "نام: {invoice_name}\n"
+            "تعداد ردیف‌ها: {line_count}\n"
+            "تعداد کل: {total_qty}\n"
+            "مبلغ کل: {total_amount}\n"
+            "ردیف‌ها:\n"
+            "{lines_block}"
+        ).format(
+            invoice_id=invoice_id,
+            invoice_type=self._format_invoice_type_for_log(invoice_type),
+            invoice_name=invoice_name or "-",
+            line_count=len(lines),
+            total_qty=total_qty,
+            total_amount=f"{total_amount:,.0f}",
+            lines_block=self._format_sales_lines_for_log(lines),
+        )
+        return (
+            before_block
+            + "\n\n"
+            + after_block
+            + "\n\n"
+            + self.tr("تغییر موجودی: اعمال در بک‌اند")
         )
