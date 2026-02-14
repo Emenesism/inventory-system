@@ -148,8 +148,11 @@ func (s *Service) UnsoldProducts(ctx context.Context, days, limit int) ([]domain
 	return s.repo.GetUnsoldProducts(ctx, days, limit)
 }
 
-func (s *Service) InvoiceStats(ctx context.Context) (int, float64, error) {
-	return s.repo.GetInvoiceStats(ctx)
+func (s *Service) InvoiceStats(
+	ctx context.Context,
+	invoiceType string,
+) (int, float64, error) {
+	return s.repo.GetInvoiceStats(ctx, strings.TrimSpace(invoiceType))
 }
 
 func (s *Service) ListInvoicesBetween(
