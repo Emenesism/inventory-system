@@ -5,7 +5,12 @@ from html import escape
 from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QIntValidator
+from PySide6.QtGui import (
+    QIntValidator,
+    QTextBlockFormat,
+    QTextCursor,
+    QTextOption,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -23,6 +28,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -306,21 +312,22 @@ class InvoiceBatchExportDialog(QDialog):
         inventory_title.setStyleSheet("font-weight: 600;")
         details_layout.addWidget(inventory_title)
 
-        self.inventory_details_label = QLabel(
+        self.inventory_details_label = QTextEdit()
+        self._init_rtl_text_edit(self.inventory_details_label)
+        self.inventory_details_label.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+        self.inventory_details_label.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+        self.inventory_details_label.setAcceptRichText(True)
+        self._set_inventory_html(
             self._muted_html(
                 self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
             )
         )
-        self.inventory_details_label.setProperty("textRole", "muted")
-        self.inventory_details_label.setWordWrap(True)
-        self.inventory_details_label.setTextFormat(Qt.RichText)
-        self.inventory_details_label.setLayoutDirection(Qt.RightToLeft)
-        self.inventory_details_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        self.inventory_details_label.setTextInteractionFlags(
-            Qt.TextSelectableByMouse
-        )
         self.inventory_details_label.setStyleSheet(
-            "QLabel {"
+            "QTextEdit {"
             "background: #f8fafc;"
             "border: 1px solid #e2e8f0;"
             "border-radius: 8px;"
@@ -335,23 +342,21 @@ class InvoiceBatchExportDialog(QDialog):
         action_title.setStyleSheet("font-weight: 600;")
         details_layout.addWidget(action_title)
 
-        self.action_details_label = QLabel(
+        self.action_details_label = QTextEdit()
+        self._init_rtl_text_edit(self.action_details_label)
+        self.action_details_label.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+        self.action_details_label.setAcceptRichText(True)
+        self._set_action_html(
             self._muted_html(
                 self.tr(
                     "برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید."
                 )
             )
         )
-        self.action_details_label.setProperty("textRole", "muted")
-        self.action_details_label.setWordWrap(True)
-        self.action_details_label.setTextFormat(Qt.RichText)
-        self.action_details_label.setLayoutDirection(Qt.RightToLeft)
-        self.action_details_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        self.action_details_label.setTextInteractionFlags(
-            Qt.TextSelectableByMouse
-        )
         self.action_details_label.setStyleSheet(
-            "QLabel {"
+            "QTextEdit {"
             "background: #f8fafc;"
             "border: 1px solid #e2e8f0;"
             "border-radius: 8px;"
@@ -644,7 +649,7 @@ class InvoiceBatchExportDialog(QDialog):
         self, match: InvoiceProductMatch | None
     ) -> None:
         if match is None:
-            self.inventory_details_label.setText(
+            self._set_inventory_html(
                 self._muted_html(
                     self.tr(
                         "برای مشاهده جزئیات موجودی، یک کالای معتبر انتخاب کنید."
@@ -653,7 +658,7 @@ class InvoiceBatchExportDialog(QDialog):
             )
             return
         if not self.inventory_service or not self.inventory_service.is_loaded():
-            self.inventory_details_label.setText(
+            self._set_inventory_html(
                 self._muted_html(
                     self.tr(
                         "موجودی بارگذاری نشده است؛ جزئیات موجودی در دسترس نیست."
@@ -664,7 +669,7 @@ class InvoiceBatchExportDialog(QDialog):
 
         idx = self.inventory_service.find_index(match.product_name)
         if idx is None:
-            self.inventory_details_label.setText(
+            self._set_inventory_html(
                 self._muted_html(
                     self.tr("کالا در موجودی پیدا نشد: {name}").format(
                         name=match.product_name
@@ -675,12 +680,12 @@ class InvoiceBatchExportDialog(QDialog):
         try:
             df = self.inventory_service.get_dataframe()
         except Exception:  # noqa: BLE001
-            self.inventory_details_label.setText(
+            self._set_inventory_html(
                 self._muted_html(self.tr("خواندن جزئیات موجودی ناموفق بود."))
             )
             return
         if idx not in df.index:
-            self.inventory_details_label.setText(
+            self._set_inventory_html(
                 self._muted_html(
                     self.tr("کالا در موجودی پیدا نشد: {name}").format(
                         name=match.product_name
@@ -701,7 +706,7 @@ class InvoiceBatchExportDialog(QDialog):
             if source_raw is None or str(source_raw).strip() == ""
             else str(source_raw).strip()
         )
-        self.inventory_details_label.setText(
+        self._set_inventory_html(
             self._format_inventory_details_html(
                 match.product_name,
                 f"{self._safe_int(row.get('quantity')):,}",
@@ -715,7 +720,7 @@ class InvoiceBatchExportDialog(QDialog):
 
     def _show_inventory_action_details(self, product_name: str) -> None:
         if not product_name:
-            self.action_details_label.setText(
+            self._set_action_html(
                 self._muted_html(
                     self.tr(
                         "برای مشاهده تغییرات موجودی، یک کالا را انتخاب کنید."
@@ -724,13 +729,13 @@ class InvoiceBatchExportDialog(QDialog):
             )
             return
         if not self.action_log_service:
-            self.action_details_label.setText(
+            self._set_action_html(
                 self._muted_html(self.tr("اطلاعات اقدامات در دسترس نیست."))
             )
             return
         cache_key = normalize_text(product_name)
         if cache_key in self._action_cache:
-            self.action_details_label.setText(self._action_cache[cache_key])
+            self._set_action_html(self._action_cache[cache_key])
             return
 
         actions = self.action_log_service.list_actions(
@@ -755,12 +760,12 @@ class InvoiceBatchExportDialog(QDialog):
                 after_snapshot,
             )
             self._action_cache[cache_key] = formatted
-            self.action_details_label.setText(formatted)
+            self._set_action_html(formatted)
             return
 
         fallback = self.tr("برای این کالا تغییر موجودی ثبت نشده است.")
         self._action_cache[cache_key] = self._muted_html(fallback)
-        self.action_details_label.setText(self._action_cache[cache_key])
+        self._set_action_html(self._action_cache[cache_key])
 
     def _extract_inventory_action_block(
         self, details: str, product_name: str
@@ -854,19 +859,19 @@ class InvoiceBatchExportDialog(QDialog):
         date_text = to_jalali_datetime(action.created_at)
         before_text = self._format_inventory_snapshot(before_snapshot)
         after_text = self._format_inventory_snapshot(after_snapshot)
-        before_html = self._htmlize_multiline(before_text)
-        after_html = self._htmlize_multiline(after_text)
+        before_html = self._htmlize_kv_block(before_text)
+        after_html = self._htmlize_kv_block(after_text)
         header = escape(action.title or action.action_type)
         section = escape(section_title)
         return (
             "<div dir='rtl' align='right' "
             "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
             "<div align='right' "
-            "style='font-weight:700; color:#0f172a; margin-bottom:4px; text-align:right;'>"
+            "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
             + escape(product_name)
             + "</div>"
             "<div align='right' "
-            "style='color:#64748b; font-size:12px; margin-bottom:6px; text-align:right; unicode-bidi:plaintext;'>"
+            "style='color:#64748b; font-size:12px; margin-bottom:8px; text-align:right; unicode-bidi:plaintext;'>"
             + escape(date_text)
             + " | "
             + escape(admin)
@@ -925,32 +930,90 @@ class InvoiceBatchExportDialog(QDialog):
             (self.tr("حد هشدار"), alarm),
             (self.tr("منبع"), source),
         ]
-        row_html = "".join(
-            "<tr>"
-            "<td align='right' style='padding:2px 6px; color:#64748b; white-space:nowrap; text-align:right;'>"
-            + escape(label)
-            + "</td>"
-            "<td align='right' style='padding:2px 6px; color:#0f172a; font-weight:600; text-align:right;'>"
-            + escape(value)
-            + "</td>"
-            "</tr>"
-            for label, value in rows
-        )
         return (
             "<div dir='rtl' align='right' "
-            "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            "style='text-align:right; direction:rtl; unicode-bidi:plaintext; width:100%;'>"
             "<div align='right' "
             "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
             + escape(product_name)
             + "</div>"
-            "<table dir='rtl' align='right' style='width:100%; border-collapse:separate; "
-            "border-spacing:0 4px; direction:rtl;'>" + row_html + "</table>"
+            "<table dir='rtl' align='right' width='100%' "
+            "style='width:100%; border-collapse:separate; border-spacing:0 4px;'>"
+            + self._format_inventory_kv_rows(rows)
+            + "</table>"
             "</div>"
         )
 
-    def _htmlize_multiline(self, text: str) -> str:
-        lines = [escape(line) for line in str(text).splitlines() if line != ""]
-        return "<br>".join(lines) if lines else escape(str(text))
+    def _htmlize_kv_block(self, text: str) -> str:
+        lines = [
+            line.strip() for line in str(text).splitlines() if line.strip()
+        ]
+        if not lines:
+            return escape(str(text))
+        return (
+            "<table dir='rtl' align='right' width='100%' "
+            "style='width:100%; border-collapse:separate; border-spacing:0 2px;'>"
+            + "".join(
+                "<tr><td align='right' "
+                "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+                + escape(line)
+                + "</td></tr>"
+                for line in lines
+            )
+            + "</table>"
+        )
+
+    def _format_inventory_kv_rows(self, rows: list[tuple[str, str]]) -> str:
+        return "".join(
+            "<tr><td align='right' "
+            "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            "<span style='color:#64748b;'>" + escape(label) + ":</span> "
+            "<span style='color:#0f172a; font-weight:600;'>"
+            + escape(value)
+            + "</span>"
+            "</td></tr>"
+            for label, value in rows
+        )
+
+    @staticmethod
+    def _init_rtl_text_edit(widget: QTextEdit) -> None:
+        widget.setReadOnly(True)
+        widget.setLineWrapMode(QTextEdit.WidgetWidth)
+        widget.setLayoutDirection(Qt.RightToLeft)
+        widget.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        option = QTextOption()
+        option.setTextDirection(Qt.RightToLeft)
+        option.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        widget.document().setDefaultTextOption(option)
+
+    def _wrap_details_html(self, body_html: str) -> str:
+        return (
+            "<html><head><meta charset='utf-8'>"
+            "<style>"
+            "body{font-family:Vazirmatn,Tahoma,sans-serif;"
+            "direction:rtl; text-align:right; margin:0;}"
+            "</style></head><body>" + body_html + "</body></html>"
+        )
+
+    def _set_inventory_html(self, body_html: str) -> None:
+        self.inventory_details_label.setHtml(self._wrap_details_html(body_html))
+        self._apply_rtl_text_format(self.inventory_details_label)
+
+    def _set_action_html(self, body_html: str) -> None:
+        self.action_details_label.setHtml(self._wrap_details_html(body_html))
+        self._apply_rtl_text_format(self.action_details_label)
+
+    @staticmethod
+    def _apply_rtl_text_format(widget: QTextEdit) -> None:
+        cursor = widget.textCursor()
+        cursor.select(QTextCursor.Document)
+        block_fmt = QTextBlockFormat()
+        block_fmt.setLayoutDirection(Qt.RightToLeft)
+        block_fmt.setAlignment(Qt.AlignRight)
+        cursor.mergeBlockFormat(block_fmt)
+        cursor.clearSelection()
+        widget.setTextCursor(cursor)
+        widget.setAlignment(Qt.AlignRight | Qt.AlignTop)
 
     def _muted_html(self, text: str) -> str:
         return "<span style='color:#64748b;'>" + escape(text) + "</span>"
@@ -959,12 +1022,12 @@ class InvoiceBatchExportDialog(QDialog):
         self.details_label.setText(message)
         self.product_details_table.setRowCount(0)
         self._current_detail_matches = []
-        self.inventory_details_label.setText(
+        self._set_inventory_html(
             self._muted_html(
                 self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
             )
         )
-        self.action_details_label.setText(
+        self._set_action_html(
             self._muted_html(
                 self.tr(
                     "برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید."
