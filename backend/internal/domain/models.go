@@ -16,14 +16,24 @@ type Product struct {
 }
 
 type Invoice struct {
-	ID            int64     `json:"id"`
-	InvoiceType   string    `json:"invoice_type"`
-	CreatedAt     time.Time `json:"created_at"`
-	TotalLines    int       `json:"total_lines"`
-	TotalQty      int       `json:"total_qty"`
-	TotalAmount   float64   `json:"total_amount"`
-	InvoiceName   *string   `json:"invoice_name,omitempty"`
-	AdminUsername *string   `json:"admin_username,omitempty"`
+	ID             int64                 `json:"id"`
+	InvoiceType    string                `json:"invoice_type"`
+	CreatedAt      time.Time             `json:"created_at"`
+	TotalLines     int                   `json:"total_lines"`
+	TotalQty       int                   `json:"total_qty"`
+	TotalAmount    float64               `json:"total_amount"`
+	InvoiceName    *string               `json:"invoice_name,omitempty"`
+	AdminUsername  *string               `json:"admin_username,omitempty"`
+	ProductMatches []InvoiceProductMatch `json:"product_matches,omitempty"`
+}
+
+type InvoiceProductMatch struct {
+	RowNumber   int     `json:"row_number"`
+	ProductName string  `json:"product_name"`
+	Price       float64 `json:"price"`
+	Quantity    int     `json:"quantity"`
+	LineTotal   float64 `json:"line_total"`
+	CostPrice   float64 `json:"cost_price"`
 }
 
 type InvoiceLine struct {

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -27,7 +28,11 @@ from PySide6.QtWidgets import (
 
 from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
-from app.services.invoice_service import InvoiceService, InvoiceSummary
+from app.services.invoice_service import (
+    InvoiceProductMatch,
+    InvoiceService,
+    InvoiceSummary,
+)
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
 from app.utils.dates import (
@@ -130,6 +135,10 @@ class InvoiceBatchExportDialog(QDialog):
         self.toast = toast
         self._invoices: list[InvoiceSummary] = []
         self._product_map: dict[str, str] = {}
+        self._current_product_filter: str | None = None
+        self._current_filter_fuzzy = False
+        self._current_detail_matches: list[InvoiceProductMatch] = []
+        self._action_cache: dict[str, str] = {}
 
         self.setWindowTitle(self.tr("خروجی گروهی فاکتورها"))
         self.setModal(True)
@@ -218,12 +227,13 @@ class InvoiceBatchExportDialog(QDialog):
         table_layout.setContentsMargins(16, 16, 16, 16)
         table_layout.setSpacing(8)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
             [
                 self.tr("شناسه"),
                 self.tr("تاریخ"),
                 self.tr("نوع"),
+                self.tr("ردیف کالا"),
                 self.tr("ردیف"),
                 self.tr("تعداد"),
                 self.tr("مبلغ کل"),
@@ -232,6 +242,9 @@ class InvoiceBatchExportDialog(QDialog):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
+        self.table.itemSelectionChanged.connect(
+            self._show_selected_product_details
+        )
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         for col in range(self.table.columnCount()):
@@ -240,7 +253,89 @@ class InvoiceBatchExportDialog(QDialog):
                 header_item.setTextAlignment(Qt.AlignCenter)
         self.table.verticalHeader().setDefaultSectionSize(30)
         table_layout.addWidget(self.table)
-        layout.addWidget(table_card, 1)
+
+        details_card = QFrame()
+        details_card.setObjectName("Card")
+        details_layout = QVBoxLayout(details_card)
+        details_layout.setContentsMargins(16, 16, 16, 16)
+        details_layout.setSpacing(10)
+
+        self.details_label = QLabel(
+            self.tr("برای نمایش جزئیات، یک ردیف از نتیجه را انتخاب کنید.")
+        )
+        self.details_label.setStyleSheet("font-weight: 600;")
+        details_layout.addWidget(self.details_label)
+
+        self.product_details_table = QTableWidget(0, 6)
+        self.product_details_table.setHorizontalHeaderLabels(
+            [
+                self.tr("ردیف فاکتور"),
+                self.tr("کالا"),
+                self.tr("تعداد"),
+                self.tr("قیمت"),
+                self.tr("جمع خط"),
+                self.tr("بهای خرید"),
+            ]
+        )
+        self.product_details_table.setEditTriggers(
+            QAbstractItemView.NoEditTriggers
+        )
+        self.product_details_table.setSelectionBehavior(
+            QAbstractItemView.SelectRows
+        )
+        self.product_details_table.setAlternatingRowColors(True)
+        self.product_details_table.itemSelectionChanged.connect(
+            self._show_selected_inventory_match
+        )
+        detail_header = self.product_details_table.horizontalHeader()
+        detail_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        detail_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        detail_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        detail_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        detail_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        detail_header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        for col in range(self.product_details_table.columnCount()):
+            header_item = self.product_details_table.horizontalHeaderItem(col)
+            if header_item is not None:
+                header_item.setTextAlignment(Qt.AlignCenter)
+        self.product_details_table.verticalHeader().setDefaultSectionSize(30)
+        details_layout.addWidget(self.product_details_table, 1)
+
+        inventory_title = QLabel(self.tr("جزئیات موجودی"))
+        inventory_title.setStyleSheet("font-weight: 600;")
+        details_layout.addWidget(inventory_title)
+
+        self.inventory_details_label = QLabel(
+            self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+        )
+        self.inventory_details_label.setProperty("textRole", "muted")
+        self.inventory_details_label.setWordWrap(True)
+        self.inventory_details_label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse
+        )
+        details_layout.addWidget(self.inventory_details_label)
+
+        action_title = QLabel(self.tr("آخرین تغییر موجودی"))
+        action_title.setStyleSheet("font-weight: 600;")
+        details_layout.addWidget(action_title)
+
+        self.action_details_label = QLabel(
+            self.tr("برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید.")
+        )
+        self.action_details_label.setProperty("textRole", "muted")
+        self.action_details_label.setWordWrap(True)
+        self.action_details_label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse
+        )
+        details_layout.addWidget(self.action_details_label)
+
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(table_card)
+        split.addWidget(details_card)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        split.setChildrenCollapsible(False)
+        layout.addWidget(split, 1)
 
         action_row = QHBoxLayout()
         action_row.addStretch(1)
@@ -287,17 +382,23 @@ class InvoiceBatchExportDialog(QDialog):
                 self.tr("تاریخ پایان باید بعد از تاریخ شروع باشد.")
             )
             self.export_button.setEnabled(False)
+            self._invoices = []
             self.table.setRowCount(0)
+            self._clear_product_details(self.tr("فیلتر تاریخ نامعتبر است."))
             return
         id_from, id_to, id_error = self._parse_invoice_id_range()
         if id_error:
             self.summary_label.setText(id_error)
             self.export_button.setEnabled(False)
+            self._invoices = []
             self.table.setRowCount(0)
+            self._clear_product_details(id_error)
             return
         start_iso = start_dt.isoformat(timespec="seconds")
         end_iso = end_dt.isoformat(timespec="seconds")
         product_filter, fuzzy = self._resolve_product_filter()
+        self._current_product_filter = product_filter
+        self._current_filter_fuzzy = fuzzy
         self._invoices = self.invoice_service.list_invoices_between(
             start_iso,
             end_iso,
@@ -308,6 +409,12 @@ class InvoiceBatchExportDialog(QDialog):
         )
         self._populate_table()
         self.export_button.setEnabled(bool(self._invoices))
+        if self._invoices:
+            self.table.selectRow(0)
+        else:
+            self._clear_product_details(
+                self.tr("هیچ فاکتوری با این فیلتر پیدا نشد.")
+            )
 
     @staticmethod
     def _set_picker_from_gregorian(
@@ -324,6 +431,7 @@ class InvoiceBatchExportDialog(QDialog):
 
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self._invoices))
+        total_matches = 0
         for row_idx, invoice in enumerate(self._invoices):
             id_item = QTableWidgetItem(str(invoice.invoice_id))
             id_item.setTextAlignment(Qt.AlignCenter)
@@ -339,18 +447,31 @@ class InvoiceBatchExportDialog(QDialog):
             type_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 2, type_item)
 
+            rows_item = QTableWidgetItem(self._format_match_rows(invoice))
+            rows_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_idx, 3, rows_item)
+
             lines_item = QTableWidgetItem(str(invoice.total_lines))
             lines_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row_idx, 3, lines_item)
+            self.table.setItem(row_idx, 4, lines_item)
             qty_item = QTableWidgetItem(str(invoice.total_qty))
             qty_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row_idx, 4, qty_item)
+            self.table.setItem(row_idx, 5, qty_item)
             total_item = QTableWidgetItem(format_amount(invoice.total_amount))
             total_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row_idx, 5, total_item)
-        self.summary_label.setText(
-            self.tr("فاکتورها: {count}").format(count=len(self._invoices))
-        )
+            self.table.setItem(row_idx, 6, total_item)
+            total_matches += len(invoice.product_matches)
+        if self._current_product_filter:
+            self.summary_label.setText(
+                self.tr("فاکتورها: {count} | ردیف‌های مطابق: {matches}").format(
+                    count=len(self._invoices),
+                    matches=total_matches,
+                )
+            )
+        else:
+            self.summary_label.setText(
+                self.tr("فاکتورها: {count}").format(count=len(self._invoices))
+            )
 
     def _format_invoice_type(self, value: str) -> str:
         if value == "purchase":
@@ -364,6 +485,386 @@ class InvoiceBatchExportDialog(QDialog):
         if value.startswith("sales"):
             return self.tr("فروش")
         return value.title()
+
+    def _format_match_rows(self, invoice: InvoiceSummary) -> str:
+        if not self._current_product_filter:
+            return "-"
+        rows: list[str] = []
+        seen: set[int] = set()
+        for match in invoice.product_matches:
+            if match.row_number <= 0 or match.row_number in seen:
+                continue
+            seen.add(match.row_number)
+            rows.append(str(match.row_number))
+        return "، ".join(rows) if rows else "-"
+
+    def _show_selected_product_details(self) -> None:
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self._invoices):
+            self._clear_product_details(
+                self.tr("برای نمایش جزئیات، یک ردیف از نتیجه را انتخاب کنید.")
+            )
+            return
+        if not self._current_product_filter:
+            self._clear_product_details(
+                self.tr("برای جزئیات محصول، فیلتر «کالا» را وارد کنید.")
+            )
+            return
+        invoice = self._invoices[row]
+        matches = list(invoice.product_matches)
+        if not matches:
+            matches = self._build_matches_from_invoice_lines(invoice.invoice_id)
+        if not matches:
+            self._clear_product_details(
+                self.tr("در این فاکتور، ردیف مطابق برای کالا پیدا نشد.")
+            )
+            return
+
+        self.details_label.setText(
+            self.tr("فاکتور #{id} | ردیف‌های کالا: {rows}").format(
+                id=invoice.invoice_id,
+                rows=self._format_match_rows(invoice),
+            )
+        )
+        self.product_details_table.setRowCount(len(matches))
+        for row_idx, match in enumerate(matches):
+            row_item = QTableWidgetItem(
+                str(match.row_number) if match.row_number > 0 else "-"
+            )
+            row_item.setTextAlignment(Qt.AlignCenter)
+            self.product_details_table.setItem(row_idx, 0, row_item)
+
+            name_item = QTableWidgetItem(match.product_name)
+            name_item.setTextAlignment(
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+            )
+            self.product_details_table.setItem(row_idx, 1, name_item)
+
+            qty_item = QTableWidgetItem(str(match.quantity))
+            qty_item.setTextAlignment(Qt.AlignCenter)
+            self.product_details_table.setItem(row_idx, 2, qty_item)
+
+            price_item = QTableWidgetItem(format_amount(match.price))
+            price_item.setTextAlignment(Qt.AlignCenter)
+            self.product_details_table.setItem(row_idx, 3, price_item)
+
+            line_total_item = QTableWidgetItem(format_amount(match.line_total))
+            line_total_item.setTextAlignment(Qt.AlignCenter)
+            self.product_details_table.setItem(row_idx, 4, line_total_item)
+
+            cost_item = QTableWidgetItem(format_amount(match.cost_price))
+            cost_item.setTextAlignment(Qt.AlignCenter)
+            self.product_details_table.setItem(row_idx, 5, cost_item)
+
+        self._current_detail_matches = matches
+        self.product_details_table.blockSignals(True)
+        self.product_details_table.selectRow(0)
+        self.product_details_table.blockSignals(False)
+        self._show_inventory_details_for_match(matches[0])
+        self._show_inventory_action_details(matches[0].product_name)
+
+    def _build_matches_from_invoice_lines(
+        self, invoice_id: int
+    ) -> list[InvoiceProductMatch]:
+        product_filter = self._current_product_filter
+        if not product_filter:
+            return []
+        target = normalize_text(product_filter)
+        if not target:
+            return []
+        result: list[InvoiceProductMatch] = []
+        for row_number, line in enumerate(
+            self.invoice_service.get_invoice_lines(invoice_id),
+            start=1,
+        ):
+            line_name = normalize_text(line.product_name)
+            if self._current_filter_fuzzy:
+                matches = target in line_name
+            else:
+                matches = line_name == target
+            if not matches:
+                continue
+            result.append(
+                InvoiceProductMatch(
+                    row_number=row_number,
+                    product_name=line.product_name,
+                    price=line.price,
+                    quantity=line.quantity,
+                    line_total=line.line_total,
+                    cost_price=line.cost_price,
+                )
+            )
+        return result
+
+    def _show_selected_inventory_match(self) -> None:
+        if not self._current_detail_matches:
+            return
+        row = self.product_details_table.currentRow()
+        if row < 0 or row >= len(self._current_detail_matches):
+            match = self._current_detail_matches[0]
+        else:
+            match = self._current_detail_matches[row]
+        self._show_inventory_details_for_match(match)
+        self._show_inventory_action_details(match.product_name)
+
+    def _show_inventory_details_for_match(
+        self, match: InvoiceProductMatch | None
+    ) -> None:
+        if match is None:
+            self.inventory_details_label.setText(
+                self.tr(
+                    "برای مشاهده جزئیات موجودی، یک کالای معتبر انتخاب کنید."
+                )
+            )
+            return
+        if not self.inventory_service or not self.inventory_service.is_loaded():
+            self.inventory_details_label.setText(
+                self.tr(
+                    "موجودی بارگذاری نشده است؛ جزئیات موجودی در دسترس نیست."
+                )
+            )
+            return
+
+        idx = self.inventory_service.find_index(match.product_name)
+        if idx is None:
+            self.inventory_details_label.setText(
+                self.tr("کالا در موجودی پیدا نشد: {name}").format(
+                    name=match.product_name
+                )
+            )
+            return
+        try:
+            df = self.inventory_service.get_dataframe()
+        except Exception:  # noqa: BLE001
+            self.inventory_details_label.setText(
+                self.tr("خواندن جزئیات موجودی ناموفق بود.")
+            )
+            return
+        if idx not in df.index:
+            self.inventory_details_label.setText(
+                self.tr("کالا در موجودی پیدا نشد: {name}").format(
+                    name=match.product_name
+                )
+            )
+            return
+        row = df.loc[idx]
+        alarm_raw = row.get("alarm")
+        alarm = (
+            self.tr("تنظیم نشده")
+            if alarm_raw is None or str(alarm_raw).strip() == ""
+            else str(self._safe_int(alarm_raw))
+        )
+        source_raw = row.get("source")
+        source = (
+            self.tr("نامشخص")
+            if source_raw is None or str(source_raw).strip() == ""
+            else str(source_raw).strip()
+        )
+        self.inventory_details_label.setText(
+            self.tr(
+                "کالا: {name}\n"
+                "موجودی فعلی: {qty}\n"
+                "میانگین خرید: {avg}\n"
+                "آخرین خرید: {last}\n"
+                "قیمت فروش: {sell}\n"
+                "حد هشدار: {alarm}\n"
+                "منبع: {source}"
+            ).format(
+                name=match.product_name,
+                qty=f"{self._safe_int(row.get('quantity')):,}",
+                avg=format_amount(self._safe_float(row.get("avg_buy_price"))),
+                last=format_amount(self._safe_float(row.get("last_buy_price"))),
+                sell=format_amount(self._safe_float(row.get("sell_price"))),
+                alarm=alarm,
+                source=source,
+            )
+        )
+
+    def _show_inventory_action_details(self, product_name: str) -> None:
+        if not product_name:
+            self.action_details_label.setText(
+                self.tr("برای مشاهده تغییرات موجودی، یک کالا را انتخاب کنید.")
+            )
+            return
+        if not self.action_log_service:
+            self.action_details_label.setText(
+                self.tr("اطلاعات اقدامات در دسترس نیست.")
+            )
+            return
+        cache_key = normalize_text(product_name)
+        if cache_key in self._action_cache:
+            self.action_details_label.setText(self._action_cache[cache_key])
+            return
+
+        actions = self.action_log_service.list_actions(
+            limit=200,
+            offset=0,
+            search=product_name,
+        )
+        for action in actions:
+            if action.action_type != "inventory_edit":
+                continue
+            extracted = self._extract_inventory_action_block(
+                action.details, product_name
+            )
+            if not extracted:
+                continue
+            section_title, before_snapshot, after_snapshot = extracted
+            formatted = self._format_inventory_action_details(
+                action,
+                product_name,
+                section_title,
+                before_snapshot,
+                after_snapshot,
+            )
+            self._action_cache[cache_key] = formatted
+            self.action_details_label.setText(formatted)
+            return
+
+        fallback = self.tr("برای این کالا تغییر موجودی ثبت نشده است.")
+        self._action_cache[cache_key] = fallback
+        self.action_details_label.setText(fallback)
+
+    def _extract_inventory_action_block(
+        self, details: str, product_name: str
+    ) -> (
+        tuple[
+            str,
+            tuple[list[tuple[str, str]], str | None],
+            tuple[list[tuple[str, str]], str | None],
+        ]
+        | None
+    ):
+        text = str(details or "").strip()
+        if not text:
+            return None
+        blocks = [part.strip() for part in text.split("\n\n") if part.strip()]
+        if len(blocks) < 2:
+            return None
+        target = normalize_text(product_name)
+        for block in blocks[1:]:
+            lines = [
+                line.strip() for line in block.splitlines() if line.strip()
+            ]
+            if not lines:
+                continue
+            title = lines[0]
+            name_part = title
+            if "]" in title:
+                name_part = title.split("]", 1)[1].strip()
+            if normalize_text(name_part) != target:
+                continue
+            try:
+                before_idx = lines.index("قبل:")
+                after_idx = lines.index("بعد:")
+            except ValueError:
+                continue
+            if after_idx <= before_idx:
+                continue
+            before_lines = lines[before_idx + 1 : after_idx]
+            after_lines = lines[after_idx + 1 :]
+            before_snapshot = self._parse_inventory_snapshot(before_lines)
+            after_snapshot = self._parse_inventory_snapshot(after_lines)
+            return title, before_snapshot, after_snapshot
+        return None
+
+    def _parse_inventory_snapshot(
+        self, lines: list[str]
+    ) -> tuple[list[tuple[str, str]], str | None]:
+        if not lines:
+            return [], None
+        marker = lines[0].strip()
+        if marker in {"(هیچ)", "(وجود ندارد)", "(حذف شد)"}:
+            return [], marker
+        headers = [part.strip() for part in lines[0].split("|")]
+        values: list[str] = []
+        if len(lines) > 1:
+            values = [part.strip() for part in lines[1].split("|")]
+        if len(values) < len(headers):
+            values.extend([""] * (len(headers) - len(values)))
+        if len(values) > len(headers):
+            values = values[: len(headers)]
+        return list(zip(headers, values)), None
+
+    def _format_inventory_snapshot(
+        self, snapshot: tuple[list[tuple[str, str]], str | None]
+    ) -> str:
+        pairs, marker = snapshot
+        if marker:
+            return marker
+        if not pairs:
+            return self.tr("نامشخص")
+        lines: list[str] = []
+        for key, value in pairs:
+            key_norm = normalize_text(key)
+            if key_norm in {"نامکالا", "productname", "product_name"}:
+                continue
+            display = value if str(value).strip() else "-"
+            lines.append(f"{key}: {display}")
+        if not lines:
+            lines = [f"{key}: {value}" for key, value in pairs]
+        return "\n".join(lines)
+
+    def _format_inventory_action_details(
+        self,
+        action,
+        product_name: str,
+        section_title: str,
+        before_snapshot: tuple[list[tuple[str, str]], str | None],
+        after_snapshot: tuple[list[tuple[str, str]], str | None],
+    ) -> str:
+        admin = action.admin_username or self.tr("نامشخص")
+        date_text = to_jalali_datetime(action.created_at)
+        before_text = self._format_inventory_snapshot(before_snapshot)
+        after_text = self._format_inventory_snapshot(after_snapshot)
+        return self.tr(
+            "آخرین تغییر موجودی برای {name}\n"
+            "تاریخ: {date}\n"
+            "ادمین: {admin}\n"
+            "اقدام: {title}\n"
+            "جزئیات: {section}\n"
+            "قبل:\n{before}\n"
+            "بعد:\n{after}"
+        ).format(
+            name=product_name,
+            date=date_text,
+            admin=admin,
+            title=action.title or action.action_type,
+            section=section_title,
+            before=before_text,
+            after=after_text,
+        )
+
+    def _clear_product_details(self, message: str) -> None:
+        self.details_label.setText(message)
+        self.product_details_table.setRowCount(0)
+        self._current_detail_matches = []
+        self.inventory_details_label.setText(
+            self.tr("پس از انتخاب کالا، خلاصه موجودی نمایش داده می‌شود.")
+        )
+        self.action_details_label.setText(
+            self.tr("برای مشاهده تغییرات موجودی، یک ردیف کالا را انتخاب کنید.")
+        )
+
+    @staticmethod
+    def _safe_int(value: object) -> int:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return 0
+        if number != number:
+            return 0
+        return int(number)
+
+    @staticmethod
+    def _safe_float(value: object) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if number != number:
+            return 0.0
+        return number
 
     def _setup_product_completer(self) -> None:
         if not self.inventory_service or not self.inventory_service.is_loaded():

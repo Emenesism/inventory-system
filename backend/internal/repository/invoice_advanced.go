@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -464,28 +465,73 @@ func (r *Repository) ListInvoicesBetween(
 
 	whereClause := strings.Join(conditions, " AND ")
 	query := ""
-	if strings.TrimSpace(productFilter) != "" {
+	filterValue := strings.TrimSpace(productFilter)
+	if filterValue != "" {
 		op := "="
-		value := strings.TrimSpace(productFilter)
 		if fuzzy {
 			op = "ILIKE"
-			value = "%" + value + "%"
+			filterValue = "%" + filterValue + "%"
 		}
-		params = append(params, value)
+		params = append(params, filterValue)
 		query = fmt.Sprintf(`
-			SELECT DISTINCT
-				i.id,
-				i.invoice_type,
-				i.created_at,
-				i.total_lines,
-				i.total_qty,
-				i.total_amount::double precision,
-				i.invoice_name,
-				i.admin_username
-			FROM invoices i
-			JOIN invoice_lines il ON il.invoice_id = i.id
-			WHERE %s AND il.product_name %s $%d
-			ORDER BY i.id DESC
+			WITH ranked_lines AS (
+				SELECT
+					i.id,
+					i.invoice_type,
+					i.created_at,
+					i.total_lines,
+					i.total_qty,
+					i.total_amount::double precision,
+					i.invoice_name,
+					i.admin_username,
+					il.product_name,
+					il.price::double precision,
+					il.quantity,
+					il.line_total::double precision,
+					il.cost_price::double precision,
+					ROW_NUMBER() OVER (
+						PARTITION BY i.id
+						ORDER BY il.id
+					)::int AS row_number
+				FROM invoices i
+				JOIN invoice_lines il ON il.invoice_id = i.id
+				WHERE %s
+			)
+			SELECT
+				id,
+				invoice_type,
+				created_at,
+				total_lines,
+				total_qty,
+				total_amount::double precision,
+				invoice_name,
+				admin_username,
+				COALESCE(
+					JSON_AGG(
+						JSON_BUILD_OBJECT(
+							'row_number', row_number,
+							'product_name', product_name,
+							'price', price,
+							'quantity', quantity,
+							'line_total', line_total,
+							'cost_price', cost_price
+						)
+						ORDER BY row_number
+					),
+					'[]'::json
+				)
+			FROM ranked_lines
+			WHERE product_name %s $%d
+			GROUP BY
+				id,
+				invoice_type,
+				created_at,
+				total_lines,
+				total_qty,
+				total_amount,
+				invoice_name,
+				admin_username
+			ORDER BY id DESC
 		`, whereClause, op, index)
 	} else {
 		query = fmt.Sprintf(`
@@ -497,7 +543,8 @@ func (r *Repository) ListInvoicesBetween(
 				i.total_qty,
 				i.total_amount::double precision,
 				i.invoice_name,
-				i.admin_username
+				i.admin_username,
+				'[]'::json
 			FROM invoices i
 			WHERE %s
 			ORDER BY i.id DESC
@@ -512,9 +559,41 @@ func (r *Repository) ListInvoicesBetween(
 
 	items := make([]domain.Invoice, 0)
 	for rows.Next() {
-		item, scanErr := scanInvoice(rows)
-		if scanErr != nil {
-			return nil, scanErr
+		var (
+			item     domain.Invoice
+			name     sql.NullString
+			admin    sql.NullString
+			rawMatch []byte
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&item.InvoiceType,
+			&item.CreatedAt,
+			&item.TotalLines,
+			&item.TotalQty,
+			&item.TotalAmount,
+			&name,
+			&admin,
+			&rawMatch,
+		); err != nil {
+			return nil, fmt.Errorf("scan invoices between row: %w", err)
+		}
+		if name.Valid {
+			value := name.String
+			item.InvoiceName = &value
+		}
+		if admin.Valid {
+			value := admin.String
+			item.AdminUsername = &value
+		}
+		if len(rawMatch) > 0 {
+			if err := json.Unmarshal(rawMatch, &item.ProductMatches); err != nil {
+				return nil, fmt.Errorf(
+					"decode invoice product matches for invoice %d: %w",
+					item.ID,
+					err,
+				)
+			}
 		}
 		items = append(items, item)
 	}

@@ -19,6 +19,17 @@ class InvoiceSummary:
     invoice_name: str | None
     admin_id: int | None
     admin_username: str | None
+    product_matches: list["InvoiceProductMatch"] = field(default_factory=list)
+
+
+@dataclass
+class InvoiceProductMatch:
+    row_number: int
+    product_name: str
+    price: float
+    quantity: int
+    line_total: float
+    cost_price: float
 
 
 @dataclass
@@ -371,4 +382,29 @@ class InvoiceService:
                 if raw.get("admin_username") in {None, ""}
                 else str(raw.get("admin_username"))
             ),
+            product_matches=InvoiceService._parse_product_matches(
+                raw.get("product_matches")
+            ),
         )
+
+    @staticmethod
+    def _parse_product_matches(
+        raw_matches: object,
+    ) -> list[InvoiceProductMatch]:
+        if not isinstance(raw_matches, list):
+            return []
+        matches: list[InvoiceProductMatch] = []
+        for item in raw_matches:
+            if not isinstance(item, dict):
+                continue
+            matches.append(
+                InvoiceProductMatch(
+                    row_number=int(item.get("row_number", 0) or 0),
+                    product_name=str(item.get("product_name", "")),
+                    price=float(item.get("price", 0.0) or 0.0),
+                    quantity=int(item.get("quantity", 0) or 0),
+                    line_total=float(item.get("line_total", 0.0) or 0.0),
+                    cost_price=float(item.get("cost_price", 0.0) or 0.0),
+                )
+            )
+        return matches
