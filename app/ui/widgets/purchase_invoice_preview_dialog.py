@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.utils.numeric import format_amount
+from app.utils.numeric import format_amount, format_number
 
 
 @dataclass(frozen=True)
@@ -180,7 +180,9 @@ class PurchaseInvoicePreviewDialog(QDialog):
 
         for row_idx, line in enumerate(data.lines):
             self._set_item(self.lines_table, row_idx, 0, line.product_name)
-            self._set_item(self.lines_table, row_idx, 1, str(line.quantity))
+            self._set_item(
+                self.lines_table, row_idx, 1, format_number(line.quantity)
+            )
             self._set_item(
                 self.lines_table, row_idx, 2, format_amount(line.price)
             )
@@ -194,7 +196,7 @@ class PurchaseInvoicePreviewDialog(QDialog):
             self.lines_table,
             totals_row,
             1,
-            str(data.total_quantity),
+            format_number(data.total_quantity),
         )
         self._set_item(self.lines_table, totals_row, 2, "")
         self._set_item(
