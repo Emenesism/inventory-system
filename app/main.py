@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import faulthandler
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
 
 from PySide6.QtCore import QLibraryInfo, QLocale, Qt, QTranslator
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication
 from PySide6.QtWidgets import QApplication
 
 _CRASH_FILE = None
@@ -29,6 +30,7 @@ def main() -> int:
     _install_crash_logging()
     _install_thread_exception_hook()
     _install_unraisable_hook()
+    _configure_high_dpi()
     app = QApplication(sys.argv)
     _install_localization(app)
     app.setStyle("Fusion")
@@ -80,6 +82,18 @@ def _apply_persian_font(app: QApplication) -> None:
     font = QFont(primary_family)
     font.setPointSize(10)
     app.setFont(font)
+
+
+def _configure_high_dpi() -> None:
+    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+    os.environ.setdefault("QT_SCALE_FACTOR_ROUNDING_POLICY", "PassThrough")
+    try:
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _install_exception_hook() -> None:

@@ -4,14 +4,17 @@ import logging
 import os
 import time
 
-from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QFileDialog,
+    QFrame,
     QGraphicsBlurEffect,
     QHBoxLayout,
     QMainWindow,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -58,7 +61,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self._logger = logging.getLogger(self.__class__.__name__)
         self.setWindowTitle(self.tr("مدیریت آرمکالا"))
-        self.resize(1280, 800)
+        self._apply_initial_window_size()
 
         self.toast = ToastManager(self)
         self._lock_shown = False
@@ -93,6 +96,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(main_area, 4)
         self.setCentralWidget(container)
 
+        self._page_wrappers: dict[str, QWidget] = {}
         self.inventory_page = InventoryPage()
         self.sales_page = SalesImportPage()
         self.purchase_page = PurchaseInvoicePage()
@@ -134,19 +138,19 @@ class MainWindow(QMainWindow):
             self._get_current_admin,
         )
 
-        self.pages.addWidget(self.inventory_page)
-        self.pages.addWidget(self.sales_page)
-        self.pages.addWidget(self.purchase_page)
-        self.pages.addWidget(self.invoices_page)
-        self.pages.addWidget(self.analytics_page)
-        self.pages.addWidget(self.low_stock_page)
-        self.pages.addWidget(self.basalam_page)
-        self.pages.addWidget(self.actions_page)
-        self.pages.addWidget(self.reports_page)
-        self.pages.addWidget(self.settings_page)
+        self._register_page("Inventory", self.inventory_page)
+        self._register_page("Sales Import", self.sales_page)
+        self._register_page("Purchase Invoice", self.purchase_page)
+        self._register_page("Invoices", self.invoices_page)
+        self._register_page("Analytics", self.analytics_page)
+        self._register_page("Low Stock", self.low_stock_page)
+        self._register_page("Basalam", self.basalam_page)
+        self._register_page("Actions", self.actions_page)
+        self._register_page("Reports/Logs", self.reports_page)
+        self._register_page("Settings", self.settings_page)
 
         self.sidebar.set_active("Inventory")
-        self.pages.setCurrentWidget(self.inventory_page)
+        self.pages.setCurrentWidget(self._page_wrappers["Inventory"])
         self._current_page_name = "Inventory"
         self._compact_mode = False
         self._compact_sidebar_visible = True
@@ -216,6 +220,38 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._apply_responsive_layout()
+
+    def _apply_initial_window_size(self) -> None:
+        screen = self.screen()
+        if screen is None:
+            self.setMinimumSize(720, 480)
+            self.resize(1280, 800)
+            return
+        available = screen.availableGeometry()
+        target_width = min(1280, int(available.width() * 0.96))
+        target_height = min(800, int(available.height() * 0.92))
+        min_width = min(720, target_width)
+        min_height = min(480, target_height)
+        self.setMinimumSize(min_width, min_height)
+        self.resize(target_width, target_height)
+
+    def _register_page(self, name: str, page: QWidget) -> None:
+        wrapper = self._wrap_page(page)
+        self.pages.addWidget(wrapper)
+        self._page_wrappers[name] = wrapper
+
+    def _wrap_page(self, page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        scroll.setMinimumSize(0, 0)
+        page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        page.setMinimumSize(0, 0)
+        scroll.setWidget(page)
+        return scroll
 
     def _show_lock(self) -> None:
         if self._lock_open:
@@ -376,21 +412,9 @@ class MainWindow(QMainWindow):
         self.header.set_status(self.tr("{count} کالا").format(count=len(df)))
 
     def _switch_page(self, name: str) -> None:
-        pages = {
-            "Inventory": self.inventory_page,
-            "Sales Import": self.sales_page,
-            "Purchase Invoice": self.purchase_page,
-            "Invoices": self.invoices_page,
-            "Analytics": self.analytics_page,
-            "Low Stock": self.low_stock_page,
-            "Basalam": self.basalam_page,
-            "Actions": self.actions_page,
-            "Reports/Logs": self.reports_page,
-            "Settings": self.settings_page,
-        }
-        page = pages.get(name)
-        if page:
-            self.pages.setCurrentWidget(page)
+        wrapper = self._page_wrappers.get(name)
+        if wrapper:
+            self.pages.setCurrentWidget(wrapper)
             self.sidebar.set_active(name)
             self._current_page_name = name
             if self._compact_mode:
