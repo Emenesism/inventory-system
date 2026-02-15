@@ -417,6 +417,8 @@ class MainWindow(QMainWindow):
             self.pages.setCurrentWidget(wrapper)
             self.sidebar.set_active(name)
             self._current_page_name = name
+            if name == "Inventory":
+                self.inventory_page.request_layout_refresh()
             if self._compact_mode:
                 self._set_sidebar_visible(False)
 
@@ -439,6 +441,8 @@ class MainWindow(QMainWindow):
     def _set_sidebar_visible(self, visible: bool) -> None:
         self._compact_sidebar_visible = visible
         self.sidebar.setVisible(visible)
+        if self._current_page_name == "Inventory":
+            self.inventory_page.request_layout_refresh()
 
     def _show_help(self) -> None:
         content = get_help_content(self._current_page_name)
