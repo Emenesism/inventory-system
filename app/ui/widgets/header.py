@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QToolButton,
     QWidget,
 )
@@ -33,10 +34,16 @@ class HeaderBar(QFrame):
 
         title = QLabel(self.tr("حسابداری و انبار"))
         title.setObjectName("AppTitle")
+        title.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(title)
 
         self.status_label = QLabel(self.tr("موجودی بارگذاری نشده است"))
         self.status_label.setObjectName("StatusLabel")
+        self.status_label.setMinimumWidth(0)
+        self.status_label.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+        self.status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.status_label)
         layout.addStretch(1)
 
