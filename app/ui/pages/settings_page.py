@@ -138,8 +138,10 @@ class SettingsPage(QWidget):
         account_form.addWidget(confirm_label, 3, 0)
         account_form.addWidget(self.confirm_password_input, 3, 1)
 
-        account_form.setColumnStretch(0, 1)
-        account_form.setColumnStretch(1, 3)
+        # Keep labels on the right edge, but reduce label-column width
+        # so input boxes sit visually closer to labels in RTL layout.
+        account_form.setColumnStretch(0, 0)
+        account_form.setColumnStretch(1, 1)
         account_layout.addLayout(account_form)
 
         password_hint = QLabel(
@@ -203,8 +205,8 @@ class SettingsPage(QWidget):
         create_form.addWidget(role_label, 2, 0)
         create_form.addWidget(self.new_admin_role, 2, 1)
 
-        create_form.setColumnStretch(0, 1)
-        create_form.setColumnStretch(1, 3)
+        create_form.setColumnStretch(0, 0)
+        create_form.setColumnStretch(1, 1)
         admin_layout.addLayout(create_form)
 
         create_button_row = QHBoxLayout()
