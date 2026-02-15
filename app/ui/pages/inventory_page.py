@@ -471,6 +471,11 @@ class InventoryPage(QWidget):
             return
         self._column_fit_timer.start()
 
+    def request_layout_refresh(self) -> None:
+        self._apply_responsive_toolbar(force=True)
+        self._defer_fit_columns()
+        QTimer.singleShot(90, self._defer_fit_columns)
+
     def _apply_deferred_fit(self) -> None:
         if QApplication.mouseButtons() & Qt.LeftButton:
             self._column_fit_timer.start()
@@ -495,33 +500,74 @@ class InventoryPage(QWidget):
         delta = int(viewport_width - total_width)
         if abs(delta) <= 1:
             return
-        primary_fill_col = self._product_column_index()
-        fill_candidates = (
-            [primary_fill_col] if primary_fill_col is not None else []
-        ) + [col for col in range(column_count) if col != primary_fill_col]
-        fill_col = next(
-            (
-                col
-                for col in fill_candidates
-                if col is not None and col != avoid_col
-            ),
-            None,
-        )
-        if fill_col is None:
-            fill_col = primary_fill_col if primary_fill_col is not None else 0
-        current_width = int(header.sectionSize(fill_col))
-        min_width = max(
-            140, int(self._default_column_width(self._column_names[fill_col]))
-        )
-        new_width = max(min_width, current_width + delta)
-        if new_width == current_width:
+        widths = [int(header.sectionSize(col)) for col in range(column_count)]
+        min_widths = [
+            self._minimum_column_width(self._column_names[col])
+            for col in range(column_count)
+        ]
+
+        # Grow one preferred column when there is extra room.
+        if delta > 0:
+            primary_fill_col = self._product_column_index()
+            fill_candidates = (
+                [primary_fill_col] if primary_fill_col is not None else []
+            ) + [col for col in range(column_count) if col != primary_fill_col]
+            fill_col = next(
+                (
+                    col
+                    for col in fill_candidates
+                    if col is not None and col != avoid_col
+                ),
+                None,
+            )
+            if fill_col is None:
+                fill_col = (
+                    primary_fill_col if primary_fill_col is not None else 0
+                )
+            widths[fill_col] = max(
+                min_widths[fill_col], widths[fill_col] + delta
+            )
+        else:
+            # Shrink multiple columns so right-side columns stay visible when
+            # available width drops (e.g. sidebar toggles in compact mode).
+            remaining = -delta
+            ordered_cols = [
+                col for col in range(column_count) if col != avoid_col
+            ]
+            ordered_cols.sort(
+                key=lambda col: widths[col] - min_widths[col], reverse=True
+            )
+            if (
+                avoid_col is not None
+                and 0 <= avoid_col < column_count
+                and avoid_col not in ordered_cols
+            ):
+                ordered_cols.append(avoid_col)
+            for col in ordered_cols:
+                available = widths[col] - min_widths[col]
+                if available <= 0:
+                    continue
+                shrink_by = min(available, remaining)
+                widths[col] -= int(shrink_by)
+                remaining -= int(shrink_by)
+                if remaining <= 0:
+                    break
+
+        if all(
+            widths[col] == int(header.sectionSize(col))
+            for col in range(column_count)
+        ):
             return
         self._auto_adjusting_columns = True
         try:
-            header.resizeSection(fill_col, int(new_width))
+            for col in range(column_count):
+                target = int(widths[col])
+                if target <= 0:
+                    continue
+                header.resizeSection(col, target)
+                self._column_widths[self._column_names[col]] = target
         finally:
             self._auto_adjusting_columns = False
-        self._column_widths[self._column_names[fill_col]] = int(new_width)
 
     @staticmethod
     def _default_column_width(column_name: str) -> int:
@@ -531,6 +577,15 @@ class InventoryPage(QWidget):
         if normalized in {"source", "منبع"}:
             return 180
         return 140
+
+    @staticmethod
+    def _minimum_column_width(column_name: str) -> int:
+        normalized = InventoryPage._normalize_column_name(column_name)
+        if normalized in {"product_name", "نام_کالا", "کالا"}:
+            return 160
+        if normalized in {"source", "منبع"}:
+            return 96
+        return 78
 
     def _localized_header_label(self, column_name: str) -> str:
         normalized = self._normalize_column_name(column_name)
