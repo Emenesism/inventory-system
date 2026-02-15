@@ -50,37 +50,28 @@ class InventoryPage(QWidget):
         self._column_fit_timer.setSingleShot(True)
         self._column_fit_timer.setInterval(140)
         self._column_fit_timer.timeout.connect(self._apply_deferred_fit)
-        self._responsive_mode: tuple[bool, bool, bool] | None = None
+        self._toolbar_mode: str | None = None
 
-        self._root_layout = QVBoxLayout(self)
-        self._root_layout.setContentsMargins(24, 24, 24, 24)
-        self._root_layout.setSpacing(16)
+        self._main_layout = QVBoxLayout(self)
+        self._main_layout.setContentsMargins(24, 24, 24, 24)
+        self._main_layout.setSpacing(16)
 
-        self._top_controls_layout = QGridLayout()
-        self._top_controls_layout.setContentsMargins(0, 0, 0, 0)
-        self._top_controls_layout.setHorizontalSpacing(12)
-        self._top_controls_layout.setVerticalSpacing(10)
+        self._toolbar_layout = QGridLayout()
+        self._toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._toolbar_layout.setHorizontalSpacing(10)
+        self._toolbar_layout.setVerticalSpacing(8)
 
-        self._title_label = QLabel(self.tr("نمای کلی موجودی"))
-        self._title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
-        self._title_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._top_controls_layout.addWidget(
-            self._title_label, 0, 0, 1, 1, Qt.AlignRight | Qt.AlignVCenter
-        )
+        self.title_label = QLabel(self.tr("نمای کلی موجودی"))
+        self.title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("جستجوی کالا..."))
-        self.search_input.setMinimumWidth(180)
+        self.search_input.setMinimumWidth(160)
+        self.search_input.setMaximumWidth(420)
         self.search_input.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Fixed
         )
         self.search_input.textChanged.connect(self._queue_filter)
-        self._top_controls_layout.addWidget(self.search_input, 0, 1)
-
-        self._actions_layout = QGridLayout()
-        self._actions_layout.setContentsMargins(0, 0, 0, 0)
-        self._actions_layout.setHorizontalSpacing(8)
-        self._actions_layout.setVerticalSpacing(8)
 
         self.reload_button = QPushButton(self.tr("بارگذاری مجدد"))
         self.reload_button.clicked.connect(self.reload_requested.emit)
@@ -102,28 +93,26 @@ class InventoryPage(QWidget):
 
         self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.clicked.connect(self.export_requested.emit)
-        self._action_buttons = [
+        self._toolbar_buttons = [
             self.reload_button,
             self.save_button,
             self.add_row_button,
             self.delete_row_button,
             self.export_button,
         ]
-        for button in self._action_buttons:
+        for button in self._toolbar_buttons:
             button.setMinimumWidth(0)
-            button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            button.setMaximumWidth(220)
 
-        self._root_layout.addLayout(self._top_controls_layout)
-        self._root_layout.addLayout(self._actions_layout)
+        self._main_layout.addLayout(self._toolbar_layout)
 
         card = QFrame()
         card.setObjectName("Card")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
 
         self.table = QTableView()
-        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
@@ -140,8 +129,8 @@ class InventoryPage(QWidget):
         )
         card_layout.addWidget(self.table)
 
-        self._root_layout.addWidget(card, 1)
-        self._apply_responsive_controls(force=True)
+        self._main_layout.addWidget(card)
+        self._apply_responsive_toolbar(force=True)
 
     def set_inventory(
         self,
@@ -416,79 +405,66 @@ class InventoryPage(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._apply_responsive_controls()
+        self._apply_responsive_toolbar()
         self._defer_fit_columns()
 
-    def _apply_responsive_controls(self, force: bool = False) -> None:
+    def _apply_responsive_toolbar(self, force: bool = False) -> None:
         width = self.width() or self.sizeHint().width()
-        narrow = width < 980
-        extra_narrow = width < 760
-        tiny = width < 620
-        mode = (narrow, extra_narrow, tiny)
-        if not force and self._responsive_mode == mode:
+        if width >= 1260:
+            mode = "wide"
+        elif width >= 930:
+            mode = "two_rows"
+        elif width >= 700:
+            mode = "compact"
+        else:
+            mode = "tiny"
+        if not force and mode == self._toolbar_mode:
             return
-        self._responsive_mode = mode
+        self._toolbar_mode = mode
 
-        margin = 12 if narrow else 24
-        self._root_layout.setContentsMargins(margin, margin, margin, margin)
-        self._root_layout.setSpacing(12 if narrow else 16)
+        margins = 24 if mode == "wide" else 16 if mode == "two_rows" else 12
+        self._main_layout.setContentsMargins(margins, margins, margins, margins)
+        self._main_layout.setSpacing(16 if mode == "wide" else 12)
 
-        if narrow:
-            self._top_controls_layout.addWidget(
-                self._title_label,
-                0,
-                0,
-                1,
-                1,
-                Qt.AlignRight | Qt.AlignVCenter,
-            )
-            self._top_controls_layout.addWidget(self.search_input, 1, 0, 1, 1)
-            self._top_controls_layout.setColumnStretch(0, 1)
-            self._top_controls_layout.setColumnStretch(1, 0)
-            self.search_input.setMinimumWidth(0)
-            self.search_input.setMaximumWidth(16777215)
-        else:
-            self._top_controls_layout.addWidget(
-                self._title_label,
-                0,
-                0,
-                1,
-                1,
-                Qt.AlignRight | Qt.AlignVCenter,
-            )
-            self._top_controls_layout.addWidget(self.search_input, 0, 1, 1, 1)
-            self._top_controls_layout.setColumnStretch(0, 0)
-            self._top_controls_layout.setColumnStretch(1, 1)
+        while self._toolbar_layout.count():
+            item = self._toolbar_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.show()
+
+        for col in range(12):
+            self._toolbar_layout.setColumnStretch(col, 0)
+
+        if mode == "wide":
             self.search_input.setMinimumWidth(220)
-            self.search_input.setMaximumWidth(520)
+            self.search_input.setMaximumWidth(420)
+            self._toolbar_layout.addWidget(
+                self.title_label, 0, 0, 1, 1, Qt.AlignVCenter
+            )
+            self._toolbar_layout.setColumnStretch(1, 1)
+            self._toolbar_layout.addWidget(self.search_input, 0, 2)
+            for idx, button in enumerate(self._toolbar_buttons):
+                self._toolbar_layout.addWidget(button, 0, 3 + idx)
+            return
 
-        while self._actions_layout.count():
-            self._actions_layout.takeAt(0)
-
-        if tiny:
-            columns = 1
-        elif extra_narrow:
-            columns = 2
-        elif narrow:
-            columns = 3
+        self.search_input.setMinimumWidth(140)
+        if mode == "two_rows":
+            self.search_input.setMaximumWidth(360)
         else:
-            columns = len(self._action_buttons)
+            self.search_input.setMaximumWidth(16777215)
 
-        for idx, button in enumerate(self._action_buttons):
-            row = idx // columns
+        self._toolbar_layout.addWidget(
+            self.title_label, 0, 0, 1, 1, Qt.AlignVCenter
+        )
+        self._toolbar_layout.setColumnStretch(1, 1)
+        self._toolbar_layout.addWidget(self.search_input, 0, 2)
+
+        columns = 5 if mode == "two_rows" else 3 if mode == "compact" else 2
+        start_row = 1
+        for idx, button in enumerate(self._toolbar_buttons):
+            row = start_row + (idx // columns)
             col = idx % columns
-            self._actions_layout.addWidget(button, row, col)
-            if columns == len(self._action_buttons):
-                button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-            else:
-                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        max_cols = max(columns, len(self._action_buttons))
-        for col in range(max_cols):
-            self._actions_layout.setColumnStretch(col, 0)
-        if columns < len(self._action_buttons):
-            for col in range(columns):
-                self._actions_layout.setColumnStretch(col, 1)
+            self._toolbar_layout.addWidget(button, row, col)
 
     def _defer_fit_columns(self) -> None:
         if not self._model:
