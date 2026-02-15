@@ -26,7 +26,7 @@ from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
 from app.utils.dates import to_jalali_datetime
 from app.utils.excel import export_invoice_excel
-from app.utils.numeric import format_amount
+from app.utils.numeric import format_amount, format_number
 from app.utils.pdf import export_invoice_pdf
 from app.utils.text import normalize_text
 
@@ -387,7 +387,7 @@ class InvoicesPage(QWidget):
             price_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 1, price_item)
 
-            qty_item = QTableWidgetItem(str(line.quantity))
+            qty_item = QTableWidgetItem(format_number(line.quantity))
             qty_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 2, qty_item)
 
@@ -433,7 +433,7 @@ class InvoicesPage(QWidget):
             date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
             date_item.setData(Qt.UserRole, invoice.invoice_id)
             self.invoices_table.setItem(row_idx, 0, date_item)
-            invoice_item = QTableWidgetItem(str(invoice.invoice_id))
+            invoice_item = QTableWidgetItem(format_number(invoice.invoice_id))
             invoice_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 1, invoice_item)
             self.invoices_table.setItem(
@@ -446,11 +446,11 @@ class InvoicesPage(QWidget):
                 3,
                 QTableWidgetItem(self._format_type(invoice.invoice_type)),
             )
-            lines_item = QTableWidgetItem(str(invoice.total_lines))
+            lines_item = QTableWidgetItem(format_number(invoice.total_lines))
             lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 4, lines_item)
 
-            qty_item = QTableWidgetItem(str(invoice.total_qty))
+            qty_item = QTableWidgetItem(format_number(invoice.total_qty))
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.invoices_table.setItem(row_idx, 5, qty_item)
 
