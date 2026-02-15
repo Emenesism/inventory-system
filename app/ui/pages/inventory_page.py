@@ -93,13 +93,15 @@ class InventoryPage(QWidget):
         card_layout.setContentsMargins(16, 16, 16, 16)
 
         self.table = QTableView()
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
         if hasattr(self.table, "setUniformRowHeights"):
             self.table.setUniformRowHeights(True)
+        self.table.verticalHeader().setDefaultSectionSize(40)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
+        header.setSectionsClickable(False)
         header.sectionResized.connect(self._remember_column_width)
         self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         self.table.verticalScrollBar().valueChanged.connect(
@@ -117,6 +119,7 @@ class InventoryPage(QWidget):
     ) -> None:  # noqa: ANN001
         if dataframe is None:
             return
+        dataframe = self._sort_dataframe_by_product_name(dataframe)
         self._name_changes = {}
         self._name_originals = {}
         row_count = len(dataframe)
@@ -152,6 +155,9 @@ class InventoryPage(QWidget):
         self._model.cell_edited.connect(self._handle_cell_edit)
         self._proxy = NormalizedFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
+        self._proxy.setDynamicSortFilter(True)
+        self._proxy.setSortCaseSensitivity(Qt.CaseInsensitive)
+        self._proxy.setSortLocaleAware(True)
         self.table.setModel(self._proxy)
         self._wire_selection_model()
         if filter_text:
@@ -159,26 +165,24 @@ class InventoryPage(QWidget):
             self._proxy.set_filter_text(filter_text)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
+        header.setSectionsClickable(False)
         product_col = self._product_column_index()
         for col in range(self._model.columnCount()):
-            if product_col is not None and col == product_col:
-                header.setSectionResizeMode(col, QHeaderView.Stretch)
-            else:
-                header.setSectionResizeMode(col, QHeaderView.Interactive)
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
         for col in range(self._model.columnCount()):
-            if product_col is not None and col == product_col:
-                continue
             column_name = self._column_names[col]
             saved_width = self._column_widths.get(column_name)
             if saved_width and saved_width > 24:
                 header.resizeSection(col, int(saved_width))
                 continue
             header.resizeSection(col, self._default_column_width(column_name))
+        if product_col is not None:
+            self._proxy.sort(product_col, Qt.AscendingOrder)
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
             return None
-        return self._model.dataframe()
+        return self._sort_dataframe_by_product_name(self._model.dataframe())
 
     def get_name_changes(self) -> list[tuple[str, str]]:
         changes: list[tuple[str, str]] = []
@@ -375,9 +379,7 @@ class InventoryPage(QWidget):
 
     @staticmethod
     def _default_column_width(column_name: str) -> int:
-        normalized = (
-            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
-        )
+        normalized = InventoryPage._normalize_column_name(column_name)
         if normalized in {"product_name", "نام_کالا", "کالا"}:
             return 360
         if normalized in {"source", "منبع"}:
@@ -385,9 +387,7 @@ class InventoryPage(QWidget):
         return 140
 
     def _localized_header_label(self, column_name: str) -> str:
-        normalized = (
-            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
-        )
+        normalized = self._normalize_column_name(column_name)
         mapping = {
             "product_name": self.tr("نام کالا"),
             "quantity": self.tr("تعداد"),
@@ -401,21 +401,52 @@ class InventoryPage(QWidget):
 
     def _product_column_index(self) -> int | None:
         for idx, column_name in enumerate(self._column_names):
-            normalized = (
-                str(column_name)
-                .strip()
-                .lower()
-                .replace("-", "_")
-                .replace(" ", "_")
-            )
-            if normalized in {
-                "product_name",
-                "product",
-                "name",
-                "نام_محصول",
-                "نام_کالا",
-                "کالا",
-                "محصول",
-            }:
+            if self._is_product_column_name(column_name):
                 return idx
         return None
+
+    @staticmethod
+    def _normalize_column_name(column_name: object) -> str:
+        return (
+            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+
+    @classmethod
+    def _is_product_column_name(cls, column_name: object) -> bool:
+        normalized = cls._normalize_column_name(column_name)
+        if normalized in {
+            "product_name",
+            "product",
+            "name",
+            "نام_محصول",
+            "نام_کالا",
+            "کالا",
+            "محصول",
+        }:
+            return True
+        return "product" in normalized and "name" in normalized
+
+    @classmethod
+    def _product_column_name(cls, columns: list[object]) -> str | None:
+        for column_name in columns:
+            if cls._is_product_column_name(column_name):
+                return str(column_name)
+        return None
+
+    @classmethod
+    def _sort_dataframe_by_product_name(
+        cls, dataframe: pd.DataFrame
+    ) -> pd.DataFrame:
+        sorted_df = dataframe.copy()
+        product_column = cls._product_column_name(list(sorted_df.columns))
+        if not product_column or sorted_df.empty:
+            return sorted_df.reset_index(drop=True)
+        sort_key = (
+            sorted_df[product_column].fillna("").astype(str).map(normalize_text)
+        )
+        return (
+            sorted_df.assign(_name_sort=sort_key)
+            .sort_values(by=["_name_sort"], kind="mergesort")
+            .drop(columns=["_name_sort"])
+            .reset_index(drop=True)
+        )
