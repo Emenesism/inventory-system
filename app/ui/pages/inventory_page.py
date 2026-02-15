@@ -4,6 +4,7 @@ import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -37,11 +38,17 @@ class InventoryPage(QWidget):
         self._name_changes: dict[str, str] = {}
         self._name_originals: dict[str, str] = {}
         self._lazy_enabled_default = True
+        self._auto_adjusting_columns = False
+        self._last_user_resized_col: int | None = None
         self._pending_filter = ""
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._apply_filter)
+        self._column_fit_timer = QTimer(self)
+        self._column_fit_timer.setSingleShot(True)
+        self._column_fit_timer.setInterval(140)
+        self._column_fit_timer.timeout.connect(self._apply_deferred_fit)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -176,6 +183,7 @@ class InventoryPage(QWidget):
                 header.resizeSection(col, int(saved_width))
                 continue
             header.resizeSection(col, self._default_column_width(column_name))
+        self._defer_fit_columns()
         if product_col is not None:
             self._proxy.sort(product_col, Qt.AscendingOrder)
 
@@ -376,6 +384,71 @@ class InventoryPage(QWidget):
         ):
             return
         self._column_widths[self._column_names[logical_index]] = int(new_size)
+        if self._auto_adjusting_columns:
+            return
+        self._last_user_resized_col = logical_index
+        self._defer_fit_columns()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._defer_fit_columns()
+
+    def _defer_fit_columns(self) -> None:
+        if not self._model:
+            return
+        self._column_fit_timer.start()
+
+    def _apply_deferred_fit(self) -> None:
+        if QApplication.mouseButtons() & Qt.LeftButton:
+            self._column_fit_timer.start()
+            return
+        avoid_col = self._last_user_resized_col
+        self._last_user_resized_col = None
+        self._fit_columns_to_viewport(avoid_col=avoid_col)
+
+    def _fit_columns_to_viewport(self, avoid_col: int | None = None) -> None:
+        if not self._model:
+            return
+        column_count = self._model.columnCount()
+        if column_count <= 0:
+            return
+        header = self.table.horizontalHeader()
+        viewport_width = self.table.viewport().width()
+        if viewport_width <= 0:
+            return
+        total_width = sum(
+            header.sectionSize(col) for col in range(column_count)
+        )
+        delta = int(viewport_width - total_width)
+        if abs(delta) <= 1:
+            return
+        primary_fill_col = self._product_column_index()
+        fill_candidates = (
+            [primary_fill_col] if primary_fill_col is not None else []
+        ) + [col for col in range(column_count) if col != primary_fill_col]
+        fill_col = next(
+            (
+                col
+                for col in fill_candidates
+                if col is not None and col != avoid_col
+            ),
+            None,
+        )
+        if fill_col is None:
+            fill_col = primary_fill_col if primary_fill_col is not None else 0
+        current_width = int(header.sectionSize(fill_col))
+        min_width = max(
+            140, int(self._default_column_width(self._column_names[fill_col]))
+        )
+        new_width = max(min_width, current_width + delta)
+        if new_width == current_width:
+            return
+        self._auto_adjusting_columns = True
+        try:
+            header.resizeSection(fill_col, int(new_width))
+        finally:
+            self._auto_adjusting_columns = False
+        self._column_widths[self._column_names[fill_col]] = int(new_width)
 
     @staticmethod
     def _default_column_width(column_name: str) -> int:
