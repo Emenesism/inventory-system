@@ -14,6 +14,15 @@ class NormalizedFilterProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self._filter_text = ""
 
+    def headerData(  # noqa: N802, ANN001
+        self, section: int, orientation, role: int = Qt.DisplayRole
+    ):
+        # Keep row numbering contiguous in current proxy order
+        # (after sort/filter), instead of source row indices.
+        if role == Qt.DisplayRole and orientation == Qt.Vertical:
+            return str(section + 1)
+        return super().headerData(section, orientation, role)
+
     def set_filter_text(self, text: str) -> None:
         self._filter_text = normalize_search_text(text)
         self.invalidateFilter()
