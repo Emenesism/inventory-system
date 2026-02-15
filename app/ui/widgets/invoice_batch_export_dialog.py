@@ -49,7 +49,7 @@ from app.utils.dates import (
     to_jalali_datetime,
 )
 from app.utils.excel import export_invoices_excel
-from app.utils.numeric import format_amount
+from app.utils.numeric import format_amount, format_number
 from app.utils.pdf import export_invoices_pdf
 from app.utils.text import normalize_text
 
@@ -471,7 +471,7 @@ class InvoiceBatchExportDialog(QDialog):
         self.table.setRowCount(len(self._invoices))
         total_matches = 0
         for row_idx, invoice in enumerate(self._invoices):
-            id_item = QTableWidgetItem(str(invoice.invoice_id))
+            id_item = QTableWidgetItem(format_number(invoice.invoice_id))
             id_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 0, id_item)
 
@@ -489,10 +489,10 @@ class InvoiceBatchExportDialog(QDialog):
             rows_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 3, rows_item)
 
-            lines_item = QTableWidgetItem(str(invoice.total_lines))
+            lines_item = QTableWidgetItem(format_number(invoice.total_lines))
             lines_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 4, lines_item)
-            qty_item = QTableWidgetItem(str(invoice.total_qty))
+            qty_item = QTableWidgetItem(format_number(invoice.total_qty))
             qty_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 5, qty_item)
             total_item = QTableWidgetItem(format_amount(invoice.total_amount))
@@ -533,7 +533,7 @@ class InvoiceBatchExportDialog(QDialog):
             if match.row_number <= 0 or match.row_number in seen:
                 continue
             seen.add(match.row_number)
-            rows.append(str(match.row_number))
+            rows.append(format_number(match.row_number))
         return "، ".join(rows) if rows else "-"
 
     def _show_selected_product_details(self) -> None:
@@ -560,14 +560,14 @@ class InvoiceBatchExportDialog(QDialog):
 
         self.details_label.setText(
             self.tr("فاکتور #{id} | ردیف‌های کالا: {rows}").format(
-                id=invoice.invoice_id,
+                id=format_number(invoice.invoice_id),
                 rows=self._format_match_rows(invoice),
             )
         )
         self.product_details_table.setRowCount(len(matches))
         for row_idx, match in enumerate(matches):
             row_item = QTableWidgetItem(
-                str(match.row_number) if match.row_number > 0 else "-"
+                format_number(match.row_number) if match.row_number > 0 else "-"
             )
             row_item.setTextAlignment(Qt.AlignCenter)
             self.product_details_table.setItem(row_idx, 0, row_item)
@@ -578,7 +578,7 @@ class InvoiceBatchExportDialog(QDialog):
             )
             self.product_details_table.setItem(row_idx, 1, name_item)
 
-            qty_item = QTableWidgetItem(str(match.quantity))
+            qty_item = QTableWidgetItem(format_number(match.quantity))
             qty_item.setTextAlignment(Qt.AlignCenter)
             self.product_details_table.setItem(row_idx, 2, qty_item)
 
@@ -863,50 +863,49 @@ class InvoiceBatchExportDialog(QDialog):
         after_html = self._htmlize_kv_block(after_text)
         header = escape(action.title or action.action_type)
         section = escape(section_title)
+        # QTextEdit rich-text tables can render columns in LTR order even when
+        # the document is RTL. Render columns in reverse so visual order stays
+        # RTL-friendly (before on the right, after on the left).
+        columns = [
+            (self.tr("بعد"), after_html),
+            (self.tr("قبل"), before_html),
+        ]
+        columns_html = "".join(
+            "<td align='right' style='width:50%; vertical-align:top; "
+            "border:1px solid #e2e8f0; border-radius:8px; padding:6px;'>"
+            "<div align='right' style='font-weight:700; margin-bottom:4px; text-align:right;'>"
+            + escape(title)
+            + "</div>"
+            "<div align='right' style='color:#0f172a; font-size:12px; line-height:1.6; "
+            "text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            + html
+            + "</div>"
+            "</td>"
+            for title, html in columns
+        )
         return (
             "<div dir='rtl' align='right' "
-            "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
+            "style='text-align:right; direction:rtl; unicode-bidi:isolate;'>"
             "<div align='right' "
-            "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
-            + escape(product_name)
-            + "</div>"
+            "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right; direction:rtl;'>"
+            f"{escape(product_name)}"
+            "</div>"
             "<div align='right' "
-            "style='color:#64748b; font-size:12px; margin-bottom:8px; text-align:right; unicode-bidi:plaintext;'>"
-            + escape(date_text)
-            + " | "
-            + escape(admin)
-            + "</div>"
+            "style='color:#64748b; font-size:12px; margin-bottom:8px; text-align:right; direction:rtl; unicode-bidi:isolate;'>"
+            f"{escape(date_text)} | {escape(admin)}"
+            "</div>"
             "<div align='right' "
-            "style='font-weight:600; margin-bottom:4px; text-align:right;'>"
-            + header
-            + "</div>"
+            "style='font-weight:600; margin-bottom:4px; text-align:right; direction:rtl;'>"
+            f"{header}"
+            "</div>"
             "<div align='right' "
-            "style='color:#94a3b8; margin-bottom:8px; text-align:right; unicode-bidi:plaintext;'>"
-            + section
-            + "</div>"
-            "<table dir='rtl' align='right' "
-            "style='width:100%; border-collapse:separate; border-spacing:6px; direction:rtl;'>"
+            "style='color:#94a3b8; margin-bottom:8px; text-align:right; direction:rtl; unicode-bidi:isolate;'>"
+            f"{section}"
+            "</div>"
+            "<table dir='ltr' align='right' width='100%' "
+            "style='width:100%; border-collapse:separate; border-spacing:6px; table-layout:fixed; direction:ltr;'>"
             "<tr>"
-            "<td align='right' style='vertical-align:top; border:1px solid #e2e8f0; "
-            "border-radius:8px; padding:6px;'>"
-            "<div align='right' style='font-weight:700; margin-bottom:4px; text-align:right;'>"
-            + escape(self.tr("قبل"))
-            + "</div>"
-            "<div align='right' "
-            "style='color:#0f172a; font-size:12px; line-height:1.6; text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
-            + before_html
-            + "</div>"
-            "</td>"
-            "<td align='right' style='vertical-align:top; border:1px solid #e2e8f0; "
-            "border-radius:8px; padding:6px;'>"
-            "<div align='right' style='font-weight:700; margin-bottom:4px; text-align:right;'>"
-            + escape(self.tr("بعد"))
-            + "</div>"
-            "<div align='right' "
-            "style='color:#0f172a; font-size:12px; line-height:1.6; text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
-            + after_html
-            + "</div>"
-            "</td>"
+            f"{columns_html}"
             "</tr>"
             "</table>"
             "</div>"
@@ -932,15 +931,14 @@ class InvoiceBatchExportDialog(QDialog):
         ]
         return (
             "<div dir='rtl' align='right' "
-            "style='text-align:right; direction:rtl; unicode-bidi:plaintext; width:100%;'>"
-            "<div align='right' "
-            "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right;'>"
-            + escape(product_name)
-            + "</div>"
-            + "<table dir='rtl' align='right' width='100%' "
-            "style='width:100%; border-collapse:separate; border-spacing:0 4px;'>"
-            + self._format_inventory_kv_rows(rows)
-            + "</table>"
+            "style='text-align:right; direction:rtl; unicode-bidi:isolate; width:100%;'>"
+            "<p align='right' "
+            "style='font-weight:700; color:#0f172a; margin:0 0 6px 0; text-align:right; direction:rtl;'>"
+            f"{escape(product_name)}"
+            "</p>"
+            "<div dir='rtl' align='right' style='width:100%;'>"
+            f"{self._format_inventory_kv_rows(rows)}"
+            "</div>"
             "</div>"
         )
 
@@ -949,30 +947,56 @@ class InvoiceBatchExportDialog(QDialog):
             line.strip() for line in str(text).splitlines() if line.strip()
         ]
         if not lines:
-            return escape(str(text))
-        return (
-            "<table dir='rtl' align='right' width='100%' "
-            "style='width:100%; border-collapse:separate; border-spacing:0 2px;'>"
-            + "".join(
-                "<tr><td align='right' "
-                "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
-                + escape(line)
-                + "</td></tr>"
-                for line in lines
+            return (
+                "<p dir='rtl' align='right' "
+                "style='margin:0; text-align:right; direction:rtl; unicode-bidi:isolate;'>"
+                + escape(str(text))
+                + "</p>"
             )
-            + "</table>"
-        )
+        blocks: list[str] = []
+        for line in lines:
+            if ":" in line:
+                label, value = line.split(":", 1)
+                blocks.append(self._format_inline_kv(label, value))
+            else:
+                blocks.append(
+                    "<p dir='rtl' align='right' "
+                    "style='margin:0 0 2px 0; text-align:right; direction:rtl; "
+                    "unicode-bidi:isolate; width:100%;'>"
+                    + escape(line)
+                    + "</p>"
+                )
+        return "".join(blocks)
 
     def _format_inventory_kv_rows(self, rows: list[tuple[str, str]]) -> str:
         return "".join(
-            "<tr><td align='right' "
-            "style='text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
-            "<span style='color:#64748b;'>" + escape(label) + ":</span> "
-            "<span style='color:#0f172a; font-weight:600;'>"
-            + escape(value)
-            + "</span>"
-            "</td></tr>"
+            self._format_inline_kv(str(label), str(value))
             for label, value in rows
+        )
+
+    @staticmethod
+    def _needs_ltr(value: str) -> bool:
+        text = str(value)
+        return any(ch.isascii() and ch.isalnum() for ch in text)
+
+    def _format_inline_kv(self, label: str, value: str) -> str:
+        normalized_value = str(value).strip() or "-"
+        value_dir = "ltr" if self._needs_ltr(normalized_value) else "rtl"
+        value_mark = "\u200e" if value_dir == "ltr" else "\u200f"
+        return (
+            "<p dir='rtl' align='right' "
+            "style='margin:0 0 4px 0; text-align:right; direction:rtl; "
+            "unicode-bidi:isolate; width:100%;'>"
+            "<span dir='rtl' style='color:#64748b;'>\u200f"
+            + escape(str(label).strip())
+            + ":</span> "
+            "<bdi dir='"
+            + value_dir
+            + "' style='color:#0f172a; font-weight:600;'>"
+            + value_mark
+            + escape(normalized_value)
+            + "</bdi>"
+            "</p>"
         )
 
     @staticmethod
@@ -980,18 +1004,25 @@ class InvoiceBatchExportDialog(QDialog):
         widget.setReadOnly(True)
         widget.setLineWrapMode(QTextEdit.WidgetWidth)
         widget.setLayoutDirection(Qt.RightToLeft)
-        widget.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        widget.setAlignment(Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignTop)
         option = QTextOption()
         option.setTextDirection(Qt.RightToLeft)
-        option.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        option.setAlignment(Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignTop)
         widget.document().setDefaultTextOption(option)
+        widget.document().setDefaultStyleSheet(
+            "body,div,p,span,table,tr,td,th{"
+            "direction:rtl;text-align:right;unicode-bidi:isolate;}"
+        )
 
     def _wrap_details_html(self, body_html: str) -> str:
         return (
             "<html><head><meta charset='utf-8'>"
             "<style>"
             "body{font-family:Vazirmatn,Tahoma,sans-serif;"
-            "direction:rtl; text-align:right; margin:0;}"
+            "direction:rtl; text-align:right; margin:0; width:100%;}"
+            "p{margin:0 0 4px 0; width:100%;}"
+            "div,p,span,table,tr,td,th{direction:rtl; text-align:right;"
+            "unicode-bidi:isolate;}"
             "</style></head><body>" + body_html + "</body></html>"
         )
 
@@ -1009,11 +1040,11 @@ class InvoiceBatchExportDialog(QDialog):
         cursor.select(QTextCursor.Document)
         block_fmt = QTextBlockFormat()
         block_fmt.setLayoutDirection(Qt.RightToLeft)
-        block_fmt.setAlignment(Qt.AlignRight)
+        block_fmt.setAlignment(Qt.AlignRight | Qt.AlignAbsolute)
         cursor.mergeBlockFormat(block_fmt)
         cursor.clearSelection()
         widget.setTextCursor(cursor)
-        widget.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        widget.setAlignment(Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignTop)
 
     def _muted_html(self, text: str) -> str:
         return "<span style='color:#64748b;'>" + escape(text) + "</span>"
