@@ -18,7 +18,11 @@ from PySide6.QtWidgets import (
 
 from app.services.invoice_service import InvoiceLine, InvoiceSummary
 from app.utils import dialogs
-from app.utils.numeric import format_amount, normalize_numeric_text
+from app.utils.numeric import (
+    format_amount,
+    format_number,
+    normalize_numeric_text,
+)
 from app.utils.text import normalize_text
 
 
@@ -199,7 +203,7 @@ class InvoiceEditDialog(QDialog):
             price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 1, price_item)
 
-            qty_item = QTableWidgetItem(str(line.quantity))
+            qty_item = QTableWidgetItem(format_number(line.quantity))
             qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row_idx, 2, qty_item)
 
@@ -298,6 +302,7 @@ class InvoiceEditDialog(QDialog):
         if self._updating:
             return
         if item.column() in {1, 2}:
+            self._normalize_numeric_item(item)
             self._recalculate_row(item.row())
         if item.column() == 0:
             self._apply_search_filter()
@@ -523,11 +528,25 @@ class InvoiceEditDialog(QDialog):
 
     @staticmethod
     def _format_number(value: float) -> str:
+        return format_number(value)
+
+    def _normalize_numeric_item(self, item: QTableWidgetItem) -> None:
+        if item.column() == 1:
+            value = self._parse_price(item.text())
+        elif item.column() == 2:
+            value = self._parse_price(item.text())
+        else:
+            return
         if value is None:
-            return ""
-        if float(value).is_integer():
-            return str(int(value))
-        return str(value)
+            return
+        formatted = self._format_number(value)
+        if formatted == item.text():
+            return
+        self._updating = True
+        self.table.blockSignals(True)
+        item.setText(formatted)
+        self.table.blockSignals(False)
+        self._updating = False
 
 
 class _EnterMoveDelegate(QStyledItemDelegate):
