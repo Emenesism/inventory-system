@@ -38,7 +38,7 @@ from app.services.basalam_store import BasalamIdStore
 from app.utils import dialogs
 from app.utils.dates import jalali_month_days, jalali_to_gregorian, jalali_today
 from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
-from app.utils.numeric import format_amount, is_price_column
+from app.utils.numeric import format_amount, format_number, is_price_column
 from app.utils.text import normalize_text
 
 
@@ -303,18 +303,22 @@ class JalaliDateTimePicker(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self.year_combo = QComboBox()
         self.month_combo = QComboBox()
         self.day_combo = QComboBox()
         self.time_edit = QTimeEdit()
         self.time_edit.setDisplayFormat("HH:mm:ss")
+        self.time_edit.setMinimumHeight(32)
 
         for year in range(1390, 1451):
             self.year_combo.addItem(str(year), year)
         for idx, name in enumerate(PERSIAN_MONTHS, start=1):
             self.month_combo.addItem(f"{idx:02d} {name}", idx)
+
+        for combo in (self.year_combo, self.month_combo, self.day_combo):
+            combo.setMinimumHeight(32)
 
         layout.addWidget(self.year_combo)
         layout.addWidget(self.month_combo)
@@ -385,55 +389,93 @@ class BasalamPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        header = QHBoxLayout()
+        header_card = QFrame()
+        header_card.setObjectName("Card")
+        header_layout = QHBoxLayout(header_card)
+        header_layout.setContentsMargins(20, 16, 20, 16)
+        header_layout.setSpacing(16)
+        title_stack = QVBoxLayout()
+        title_stack.setSpacing(4)
         title = QLabel(self.tr("سفارش‌های باسلام"))
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        header.addWidget(title)
-        header.addStretch(1)
+        title.setStyleSheet("font-size: 22px; font-weight: 700;")
+        subtitle = QLabel(
+            self.tr("بازه پرداخت را مشخص کنید و سفارش‌ها را دریافت کنید.")
+        )
+        subtitle.setProperty("textRole", "muted")
+        title_stack.addWidget(title)
+        title_stack.addWidget(subtitle)
+        header_layout.addLayout(title_stack)
+        header_layout.addStretch(1)
 
         self.fetch_button = QPushButton(self.tr("دریافت"))
         self.fetch_button.clicked.connect(self._fetch)
-        header.addWidget(self.fetch_button)
-
+        self.fetch_button.setMinimumWidth(110)
         self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.setEnabled(False)
+        self.export_button.setProperty("variant", "secondary")
         self.export_button.clicked.connect(self._export)
-        header.addWidget(self.export_button)
-        layout.addLayout(header)
+        self.export_button.setMinimumWidth(100)
 
-        progress_row = QHBoxLayout()
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+        actions_row.addWidget(self.fetch_button)
+        actions_row.addWidget(self.export_button)
+        header_layout.addLayout(actions_row)
+        layout.addWidget(header_card)
+
+        status_card = QFrame()
+        status_card.setObjectName("Card")
+        status_layout = QHBoxLayout(status_card)
+        status_layout.setContentsMargins(20, 12, 20, 12)
+        status_layout.setSpacing(12)
         self.progress_label = QLabel("")
         self.progress_label.setProperty("textRole", "muted")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMinimumHeight(12)
+        self.progress_bar.setMinimumHeight(10)
         self.progress_bar.setTextVisible(False)
         self.progress_label.setText(self.tr("آماده دریافت سفارشات."))
-        progress_row.addWidget(self.progress_label)
-        progress_row.addWidget(self.progress_bar, 1)
-        layout.addLayout(progress_row)
+        status_layout.addWidget(self.progress_label)
+        status_layout.addWidget(self.progress_bar, 1)
+        layout.addWidget(status_card)
 
         form_card = QFrame()
         form_card.setObjectName("Card")
         form_layout = QGridLayout(form_card)
-        form_layout.setContentsMargins(16, 16, 16, 16)
-        form_layout.setHorizontalSpacing(12)
+        form_layout.setContentsMargins(20, 16, 20, 16)
+        form_layout.setHorizontalSpacing(20)
         form_layout.setVerticalSpacing(12)
+        form_layout.setColumnStretch(0, 1)
+        form_layout.setColumnStretch(1, 1)
 
         start_paid_label = QLabel(self.tr("شروع پرداخت (جلالی)"))
+        start_paid_label.setProperty("textRole", "muted")
         self.start_paid_input = JalaliDateTimePicker(
             default_time=QTime(0, 0, 0)
         )
-        form_layout.addWidget(start_paid_label, 0, 0)
-        form_layout.addWidget(self.start_paid_input, 0, 1)
+        start_group = QVBoxLayout()
+        start_group.setSpacing(6)
+        start_group.addWidget(start_paid_label)
+        start_group.addWidget(self.start_paid_input)
+        form_layout.addLayout(start_group, 0, 0)
 
         end_paid_label = QLabel(self.tr("پایان پرداخت (جلالی)"))
+        end_paid_label.setProperty("textRole", "muted")
         self.end_paid_input = JalaliDateTimePicker(
             default_time=QTime(23, 59, 59)
         )
-        form_layout.addWidget(end_paid_label, 1, 0)
-        form_layout.addWidget(self.end_paid_input, 1, 1)
+        end_group = QVBoxLayout()
+        end_group.setSpacing(6)
+        end_group.addWidget(end_paid_label)
+        end_group.addWidget(self.end_paid_input)
+        form_layout.addLayout(end_group, 0, 1)
+
+        helper_label = QLabel(
+            self.tr("برای دریافت دقیق‌تر، تاریخ و زمان پرداخت را تعیین کنید.")
+        )
+        helper_label.setProperty("textRole", "muted")
+        form_layout.addWidget(helper_label, 1, 0, 1, 2)
 
         layout.addWidget(form_card)
 
@@ -1169,6 +1211,8 @@ class BasalamPage(QWidget):
             return ""
         if column_name is not None and is_price_column(column_name):
             return format_amount(value)
+        if isinstance(value, (int, float)):
+            return format_number(value)
         return str(value)
 
     @staticmethod
