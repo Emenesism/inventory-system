@@ -6,6 +6,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
 
 from app.utils.numeric import (
     format_amount,
+    format_number,
     is_price_column,
     normalize_numeric_text,
 )
@@ -72,12 +73,16 @@ class DataFrameTableModel(QAbstractTableModel):
                 return ""
             if column_name == "quantity":
                 # Keep inventory quantity digits as Latin (English) numerals.
-                return self._ltr_numeric_text(int(value))
+                formatted = format_number(value)
+                return self._ltr_numeric_text(formatted) if formatted else ""
             if is_price_column(column_name):
                 formatted = format_amount(value)
                 return self._ltr_numeric_text(formatted) if formatted else ""
             if is_product_column:
                 return self._rtl_text(value)
+            if isinstance(value, (int, float)):
+                formatted = format_number(value)
+                return self._ltr_numeric_text(formatted) if formatted else ""
             return value
         if role == Qt.EditRole:
             if pd.isna(value):
@@ -85,7 +90,7 @@ class DataFrameTableModel(QAbstractTableModel):
             if isinstance(value, np.integer):
                 return int(value)
             if isinstance(value, np.floating):
-                return float(value)
+                return format_number(float(value))
             return value
         if role == Qt.TextAlignmentRole:
             if is_product_column:
