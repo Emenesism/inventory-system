@@ -6,11 +6,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,
-    QHBoxLayout,
+    QGridLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -49,34 +50,46 @@ class InventoryPage(QWidget):
         self._column_fit_timer.setSingleShot(True)
         self._column_fit_timer.setInterval(140)
         self._column_fit_timer.timeout.connect(self._apply_deferred_fit)
+        self._responsive_mode: tuple[bool, bool, bool] | None = None
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        self._root_layout = QVBoxLayout(self)
+        self._root_layout.setContentsMargins(24, 24, 24, 24)
+        self._root_layout.setSpacing(16)
 
-        header = QHBoxLayout()
-        title = QLabel(self.tr("نمای کلی موجودی"))
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        header.addWidget(title)
-        header.addStretch(1)
+        self._top_controls_layout = QGridLayout()
+        self._top_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self._top_controls_layout.setHorizontalSpacing(12)
+        self._top_controls_layout.setVerticalSpacing(10)
+
+        self._title_label = QLabel(self.tr("نمای کلی موجودی"))
+        self._title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
+        self._title_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._top_controls_layout.addWidget(
+            self._title_label, 0, 0, 1, 1, Qt.AlignRight | Qt.AlignVCenter
+        )
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("جستجوی کالا..."))
-        self.search_input.setMinimumWidth(260)
+        self.search_input.setMinimumWidth(180)
+        self.search_input.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
         self.search_input.textChanged.connect(self._queue_filter)
-        header.addWidget(self.search_input)
+        self._top_controls_layout.addWidget(self.search_input, 0, 1)
+
+        self._actions_layout = QGridLayout()
+        self._actions_layout.setContentsMargins(0, 0, 0, 0)
+        self._actions_layout.setHorizontalSpacing(8)
+        self._actions_layout.setVerticalSpacing(8)
 
         self.reload_button = QPushButton(self.tr("بارگذاری مجدد"))
         self.reload_button.clicked.connect(self.reload_requested.emit)
-        header.addWidget(self.reload_button)
 
         self.save_button = QPushButton(self.tr("ذخیره تغییرات"))
         self.save_button.clicked.connect(self.save_requested.emit)
-        header.addWidget(self.save_button)
 
         self.add_row_button = QPushButton(self.tr("افزودن ردیف"))
         self.add_row_button.clicked.connect(self.add_row)
-        header.addWidget(self.add_row_button)
 
         self.delete_row_button = QPushButton(self.tr("حذف انتخاب‌شده"))
         self.delete_row_button.setStyleSheet(
@@ -86,20 +99,31 @@ class InventoryPage(QWidget):
         )
         self.delete_row_button.clicked.connect(self.delete_selected_rows)
         self.delete_row_button.setEnabled(False)
-        header.addWidget(self.delete_row_button)
 
         self.export_button = QPushButton(self.tr("خروجی"))
         self.export_button.clicked.connect(self.export_requested.emit)
-        header.addWidget(self.export_button)
+        self._action_buttons = [
+            self.reload_button,
+            self.save_button,
+            self.add_row_button,
+            self.delete_row_button,
+            self.export_button,
+        ]
+        for button in self._action_buttons:
+            button.setMinimumWidth(0)
+            button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
 
-        layout.addLayout(header)
+        self._root_layout.addLayout(self._top_controls_layout)
+        self._root_layout.addLayout(self._actions_layout)
 
         card = QFrame()
         card.setObjectName("Card")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
 
         self.table = QTableView()
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setSortingEnabled(False)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
@@ -116,7 +140,8 @@ class InventoryPage(QWidget):
         )
         card_layout.addWidget(self.table)
 
-        layout.addWidget(card)
+        self._root_layout.addWidget(card, 1)
+        self._apply_responsive_controls(force=True)
 
     def set_inventory(
         self,
@@ -391,7 +416,79 @@ class InventoryPage(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        self._apply_responsive_controls()
         self._defer_fit_columns()
+
+    def _apply_responsive_controls(self, force: bool = False) -> None:
+        width = self.width() or self.sizeHint().width()
+        narrow = width < 980
+        extra_narrow = width < 760
+        tiny = width < 620
+        mode = (narrow, extra_narrow, tiny)
+        if not force and self._responsive_mode == mode:
+            return
+        self._responsive_mode = mode
+
+        margin = 12 if narrow else 24
+        self._root_layout.setContentsMargins(margin, margin, margin, margin)
+        self._root_layout.setSpacing(12 if narrow else 16)
+
+        if narrow:
+            self._top_controls_layout.addWidget(
+                self._title_label,
+                0,
+                0,
+                1,
+                1,
+                Qt.AlignRight | Qt.AlignVCenter,
+            )
+            self._top_controls_layout.addWidget(self.search_input, 1, 0, 1, 1)
+            self._top_controls_layout.setColumnStretch(0, 1)
+            self._top_controls_layout.setColumnStretch(1, 0)
+            self.search_input.setMinimumWidth(0)
+            self.search_input.setMaximumWidth(16777215)
+        else:
+            self._top_controls_layout.addWidget(
+                self._title_label,
+                0,
+                0,
+                1,
+                1,
+                Qt.AlignRight | Qt.AlignVCenter,
+            )
+            self._top_controls_layout.addWidget(self.search_input, 0, 1, 1, 1)
+            self._top_controls_layout.setColumnStretch(0, 0)
+            self._top_controls_layout.setColumnStretch(1, 1)
+            self.search_input.setMinimumWidth(220)
+            self.search_input.setMaximumWidth(520)
+
+        while self._actions_layout.count():
+            self._actions_layout.takeAt(0)
+
+        if tiny:
+            columns = 1
+        elif extra_narrow:
+            columns = 2
+        elif narrow:
+            columns = 3
+        else:
+            columns = len(self._action_buttons)
+
+        for idx, button in enumerate(self._action_buttons):
+            row = idx // columns
+            col = idx % columns
+            self._actions_layout.addWidget(button, row, col)
+            if columns == len(self._action_buttons):
+                button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            else:
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        max_cols = max(columns, len(self._action_buttons))
+        for col in range(max_cols):
+            self._actions_layout.setColumnStretch(col, 0)
+        if columns < len(self._action_buttons):
+            for col in range(columns):
+                self._actions_layout.setColumnStretch(col, 1)
 
     def _defer_fit_columns(self) -> None:
         if not self._model:
