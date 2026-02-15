@@ -50,18 +50,6 @@ class Sidebar(QFrame):
             "Reports/Logs": QStyle.SP_FileDialogDetailedView,
             "Settings": QStyle.SP_FileDialogContentsView,
         }
-        hint_map = {
-            "Inventory": self.tr("مشاهده و ویرایش موجودی"),
-            "Sales Import": self.tr("اعمال فروش از فایل اکسل"),
-            "Purchase Invoice": self.tr("ثبت خرید جدید"),
-            "Invoices": self.tr("مرور فاکتورهای ثبت‌شده"),
-            "Analytics": self.tr("سود و روندها"),
-            "Low Stock": self.tr("لیست تامین"),
-            "Basalam": self.tr("مرسوله‌های فروشنده"),
-            "Actions": self.tr("ردیابی اقدامات"),
-            "Reports/Logs": self.tr("گزارش لاگ برنامه"),
-            "Settings": self.tr("تنظیمات و مدیران"),
-        }
         title_map = {
             "Inventory": self.tr("موجودی"),
             "Sales Import": self.tr("ثبت فاکتور فروش"),
@@ -87,11 +75,6 @@ class Sidebar(QFrame):
             "Reports/Logs",
             "Settings",
         ]:
-            item = QWidget()
-            item_layout = QVBoxLayout(item)
-            item_layout.setContentsMargins(0, 0, 0, 0)
-            item_layout.setSpacing(6)
-
             button = QToolButton()
             button.setObjectName("SidebarButton")
             button.setText(title_map.get(name, name))
@@ -107,13 +90,7 @@ class Sidebar(QFrame):
                 lambda checked, key=name: self.page_selected.emit(key)
             )
             self.button_group.addButton(button)
-            item_layout.addWidget(button)
-
-            hint = QLabel(hint_map.get(name, ""))
-            hint.setObjectName("SidebarHint")
-            item_layout.addWidget(hint)
-
-            layout.addWidget(item)
+            layout.addWidget(button)
             self.buttons[name] = button
 
         layout.addStretch(1)
