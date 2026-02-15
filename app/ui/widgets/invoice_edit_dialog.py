@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -49,7 +50,8 @@ class InvoiceEditDialog(QDialog):
             self.tr("ویرایش فاکتور #{id}").format(id=invoice.invoice_id)
         )
         self.setModal(True)
-        self.setMinimumSize(780, 640)
+        self.setMinimumSize(960, 760)
+        self.resize(1120, 820)
         self.setLayoutDirection(Qt.RightToLeft)
 
         layout = QVBoxLayout(self)
@@ -109,6 +111,10 @@ class InvoiceEditDialog(QDialog):
         self.search_input.setPlaceholderText(
             self.tr("جستجو در کالاهای این فاکتور...")
         )
+        self.search_input.setLayoutDirection(Qt.RightToLeft)
+        self.search_input.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._apply_search_filter)
         search_row.addWidget(self.search_input, 1)
@@ -135,8 +141,18 @@ class InvoiceEditDialog(QDialog):
             | QAbstractItemView.EditKeyPressed
             | QAbstractItemView.AnyKeyPressed
         )
-        self.table.verticalHeader().setDefaultSectionSize(36)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setDefaultSectionSize(46)
+        self.table.verticalHeader().setMinimumSectionSize(46)
+        self.table.setWordWrap(False)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.Interactive)
+        self.table.setColumnWidth(1, 170)
+        self.table.setColumnWidth(2, 130)
+        self.table.setColumnWidth(3, 190)
         card_layout.addWidget(self.table)
         layout.addWidget(card, 1)
 
@@ -189,6 +205,9 @@ class InvoiceEditDialog(QDialog):
         self.table.setRowCount(len(lines))
         for row_idx, line in enumerate(lines):
             product_item = QTableWidgetItem(line.product_name)
+            product_item.setTextAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
             product_item.setData(
                 Qt.UserRole,
                 {
@@ -268,6 +287,9 @@ class InvoiceEditDialog(QDialog):
         self.table.insertRow(row)
 
         product_item = QTableWidgetItem("")
+        product_item.setTextAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
         product_item.setData(
             Qt.UserRole,
             {
@@ -484,6 +506,10 @@ class InvoiceEditDialog(QDialog):
     def _apply_sales_ui(self) -> None:
         self.table.setColumnHidden(1, True)
         self.table.setColumnHidden(3, True)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        self.table.setColumnWidth(2, 130)
         self.total_amount_label.setVisible(False)
 
     def _apply_search_filter(self) -> None:
@@ -553,6 +579,23 @@ class _EnterMoveDelegate(QStyledItemDelegate):
     def __init__(self, on_enter, parent=None) -> None:  # noqa: ANN001
         super().__init__(parent)
         self._on_enter = on_enter
+
+    def createEditor(  # noqa: ANN001, N802
+        self, parent, option, index
+    ):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.setLayoutDirection(Qt.RightToLeft)
+            editor.setAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
+            editor.setCursorMoveStyle(Qt.VisualMoveStyle)
+        return editor
+
+    def setEditorData(self, editor, index) -> None:  # noqa: ANN001, N802
+        super().setEditorData(editor, index)
+        if isinstance(editor, QLineEdit):
+            editor.selectAll()
 
     def eventFilter(self, editor, event) -> bool:  # noqa: ANN001, N802
         if event.type() == QEvent.KeyPress and event.key() in (
