@@ -49,7 +49,7 @@ class InvoiceEditDialog(QDialog):
             self.tr("ویرایش فاکتور #{id}").format(id=invoice.invoice_id)
         )
         self.setModal(True)
-        self.setMinimumWidth(720)
+        self.setMinimumSize(780, 640)
         self.setLayoutDirection(Qt.RightToLeft)
 
         layout = QVBoxLayout(self)
@@ -135,10 +135,10 @@ class InvoiceEditDialog(QDialog):
             | QAbstractItemView.EditKeyPressed
             | QAbstractItemView.AnyKeyPressed
         )
-        self.table.verticalHeader().setDefaultSectionSize(30)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.horizontalHeader().setStretchLastSection(True)
         card_layout.addWidget(self.table)
-        layout.addWidget(card)
+        layout.addWidget(card, 1)
 
         summary_row = QHBoxLayout()
         self.total_lines_label = QLabel(self.tr("ردیف‌ها: 0"))
