@@ -86,7 +86,10 @@ def ensure_sheet_rtl(path: str | Path) -> None:
 
 
 def apply_banded_rows(
-    path: str | Path, header_row: int = 1, stripe_color: str = "F7F9FC"
+    path: str | Path,
+    header_row: int = 1,
+    stripe_color: str = "F7F9FC",
+    data_row_height: int | None = None,
 ) -> None:
     try:
         from openpyxl import load_workbook
@@ -109,6 +112,10 @@ def apply_banded_rows(
             continue
         start_row = header_row + 1
         for row_idx in range(start_row, max_row + 1):
+            if data_row_height is not None and data_row_height > 0:
+                worksheet.row_dimensions[row_idx].height = float(
+                    data_row_height
+                )
             if (row_idx - start_row) % 2 == 0:
                 for col_idx in range(1, max_col + 1):
                     worksheet.cell(
