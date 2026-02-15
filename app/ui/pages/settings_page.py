@@ -55,8 +55,10 @@ class SettingsPage(QWidget):
         title_col.setSpacing(4)
         title = QLabel(self.tr("تنظیمات"))
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         subtitle = QLabel(self.tr("تنظیمات نمایش، حساب کاربری و مدیریت مدیران"))
         subtitle.setProperty("textRole", "muted")
+        subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -73,6 +75,8 @@ class SettingsPage(QWidget):
         self.theme_combo = QComboBox()
         self.theme_combo.addItem(self.tr("روشن"), "light")
         self.theme_combo.addItem(self.tr("تیره"), "dark")
+        self._configure_combo_rtl(self.theme_combo)
+        self.theme_combo.setMinimumWidth(100)
         self.theme_combo.setCurrentIndex(
             1 if self.config.theme == "dark" else 0
         )
@@ -89,6 +93,7 @@ class SettingsPage(QWidget):
 
         account_title = QLabel(self.tr("حساب کاربری"))
         account_title.setStyleSheet("font-size: 15px; font-weight: 700;")
+        account_title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         account_layout.addWidget(account_title)
 
         account_form = QGridLayout()
@@ -100,6 +105,7 @@ class SettingsPage(QWidget):
         user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.user_value = QLabel("-")
         self.user_value.setStyleSheet("font-weight: 600;")
+        self.user_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         account_form.addWidget(user_label, 0, 0)
         account_form.addWidget(self.user_value, 0, 1)
 
@@ -107,6 +113,7 @@ class SettingsPage(QWidget):
         current_label.setProperty("fieldLabel", True)
         current_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.current_password_input = QLineEdit()
+        self._configure_line_edit_rtl(self.current_password_input)
         self.current_password_input.setEchoMode(QLineEdit.Password)
         account_form.addWidget(current_label, 1, 0)
         account_form.addWidget(self.current_password_input, 1, 1)
@@ -115,6 +122,7 @@ class SettingsPage(QWidget):
         new_label.setProperty("fieldLabel", True)
         new_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_password_input = QLineEdit()
+        self._configure_line_edit_rtl(self.new_password_input)
         self.new_password_input.setEchoMode(QLineEdit.Password)
         account_form.addWidget(new_label, 2, 0)
         account_form.addWidget(self.new_password_input, 2, 1)
@@ -123,6 +131,7 @@ class SettingsPage(QWidget):
         confirm_label.setProperty("fieldLabel", True)
         confirm_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.confirm_password_input = QLineEdit()
+        self._configure_line_edit_rtl(self.confirm_password_input)
         self.confirm_password_input.setEchoMode(QLineEdit.Password)
         account_form.addWidget(confirm_label, 3, 0)
         account_form.addWidget(self.confirm_password_input, 3, 1)
@@ -135,13 +144,17 @@ class SettingsPage(QWidget):
             self.tr("برای امنیت بهتر، رمز عبور حداقل ۶ کاراکتر باشد.")
         )
         password_hint.setProperty("textRole", "muted")
+        password_hint.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         account_layout.addWidget(password_hint)
 
         pass_button_row = QHBoxLayout()
-        pass_button_row.addStretch(1)
         update_password_button = QPushButton(self.tr("به‌روزرسانی رمز"))
         update_password_button.clicked.connect(self._update_password)
-        pass_button_row.addWidget(update_password_button)
+        pass_button_row.addWidget(
+            update_password_button,
+            0,
+            Qt.AlignRight | Qt.AlignVCenter,
+        )
         account_layout.addLayout(pass_button_row)
 
         self.admin_card = QFrame()
@@ -152,6 +165,7 @@ class SettingsPage(QWidget):
 
         admin_title = QLabel(self.tr("مدیریت مدیران"))
         admin_title.setStyleSheet("font-size: 15px; font-weight: 700;")
+        admin_title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         admin_layout.addWidget(admin_title)
 
         create_form = QGridLayout()
@@ -162,6 +176,7 @@ class SettingsPage(QWidget):
         username_label.setProperty("fieldLabel", True)
         username_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_admin_username = QLineEdit()
+        self._configure_line_edit_rtl(self.new_admin_username)
         self.new_admin_username.setPlaceholderText(self.tr("نام کاربری"))
         create_form.addWidget(username_label, 0, 0)
         create_form.addWidget(self.new_admin_username, 0, 1)
@@ -170,6 +185,7 @@ class SettingsPage(QWidget):
         password_label.setProperty("fieldLabel", True)
         password_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.new_admin_password = QLineEdit()
+        self._configure_line_edit_rtl(self.new_admin_password)
         self.new_admin_password.setPlaceholderText(self.tr("رمز عبور"))
         self.new_admin_password.setEchoMode(QLineEdit.Password)
         create_form.addWidget(password_label, 1, 0)
@@ -181,6 +197,7 @@ class SettingsPage(QWidget):
         self.new_admin_role = QComboBox()
         self.new_admin_role.addItem(self.tr("کارمند"), "employee")
         self.new_admin_role.addItem(self.tr("مدیر"), "manager")
+        self._configure_combo_rtl(self.new_admin_role)
         create_form.addWidget(role_label, 2, 0)
         create_form.addWidget(self.new_admin_role, 2, 1)
 
@@ -189,10 +206,13 @@ class SettingsPage(QWidget):
         admin_layout.addLayout(create_form)
 
         create_button_row = QHBoxLayout()
-        create_button_row.addStretch(1)
         create_button = QPushButton(self.tr("ایجاد مدیر"))
         create_button.clicked.connect(self._create_admin)
-        create_button_row.addWidget(create_button)
+        create_button_row.addWidget(
+            create_button,
+            0,
+            Qt.AlignRight | Qt.AlignVCenter,
+        )
         admin_layout.addLayout(create_button_row)
 
         self.admin_table = QTableWidget(0, 2)
@@ -202,15 +222,22 @@ class SettingsPage(QWidget):
         self.admin_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.admin_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.admin_table.setAlternatingRowColors(True)
+        self.admin_table.setLayoutDirection(Qt.RightToLeft)
+        self.admin_table.horizontalHeader().setDefaultAlignment(
+            Qt.AlignRight | Qt.AlignVCenter
+        )
         self.admin_table.horizontalHeader().setStretchLastSection(True)
         self.admin_table.verticalHeader().setDefaultSectionSize(30)
         admin_layout.addWidget(self.admin_table)
 
         admin_button_row = QHBoxLayout()
-        admin_button_row.addStretch(1)
         delete_button = QPushButton(self.tr("حذف مورد انتخابی"))
         delete_button.clicked.connect(self._delete_selected_admin)
-        admin_button_row.addWidget(delete_button)
+        admin_button_row.addWidget(
+            delete_button,
+            0,
+            Qt.AlignRight | Qt.AlignVCenter,
+        )
         admin_layout.addLayout(admin_button_row)
 
         content_row = QHBoxLayout()
@@ -339,13 +366,16 @@ class SettingsPage(QWidget):
         for row_idx, admin in enumerate(admins):
             username_item = QTableWidgetItem(admin.username)
             username_item.setData(Qt.UserRole, admin.admin_id)
+            username_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.admin_table.setItem(row_idx, 0, username_item)
             role_label = (
                 self.tr("مدیر")
                 if admin.role == "manager"
                 else self.tr("کارمند")
             )
-            self.admin_table.setItem(row_idx, 1, QTableWidgetItem(role_label))
+            role_item = QTableWidgetItem(role_label)
+            role_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.admin_table.setItem(row_idx, 1, role_item)
 
     def _delete_selected_admin(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
@@ -402,3 +432,21 @@ class SettingsPage(QWidget):
         self.config.save()
         if self.on_theme_changed:
             self.on_theme_changed(self.config.theme)
+
+    @staticmethod
+    def _configure_line_edit_rtl(line_edit: QLineEdit) -> None:
+        line_edit.setLayoutDirection(Qt.RightToLeft)
+        line_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+    @staticmethod
+    def _configure_combo_rtl(combo: QComboBox) -> None:
+        combo.setLayoutDirection(Qt.RightToLeft)
+        popup = combo.view()
+        if popup is not None:
+            popup.setLayoutDirection(Qt.RightToLeft)
+        for idx in range(combo.count()):
+            combo.setItemData(
+                idx,
+                Qt.AlignRight | Qt.AlignVCenter,
+                Qt.TextAlignmentRole,
+            )
