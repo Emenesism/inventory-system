@@ -12,7 +12,9 @@ from app.services.invoice_service import InvoiceService
 from app.ui.pages.inventory_page import InventoryPage
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
-from app.utils.excel import apply_banded_rows, autofit_columns, ensure_sheet_rtl
+from app.utils.excel import (
+    style_inventory_export_sheet,
+)
 from app.utils.text import normalize_text
 
 
@@ -219,11 +221,9 @@ class InventoryController(QObject):
         if not file_path.lower().endswith(".xlsx"):
             file_path = f"{file_path}.xlsx"
         try:
-            export_df = self._sort_for_export(df)
+            export_df = self._prepare_export_dataframe(df)
             export_df.to_excel(file_path, index=False)
-            ensure_sheet_rtl(file_path)
-            apply_banded_rows(file_path, data_row_height=24)
-            autofit_columns(file_path)
+            style_inventory_export_sheet(file_path, data_row_height=24)
         except Exception as exc:  # noqa: BLE001
             dialogs.show_error(self.page, self.tr("موجودی"), str(exc))
             self._logger.exception("Failed to export inventory")
@@ -272,6 +272,36 @@ class InventoryController(QObject):
             .drop(columns=["_empty_sort", "_name_sort"])
             .reset_index(drop=True)
         )
+
+    @classmethod
+    def _prepare_export_dataframe(cls, df):  # noqa: ANN001
+        export_df = cls._sort_for_export(df)
+        if export_df.empty:
+            return export_df
+        localized = export_df.rename(
+            columns={
+                str(column): cls._inventory_export_column_label(str(column))
+                for column in export_df.columns
+            }
+        )
+        localized.insert(0, "ردیف", range(1, len(localized) + 1))
+        return localized
+
+    @staticmethod
+    def _inventory_export_column_label(column_name: str) -> str:
+        normalized = (
+            str(column_name).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+        mapping = {
+            "product_name": "نام کالا",
+            "quantity": "تعداد",
+            "avg_buy_price": "میانگین قیمت خرید",
+            "last_buy_price": "آخرین قیمت خرید",
+            "sell_price": "قیمت فروش",
+            "alarm": "آلارم",
+            "source": "منبع",
+        }
+        return mapping.get(normalized, str(column_name))
 
     def _build_inventory_diff(self, old_df, new_df) -> str:  # noqa: ANN001
         def key_map(df):
