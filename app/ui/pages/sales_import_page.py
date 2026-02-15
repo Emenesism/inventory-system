@@ -24,6 +24,7 @@ from app.services.sales_import_service import (
     SalesPreviewRow,
     SalesPreviewSummary,
 )
+from app.utils.numeric import format_number
 from app.utils.text import normalize_text
 
 
@@ -550,7 +551,7 @@ class SalesImportPage(QWidget):
                 name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row_idx, 0, name_item)
 
-            qty_item = QTableWidgetItem(str(row.quantity_sold))
+            qty_item = QTableWidgetItem(format_number(row.quantity_sold))
             qty_item.setTextAlignment(Qt.AlignCenter)
             qty_item.setData(Qt.UserRole, row_idx)
             if self._edit_enabled:
