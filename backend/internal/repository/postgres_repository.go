@@ -974,9 +974,6 @@ func (r *Repository) GetTopSoldProducts(ctx context.Context, days, limit int) ([
 }
 
 func (r *Repository) GetUnsoldProducts(ctx context.Context, days, limit int) ([]domain.UnsoldProduct, error) {
-	if days <= 0 {
-		days = 30
-	}
 	if limit <= 0 {
 		limit = 200
 	}
@@ -991,7 +988,7 @@ func (r *Repository) GetUnsoldProducts(ctx context.Context, days, limit int) ([]
 			JOIN invoice_lines il ON il.invoice_id = i.id
 			WHERE
 				i.invoice_type LIKE 'sales%'
-				AND i.created_at >= NOW() - ($1 * INTERVAL '1 day')
+				AND ($1::int <= 0 OR i.created_at >= NOW() - ($1 * INTERVAL '1 day'))
 		)
 		SELECT
 			p.product_name,
