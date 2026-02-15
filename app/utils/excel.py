@@ -127,6 +127,114 @@ def apply_banded_rows(
         return
 
 
+def style_inventory_export_sheet(
+    path: str | Path, header_row: int = 1, data_row_height: int = 24
+) -> None:
+    try:
+        from openpyxl import load_workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return
+    try:
+        workbook = load_workbook(path)
+    except Exception:  # noqa: BLE001
+        return
+
+    header_fill = PatternFill(
+        start_color="FF1D4ED8", end_color="FF1D4ED8", fill_type="solid"
+    )
+    odd_fill = PatternFill(
+        start_color="FFFFFFFF", end_color="FFFFFFFF", fill_type="solid"
+    )
+    even_fill = PatternFill(
+        start_color="FFDCEBFF", end_color="FFDCEBFF", fill_type="solid"
+    )
+    thin = Side(border_style="thin", color="FFC7CED6")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_font = Font(size=11, bold=True, color="FFFFFFFF")
+    body_font = Font(size=11)
+
+    numeric_headers = {
+        "ردیف",
+        "تعداد",
+        "میانگین قیمت خرید",
+        "آخرین قیمت خرید",
+        "قیمت فروش",
+        "آلارم",
+    }
+    currency_headers = {
+        "میانگین قیمت خرید",
+        "آخرین قیمت خرید",
+        "قیمت فروش",
+    }
+    for worksheet in workbook.worksheets:
+        worksheet.sheet_view.rightToLeft = True
+        max_row = worksheet.max_row or 0
+        max_col = worksheet.max_column or 0
+        if max_row < header_row or max_col < 1:
+            continue
+
+        worksheet.freeze_panes = f"A{header_row + 1}"
+        worksheet.auto_filter.ref = None
+
+        worksheet.row_dimensions[header_row].height = 28
+        for col_idx in range(1, max_col + 1):
+            header_cell = worksheet.cell(row=header_row, column=col_idx)
+            header_cell.fill = header_fill
+            header_cell.font = header_font
+            header_cell.border = border
+            header_cell.alignment = Alignment(
+                horizontal="center", vertical="center"
+            )
+
+        for row_idx in range(header_row + 1, max_row + 1):
+            worksheet.row_dimensions[row_idx].height = float(data_row_height)
+            fill = even_fill if (row_idx - (header_row + 1)) % 2 else odd_fill
+            for col_idx in range(1, max_col + 1):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                header_text = str(
+                    worksheet.cell(row=header_row, column=col_idx).value or ""
+                ).strip()
+                cell.fill = fill
+                cell.font = body_font
+                cell.border = border
+                if header_text in numeric_headers:
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center"
+                    )
+                    if header_text in currency_headers:
+                        cell.number_format = "#,##0"
+                else:
+                    cell.alignment = Alignment(
+                        horizontal="right", vertical="center"
+                    )
+        for col_idx in range(1, max_col + 1):
+            max_len = 0
+            col_letter = get_column_letter(col_idx)
+            for row_idx in range(1, max_row + 1):
+                value = worksheet.cell(row=row_idx, column=col_idx).value
+                if value is None:
+                    continue
+                text = str(value).replace("\n", " ")
+                if len(text) > max_len:
+                    max_len = len(text)
+            if max_len <= 0:
+                continue
+            worksheet.column_dimensions[col_letter].width = min(
+                max(max_len + 2, 8), 60
+            )
+    try:
+        workbook.save(path)
+    except Exception:  # noqa: BLE001
+        return
+    finally:
+        try:
+            workbook.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def autofit_columns(
     path: str | Path, min_width: int = 8, max_width: int = 50
 ) -> None:
