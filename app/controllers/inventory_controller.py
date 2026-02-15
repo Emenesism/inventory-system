@@ -222,7 +222,7 @@ class InventoryController(QObject):
             export_df = self._sort_for_export(df)
             export_df.to_excel(file_path, index=False)
             ensure_sheet_rtl(file_path)
-            apply_banded_rows(file_path)
+            apply_banded_rows(file_path, data_row_height=24)
             autofit_columns(file_path)
         except Exception as exc:  # noqa: BLE001
             dialogs.show_error(self.page, self.tr("موجودی"), str(exc))
