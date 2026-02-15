@@ -16,13 +16,20 @@ type Config struct {
 
 func Load() (Config, error) {
 	envPath := filepath.Join(".", ".env")
-	values, err := loadDotEnvFile(envPath)
-	if err != nil {
-		return Config{}, err
+
+	values := map[string]string{}
+	if _, err := os.Stat(envPath); err == nil {
+		fileValues, err := loadDotEnvFile(envPath)
+		if err != nil {
+			return Config{}, err
+		}
+		values = fileValues
+	} else if err != nil && !os.IsNotExist(err) {
+		return Config{}, fmt.Errorf("stat %s: %w", envPath, err)
 	}
 
 	cfg := Config{Port: 8080}
-	if portRaw := strings.TrimSpace(values["PORT"]); portRaw != "" {
+	if portRaw := firstNonEmpty(os.Getenv("PORT"), values["PORT"]); portRaw != "" {
 		port, err := strconv.Atoi(portRaw)
 		if err != nil || port <= 0 {
 			return Config{}, fmt.Errorf("invalid PORT: %q", portRaw)
@@ -30,12 +37,21 @@ func Load() (Config, error) {
 		cfg.Port = port
 	}
 
-	cfg.DatabaseURL = strings.TrimSpace(values["DATABASE_URL"])
+	cfg.DatabaseURL = firstNonEmpty(os.Getenv("DATABASE_URL"), values["DATABASE_URL"])
 	if cfg.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
+		return Config{}, fmt.Errorf("DATABASE_URL is required (environment variable or .env)")
 	}
 
 	return cfg, nil
+}
+
+func firstNonEmpty(candidates ...string) string {
+	for _, candidate := range candidates {
+		if value := strings.TrimSpace(candidate); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func loadDotEnvFile(path string) (map[string]string, error) {

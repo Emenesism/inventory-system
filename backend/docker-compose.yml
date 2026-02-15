@@ -1,0 +1,11 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reza-backend:latest
+    container_name: reza-backend
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env

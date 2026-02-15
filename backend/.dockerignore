@@ -1,0 +1,17 @@
+.git
+.github
+tmp
+build
+dist
+logs
+coverage
+*.log
+*.tmp
+*.swp
+*.swo
+__pycache__/
+
+# Never bake local secrets into images.
+.env
+.env.*
+!.env.example

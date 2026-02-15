@@ -19,7 +19,8 @@ go run ./cmd/server
 ```
 
 Config source:
-- Backend reads only from `backend/.env` (it does not use exported shell/system vars).
+- Backend reads environment variables first (`DATABASE_URL`, `PORT`).
+- If an env var is missing, backend falls back to `backend/.env`.
 - Required key: `DATABASE_URL`
 - Optional key: `PORT` (default `8080`)
 
@@ -68,7 +69,7 @@ Use this endpoint to migrate from `stock.xlsx` (or excel converted from `stock.d
 ```bash
 curl -X POST \
   -F "file=@/path/to/stock.xlsx" \
-  http://127.0.0.1:8080/api/v1/inventory/import-excel
+  http://127.0.0.1:1234/api/v1/inventory/import-excel
 ```
 
 Supported columns (English/Persian aliases):
@@ -141,4 +142,43 @@ Then:
 sudo systemctl daemon-reload
 sudo systemctl enable --now reza-backend
 sudo systemctl status reza-backend
+```
+
+## Docker deploy
+Use the included multi-stage image (small runtime via `scratch`) and expose API on `1234`.
+
+### Run with Docker Compose
+```bash
+cd backend
+# optional overrides:
+# export BACKEND_DATABASE_URL='postgres://USER:PASSWORD@host.docker.internal:5432/DB_NAME?sslmode=disable'
+# export BACKEND_PORT=1234
+docker compose up -d --build
+```
+
+Then access:
+- local: `http://127.0.0.1:1234/healthz`
+- server: `http://<SERVER_IP>:1234/healthz`
+
+### PostgreSQL on host machine (localhost)
+Inside containers, `localhost` points to the container itself.  
+For host PostgreSQL, use `host.docker.internal` in `DATABASE_URL` (already set in `docker-compose.yml` for Linux with `host-gateway`):
+
+`postgres://USER:PASSWORD@host.docker.internal:5432/DB_NAME?sslmode=disable`
+
+`docker-compose.yml` reads these optional override vars:
+- `BACKEND_DATABASE_URL`
+- `BACKEND_PORT`
+
+### Alternative: true host networking (Linux)
+If you must keep `127.0.0.1` in `DATABASE_URL`, run with host network:
+```bash
+cd backend
+docker build -t reza-backend:latest .
+docker run -d --name reza-backend \
+  --restart unless-stopped \
+  --network host \
+  -e PORT=1234 \
+  -e DATABASE_URL='postgres://USER:PASSWORD@127.0.0.1:5432/DB_NAME?sslmode=disable' \
+  reza-backend:latest
 ```
