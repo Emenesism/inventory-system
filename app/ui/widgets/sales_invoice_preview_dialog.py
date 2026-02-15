@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.utils.numeric import format_number
+
 
 @dataclass(frozen=True)
 class SalesInvoicePreviewLine:
@@ -171,7 +173,9 @@ class SalesInvoicePreviewDialog(QDialog):
 
         for row_idx, line in enumerate(data.lines):
             self._set_item(self.lines_table, row_idx, 0, line.product_name)
-            self._set_item(self.lines_table, row_idx, 1, str(line.quantity))
+            self._set_item(
+                self.lines_table, row_idx, 1, format_number(line.quantity)
+            )
 
         totals_row = len(data.lines)
         self._set_item(self.lines_table, totals_row, 0, self.tr("جمع کل"))
@@ -179,7 +183,7 @@ class SalesInvoicePreviewDialog(QDialog):
             self.lines_table,
             totals_row,
             1,
-            str(data.total_quantity),
+            format_number(data.total_quantity),
         )
 
         self._fit_table_height(self.lines_table)
