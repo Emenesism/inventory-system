@@ -24,6 +24,8 @@ from app.utils import dialogs
 
 
 class SettingsPage(QWidget):
+    _RIGHT_ALIGN = Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+
     def __init__(
         self,
         config: AppConfig,
@@ -55,10 +57,10 @@ class SettingsPage(QWidget):
         title_col.setSpacing(4)
         title = QLabel(self.tr("تنظیمات"))
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
-        title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        title.setAlignment(self._RIGHT_ALIGN)
         subtitle = QLabel(self.tr("تنظیمات نمایش، حساب کاربری و مدیریت مدیران"))
         subtitle.setProperty("textRole", "muted")
-        subtitle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        subtitle.setAlignment(self._RIGHT_ALIGN)
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -93,7 +95,7 @@ class SettingsPage(QWidget):
 
         account_title = QLabel(self.tr("حساب کاربری"))
         account_title.setStyleSheet("font-size: 15px; font-weight: 700;")
-        account_title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        account_title.setAlignment(self._RIGHT_ALIGN)
         account_layout.addWidget(account_title)
 
         account_form = QGridLayout()
@@ -102,37 +104,37 @@ class SettingsPage(QWidget):
 
         user_label = QLabel(self.tr("کاربر فعلی"))
         user_label.setProperty("fieldLabel", True)
-        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        user_label.setAlignment(self._RIGHT_ALIGN)
         self.user_value = QLabel("-")
         self.user_value.setStyleSheet("font-weight: 600;")
-        self.user_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.user_value.setAlignment(self._RIGHT_ALIGN)
         account_form.addWidget(user_label, 0, 0)
         account_form.addWidget(self.user_value, 0, 1)
 
         current_label = QLabel(self.tr("رمز عبور فعلی"))
         current_label.setProperty("fieldLabel", True)
-        current_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        current_label.setAlignment(self._RIGHT_ALIGN)
         self.current_password_input = QLineEdit()
-        self._configure_line_edit_rtl(self.current_password_input)
         self.current_password_input.setEchoMode(QLineEdit.Password)
+        self._configure_line_edit_rtl(self.current_password_input)
         account_form.addWidget(current_label, 1, 0)
         account_form.addWidget(self.current_password_input, 1, 1)
 
         new_label = QLabel(self.tr("رمز عبور جدید"))
         new_label.setProperty("fieldLabel", True)
-        new_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        new_label.setAlignment(self._RIGHT_ALIGN)
         self.new_password_input = QLineEdit()
-        self._configure_line_edit_rtl(self.new_password_input)
         self.new_password_input.setEchoMode(QLineEdit.Password)
+        self._configure_line_edit_rtl(self.new_password_input)
         account_form.addWidget(new_label, 2, 0)
         account_form.addWidget(self.new_password_input, 2, 1)
 
         confirm_label = QLabel(self.tr("تکرار رمز عبور"))
         confirm_label.setProperty("fieldLabel", True)
-        confirm_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        confirm_label.setAlignment(self._RIGHT_ALIGN)
         self.confirm_password_input = QLineEdit()
-        self._configure_line_edit_rtl(self.confirm_password_input)
         self.confirm_password_input.setEchoMode(QLineEdit.Password)
+        self._configure_line_edit_rtl(self.confirm_password_input)
         account_form.addWidget(confirm_label, 3, 0)
         account_form.addWidget(self.confirm_password_input, 3, 1)
 
@@ -144,7 +146,7 @@ class SettingsPage(QWidget):
             self.tr("برای امنیت بهتر، رمز عبور حداقل ۶ کاراکتر باشد.")
         )
         password_hint.setProperty("textRole", "muted")
-        password_hint.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        password_hint.setAlignment(self._RIGHT_ALIGN)
         account_layout.addWidget(password_hint)
 
         pass_button_row = QHBoxLayout()
@@ -153,7 +155,7 @@ class SettingsPage(QWidget):
         pass_button_row.addWidget(
             update_password_button,
             0,
-            Qt.AlignRight | Qt.AlignVCenter,
+            self._RIGHT_ALIGN,
         )
         account_layout.addLayout(pass_button_row)
 
@@ -165,7 +167,7 @@ class SettingsPage(QWidget):
 
         admin_title = QLabel(self.tr("مدیریت مدیران"))
         admin_title.setStyleSheet("font-size: 15px; font-weight: 700;")
-        admin_title.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        admin_title.setAlignment(self._RIGHT_ALIGN)
         admin_layout.addWidget(admin_title)
 
         create_form = QGridLayout()
@@ -174,26 +176,26 @@ class SettingsPage(QWidget):
 
         username_label = QLabel(self.tr("نام کاربری"))
         username_label.setProperty("fieldLabel", True)
-        username_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        username_label.setAlignment(self._RIGHT_ALIGN)
         self.new_admin_username = QLineEdit()
-        self._configure_line_edit_rtl(self.new_admin_username)
         self.new_admin_username.setPlaceholderText(self.tr("نام کاربری"))
+        self._configure_line_edit_rtl(self.new_admin_username)
         create_form.addWidget(username_label, 0, 0)
         create_form.addWidget(self.new_admin_username, 0, 1)
 
         password_label = QLabel(self.tr("رمز عبور"))
         password_label.setProperty("fieldLabel", True)
-        password_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        password_label.setAlignment(self._RIGHT_ALIGN)
         self.new_admin_password = QLineEdit()
-        self._configure_line_edit_rtl(self.new_admin_password)
         self.new_admin_password.setPlaceholderText(self.tr("رمز عبور"))
         self.new_admin_password.setEchoMode(QLineEdit.Password)
+        self._configure_line_edit_rtl(self.new_admin_password)
         create_form.addWidget(password_label, 1, 0)
         create_form.addWidget(self.new_admin_password, 1, 1)
 
         role_label = QLabel(self.tr("نقش"))
         role_label.setProperty("fieldLabel", True)
-        role_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        role_label.setAlignment(self._RIGHT_ALIGN)
         self.new_admin_role = QComboBox()
         self.new_admin_role.addItem(self.tr("کارمند"), "employee")
         self.new_admin_role.addItem(self.tr("مدیر"), "manager")
@@ -211,7 +213,7 @@ class SettingsPage(QWidget):
         create_button_row.addWidget(
             create_button,
             0,
-            Qt.AlignRight | Qt.AlignVCenter,
+            self._RIGHT_ALIGN,
         )
         admin_layout.addLayout(create_button_row)
 
@@ -224,7 +226,7 @@ class SettingsPage(QWidget):
         self.admin_table.setAlternatingRowColors(True)
         self.admin_table.setLayoutDirection(Qt.RightToLeft)
         self.admin_table.horizontalHeader().setDefaultAlignment(
-            Qt.AlignRight | Qt.AlignVCenter
+            self._RIGHT_ALIGN
         )
         self.admin_table.horizontalHeader().setStretchLastSection(True)
         self.admin_table.verticalHeader().setDefaultSectionSize(30)
@@ -236,7 +238,7 @@ class SettingsPage(QWidget):
         admin_button_row.addWidget(
             delete_button,
             0,
-            Qt.AlignRight | Qt.AlignVCenter,
+            self._RIGHT_ALIGN,
         )
         admin_layout.addLayout(admin_button_row)
 
@@ -366,7 +368,7 @@ class SettingsPage(QWidget):
         for row_idx, admin in enumerate(admins):
             username_item = QTableWidgetItem(admin.username)
             username_item.setData(Qt.UserRole, admin.admin_id)
-            username_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            username_item.setTextAlignment(self._RIGHT_ALIGN)
             self.admin_table.setItem(row_idx, 0, username_item)
             role_label = (
                 self.tr("مدیر")
@@ -374,7 +376,7 @@ class SettingsPage(QWidget):
                 else self.tr("کارمند")
             )
             role_item = QTableWidgetItem(role_label)
-            role_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            role_item.setTextAlignment(self._RIGHT_ALIGN)
             self.admin_table.setItem(row_idx, 1, role_item)
 
     def _delete_selected_admin(self) -> None:
@@ -436,7 +438,10 @@ class SettingsPage(QWidget):
     @staticmethod
     def _configure_line_edit_rtl(line_edit: QLineEdit) -> None:
         line_edit.setLayoutDirection(Qt.RightToLeft)
-        line_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        line_edit.setAlignment(
+            Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+        )
+        line_edit.setCursorMoveStyle(Qt.VisualMoveStyle)
 
     @staticmethod
     def _configure_combo_rtl(combo: QComboBox) -> None:
@@ -447,6 +452,6 @@ class SettingsPage(QWidget):
         for idx in range(combo.count()):
             combo.setItemData(
                 idx,
-                Qt.AlignRight | Qt.AlignVCenter,
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter,
                 Qt.TextAlignmentRole,
             )
