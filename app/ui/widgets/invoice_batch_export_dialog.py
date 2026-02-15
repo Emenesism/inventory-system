@@ -344,8 +344,8 @@ class InvoiceBatchExportDialog(QDialog):
         split = QSplitter(Qt.Horizontal)
         split.addWidget(table_card)
         split.addWidget(details_card)
-        split.setStretchFactor(0, 2)
-        split.setStretchFactor(1, 3)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
         split.setChildrenCollapsible(False)
         layout.addWidget(split, 1)
 
@@ -754,28 +754,45 @@ class InvoiceBatchExportDialog(QDialog):
         before_snapshot: tuple[list[tuple[str, str]], str | None],
         after_snapshot: tuple[list[tuple[str, str]], str | None],
     ) -> str:
-        admin = action.admin_username or self.tr("نامشخص")
-        date_text = to_jalali_datetime(action.created_at)
-        before_text = self._format_inventory_snapshot(before_snapshot)
-        after_text = self._format_inventory_snapshot(after_snapshot)
+        del action, section_title
+        changed = self._collect_changed_inventory_fields(
+            before_snapshot, after_snapshot
+        )
+        if not changed:
+            return (
+                "<div dir='rtl' align='right' "
+                "style='text-align:right; direction:rtl; unicode-bidi:isolate;'>"
+                "<div align='right' "
+                "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right; direction:rtl;'>"
+                f"{escape(product_name)}"
+                "</div>"
+                "<div align='right'>"
+                + self._muted_html(
+                    self.tr("کلید تغییریافته‌ای برای نمایش وجود ندارد.")
+                )
+                + "</div></div>"
+            )
+        before_text = "\n".join(
+            f"{label}: {self._normalize_snapshot_value(before_value)}"
+            for label, before_value, _ in changed
+        )
+        after_text = "\n".join(
+            f"{label}: {self._normalize_snapshot_value(after_value)}"
+            for label, _, after_value in changed
+        )
         before_html = self._htmlize_kv_block(before_text)
         after_html = self._htmlize_kv_block(after_text)
-        header = escape(action.title or action.action_type)
-        section = escape(section_title)
-        # QTextEdit rich-text tables can render columns in LTR order even when
-        # the document is RTL. Render columns in reverse so visual order stays
-        # RTL-friendly (before on the right, after on the left).
         columns = [
             (self.tr("بعد"), after_html),
             (self.tr("قبل"), before_html),
         ]
         columns_html = "".join(
             "<td align='right' style='width:50%; vertical-align:top; "
-            "border:1px solid #e2e8f0; border-radius:8px; padding:6px;'>"
-            "<div align='right' style='font-weight:700; margin-bottom:4px; text-align:right;'>"
+            "border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px;'>"
+            "<div align='right' style='font-weight:700; font-size:13px; margin-bottom:10px; text-align:right;'>"
             + escape(title)
             + "</div>"
-            "<div align='right' style='color:#0f172a; font-size:12px; line-height:1.6; "
+            "<div align='right' style='color:#0f172a; font-size:13px; line-height:1.95; "
             "text-align:right; direction:rtl; unicode-bidi:plaintext;'>"
             + html
             + "</div>"
@@ -784,31 +801,76 @@ class InvoiceBatchExportDialog(QDialog):
         )
         return (
             "<div dir='rtl' align='right' "
-            "style='text-align:right; direction:rtl; unicode-bidi:isolate;'>"
+            "style='text-align:right; direction:rtl; unicode-bidi:isolate; padding:4px 2px;'>"
             "<div align='right' "
-            "style='font-weight:700; color:#0f172a; margin-bottom:6px; text-align:right; direction:rtl;'>"
+            "style='font-weight:700; color:#0f172a; margin-bottom:12px; font-size:15px; text-align:right; direction:rtl;'>"
             f"{escape(product_name)}"
             "</div>"
-            "<div align='right' "
-            "style='color:#64748b; font-size:12px; margin-bottom:8px; text-align:right; direction:rtl; unicode-bidi:isolate;'>"
-            f"{escape(date_text)} | {escape(admin)}"
-            "</div>"
-            "<div align='right' "
-            "style='font-weight:600; margin-bottom:4px; text-align:right; direction:rtl;'>"
-            f"{header}"
-            "</div>"
-            "<div align='right' "
-            "style='color:#94a3b8; margin-bottom:8px; text-align:right; direction:rtl; unicode-bidi:isolate;'>"
-            f"{section}"
-            "</div>"
             "<table dir='ltr' align='right' width='100%' "
-            "style='width:100%; border-collapse:separate; border-spacing:6px; table-layout:fixed; direction:ltr;'>"
+            "style='width:100%; border-collapse:separate; border-spacing:12px; table-layout:fixed; direction:ltr;'>"
             "<tr>"
             f"{columns_html}"
             "</tr>"
             "</table>"
             "</div>"
         )
+
+    def _collect_changed_inventory_fields(
+        self,
+        before_snapshot: tuple[list[tuple[str, str]], str | None],
+        after_snapshot: tuple[list[tuple[str, str]], str | None],
+    ) -> list[tuple[str, str, str]]:
+        before_pairs, before_marker = before_snapshot
+        after_pairs, after_marker = after_snapshot
+        if before_marker or after_marker:
+            before_text = before_marker or "-"
+            after_text = after_marker or "-"
+            if self._normalize_snapshot_value(
+                before_text
+            ) == self._normalize_snapshot_value(after_text):
+                return []
+            return [(self.tr("وضعیت"), before_text, after_text)]
+
+        before_map = self._snapshot_to_map(before_pairs)
+        after_map = self._snapshot_to_map(after_pairs)
+        all_keys = list(after_map.keys()) + [
+            key for key in before_map.keys() if key not in after_map
+        ]
+        changed: list[tuple[str, str, str]] = []
+        for key in all_keys:
+            before_label, before_value = before_map.get(key, (key, "-"))
+            after_label, after_value = after_map.get(key, (key, "-"))
+            label = after_label or before_label or key
+            if self._normalize_snapshot_value(
+                before_value
+            ) == self._normalize_snapshot_value(after_value):
+                continue
+            changed.append((label, before_value, after_value))
+        return changed
+
+    def _snapshot_to_map(
+        self, pairs: list[tuple[str, str]]
+    ) -> dict[str, tuple[str, str]]:
+        result: dict[str, tuple[str, str]] = {}
+        for raw_key, raw_value in pairs:
+            key = str(raw_key).strip()
+            if self._is_product_field(key):
+                continue
+            normalized_key = normalize_text(key)
+            result[normalized_key] = (
+                key,
+                self._normalize_snapshot_value(raw_value),
+            )
+        return result
+
+    @staticmethod
+    def _normalize_snapshot_value(value: object) -> str:
+        text = str(value).strip()
+        return text if text else "-"
+
+    @staticmethod
+    def _is_product_field(key: str) -> bool:
+        return normalize_text(key) in {"نامکالا", "productname", "product_name"}
 
     def _htmlize_kv_block(self, text: str) -> str:
         lines = [
@@ -847,7 +909,7 @@ class InvoiceBatchExportDialog(QDialog):
         value_mark = "\u200e" if value_dir == "ltr" else "\u200f"
         return (
             "<p dir='rtl' align='right' "
-            "style='margin:0 0 4px 0; text-align:right; direction:rtl; "
+            "style='margin:0 0 8px 0; text-align:right; direction:rtl; line-height:1.95; "
             "unicode-bidi:isolate; width:100%;'>"
             "<span dir='rtl' style='color:#64748b;'>\u200f"
             + escape(str(label).strip())
@@ -882,7 +944,7 @@ class InvoiceBatchExportDialog(QDialog):
             "<style>"
             "body{font-family:Vazirmatn,Tahoma,sans-serif;"
             "direction:rtl; text-align:right; margin:0; width:100%;}"
-            "p{margin:0 0 4px 0; width:100%;}"
+            "p{margin:0 0 8px 0; width:100%;}"
             "div,p,span,table,tr,td,th{direction:rtl; text-align:right;"
             "unicode-bidi:isolate;}"
             "</style></head><body>" + body_html + "</body></html>"
