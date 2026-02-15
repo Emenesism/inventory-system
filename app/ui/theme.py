@@ -189,6 +189,20 @@ QTableView {
     gridline-color: #E5E7EB;
     selection-background-color: #DBEAFE;
     selection-color: #111827;
+    alternate-background-color: #EAF2FF;
+}
+QTableView::item {
+    background: #FFFFFF;
+    color: #111827;
+    padding: 4px;
+}
+QTableView::item:alternate {
+    background: #EAF2FF;
+    color: #111827;
+}
+QTableView::item:selected {
+    background: #DBEAFE;
+    color: #111827;
 }
 QHeaderView::section {
     background: #F3F4F6;
@@ -204,10 +218,16 @@ QTableWidget {
     gridline-color: #E5E7EB;
     selection-background-color: #DBEAFE;
     selection-color: #111827;
-    alternate-background-color: #F3F4F6;
+    alternate-background-color: #EAF2FF;
 }
 QTableWidget::item {
+    background: #FFFFFF;
+    color: #111827;
     padding: 4px;
+}
+QTableWidget::item:alternate {
+    background: #EAF2FF;
+    color: #111827;
 }
 QTableWidget::item:selected {
     background: #DBEAFE;
@@ -230,6 +250,7 @@ QProgressBar {
     border-radius: 8px;
     text-align: center;
     color: #111827;
+    padding: 4px;
 }
 QProgressBar::chunk {
     background: #2563EB;
@@ -483,7 +504,7 @@ QTableView {
     color: #E5E7EB;
     selection-background-color: #1D4ED8;
     selection-color: #F8FAFC;
-    alternate-background-color: #0F1B2D;
+    alternate-background-color: #16263D;
 }
 QTableView::item {
     background: #0B1220;
@@ -491,7 +512,7 @@ QTableView::item {
     padding: 4px;
 }
 QTableView::item:alternate {
-    background: #0F1B2D;
+    background: #16263D;
     color: #E5E7EB;
 }
 QTableView::item:selected {
@@ -514,7 +535,7 @@ QTableWidget {
     color: #E5E7EB;
     selection-background-color: #1D4ED8;
     selection-color: #F8FAFC;
-    alternate-background-color: #0F1B2D;
+    alternate-background-color: #16263D;
 }
 QTableWidget::item {
     background: #0B1220;
@@ -522,7 +543,7 @@ QTableWidget::item {
     padding: 4px;
 }
 QTableWidget::item:alternate {
-    background: #0F1B2D;
+    background: #16263D;
     color: #E5E7EB;
 }
 QTableWidget::item:selected {
