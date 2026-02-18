@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._last_activity = time.monotonic()
 
         container = QWidget()
+        container.setObjectName("MainContainer")
         layout = QHBoxLayout(container)
         # Keep app chrome fixed: sidebar on the left even in RTL locale.
         layout.setDirection(QBoxLayout.LeftToRight)
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.sidebar, 1)
 
         main_area = QWidget()
+        main_area.setObjectName("MainArea")
         main_layout = QVBoxLayout(main_area)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -92,6 +94,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.header)
 
         self.pages = QStackedWidget()
+        self.pages.setObjectName("PagesStack")
         main_layout.addWidget(self.pages, 1)
         layout.addWidget(main_area, 4)
         self.setCentralWidget(container)
@@ -242,12 +245,20 @@ class MainWindow(QMainWindow):
 
     def _wrap_page(self, page: QWidget) -> QScrollArea:
         scroll = QScrollArea()
+        scroll.setObjectName("PageScroll")
+        scroll.setAttribute(Qt.WA_StyledBackground, True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         scroll.setMinimumSize(0, 0)
+        viewport = scroll.viewport()
+        if viewport is not None:
+            viewport.setObjectName("PageViewport")
+            viewport.setAttribute(Qt.WA_StyledBackground, True)
+        page.setProperty("pageRoot", True)
+        page.setAttribute(Qt.WA_StyledBackground, True)
         page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         page.setMinimumSize(0, 0)
         scroll.setWidget(page)
@@ -419,6 +430,8 @@ class MainWindow(QMainWindow):
             self._current_page_name = name
             if name == "Inventory":
                 self.inventory_page.request_layout_refresh()
+            if name == "Low Stock":
+                self.low_stock_page.request_layout_refresh()
             if self._compact_mode:
                 self._set_sidebar_visible(False)
 
@@ -443,6 +456,8 @@ class MainWindow(QMainWindow):
         self.sidebar.setVisible(visible)
         if self._current_page_name == "Inventory":
             self.inventory_page.request_layout_refresh()
+        if self._current_page_name == "Low Stock":
+            self.low_stock_page.request_layout_refresh()
 
     def _show_help(self) -> None:
         content = get_help_content(self._current_page_name)

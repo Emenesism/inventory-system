@@ -14,6 +14,14 @@ from app.utils.text import normalize_text
 
 
 class DataFrameTableModel(QAbstractTableModel):
+    _INVENTORY_NUMERIC_COLUMNS = {
+        "quantity",
+        "avg_buy_price",
+        "last_buy_price",
+        "sell_price",
+        "alarm",
+    }
+
     cell_edited = Signal(int, str, object, object)
 
     def __init__(
@@ -87,10 +95,12 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.EditRole:
             if pd.isna(value):
                 return ""
-            if isinstance(value, np.integer):
-                return int(value)
-            if isinstance(value, np.floating):
-                return format_number(float(value))
+            normalized_column = str(column_name).strip().lower()
+            if normalized_column in self._INVENTORY_NUMERIC_COLUMNS or (
+                isinstance(value, (np.integer, np.floating, int, float))
+                and not isinstance(value, bool)
+            ):
+                return format_number(value)
             return value
         if role == Qt.TextAlignmentRole:
             if is_product_column:
@@ -146,11 +156,9 @@ class DataFrameTableModel(QAbstractTableModel):
 
         if column_name == "quantity":
             try:
-                text_value = normalize_numeric_text(str(value))
-                if text_value == "":
-                    numeric = 0
-                else:
-                    numeric = int(text_value)
+                numeric = self._parse_integer_value(value)
+                if numeric is None:
+                    return False
                 if numeric < 0:
                     return False
             except (TypeError, ValueError):
@@ -158,11 +166,21 @@ class DataFrameTableModel(QAbstractTableModel):
             self._full_dataframe.iat[index.row(), index.column()] = numeric
         elif column_name in {"avg_buy_price", "last_buy_price", "sell_price"}:
             try:
-                text_value = normalize_numeric_text(str(value))
-                if text_value == "":
-                    numeric = 0.0
-                else:
-                    numeric = float(text_value)
+                numeric = self._parse_integer_value(value)
+                if numeric is None:
+                    return False
+                if numeric < 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+            self._full_dataframe.iat[index.row(), index.column()] = float(
+                numeric
+            )
+        elif column_name == "alarm":
+            try:
+                numeric = self._parse_integer_value(value)
+                if numeric is None:
+                    return False
                 if numeric < 0:
                     return False
             except (TypeError, ValueError):
@@ -259,6 +277,16 @@ class DataFrameTableModel(QAbstractTableModel):
                 [""] * (row - len(self._search_cache) + 1)
             )
         self._search_cache[row] = normalize_text(" ".join(parts))
+
+    @staticmethod
+    def _parse_integer_value(value: object) -> int | None:
+        text_value = normalize_numeric_text(str(value))
+        if text_value == "":
+            return 0
+        parsed = float(text_value)
+        if not np.isfinite(parsed):
+            return None
+        return int(round(parsed))
 
     @staticmethod
     def _ltr_numeric_text(value: object) -> str:

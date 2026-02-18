@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QLocale, Qt, Signal
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -25,6 +25,18 @@ from app.utils.numeric import format_amount, normalize_numeric_text
 
 
 class PriceSpinBox(QSpinBox):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setLocale(QLocale.c())
+        editor = self.lineEdit()
+        if editor is not None:
+            editor.setInputMethodHints(Qt.ImhDigitsOnly | Qt.ImhPreferNumbers)
+            editor.textEdited.connect(
+                lambda text, widget=editor: self._normalize_editor_text(
+                    widget, text
+                )
+            )
+
     def textFromValue(self, value: int) -> str:  # noqa: N802
         if value == 0:
             return ""
@@ -35,7 +47,7 @@ class PriceSpinBox(QSpinBox):
         if not normalized:
             return 0
         try:
-            return int(float(normalized))
+            return int(round(float(normalized)))
         except ValueError:
             return 0
 
@@ -43,12 +55,36 @@ class PriceSpinBox(QSpinBox):
         normalized = normalize_numeric_text(text)
         if normalized == "":
             return (QValidator.Intermediate, text, pos)
-        if normalized.replace(".", "", 1).isdigit():
+        if normalized.isdigit():
             return (QValidator.Acceptable, text, pos)
         return (QValidator.Invalid, text, pos)
 
+    @staticmethod
+    def _normalize_editor_text(editor: QLineEdit, text: str) -> None:
+        normalized = normalize_numeric_text(text)
+        digits_only = "".join(ch for ch in normalized if "0" <= ch <= "9")
+        if digits_only == text:
+            return
+        cursor = editor.cursorPosition()
+        editor.blockSignals(True)
+        editor.setText(digits_only)
+        editor.blockSignals(False)
+        editor.setCursorPosition(min(cursor, len(digits_only)))
+
 
 class QuantitySpinBox(QSpinBox):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setLocale(QLocale.c())
+        editor = self.lineEdit()
+        if editor is not None:
+            editor.setInputMethodHints(Qt.ImhDigitsOnly | Qt.ImhPreferNumbers)
+            editor.textEdited.connect(
+                lambda text, widget=editor: self._normalize_editor_text(
+                    widget, text
+                )
+            )
+
     def textFromValue(self, value: int) -> str:  # noqa: N802
         if value == 0:
             return ""
@@ -59,7 +95,7 @@ class QuantitySpinBox(QSpinBox):
         if not normalized:
             return 0
         try:
-            return int(float(normalized))
+            return int(round(float(normalized)))
         except ValueError:
             return 0
 
@@ -67,9 +103,21 @@ class QuantitySpinBox(QSpinBox):
         normalized = normalize_numeric_text(text)
         if normalized == "":
             return (QValidator.Intermediate, text, pos)
-        if normalized.replace(".", "", 1).isdigit():
+        if normalized.isdigit():
             return (QValidator.Acceptable, text, pos)
         return (QValidator.Invalid, text, pos)
+
+    @staticmethod
+    def _normalize_editor_text(editor: QLineEdit, text: str) -> None:
+        normalized = normalize_numeric_text(text)
+        digits_only = "".join(ch for ch in normalized if "0" <= ch <= "9")
+        if digits_only == text:
+            return
+        cursor = editor.cursorPosition()
+        editor.blockSignals(True)
+        editor.setText(digits_only)
+        editor.blockSignals(False)
+        editor.setCursorPosition(min(cursor, len(digits_only)))
 
 
 class PurchaseInvoicePage(QWidget):
@@ -118,6 +166,7 @@ class PurchaseInvoicePage(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.verticalHeader().setVisible(False)
         table_layout.addWidget(self.table)
         self.table.installEventFilter(self)
 

@@ -15,6 +15,14 @@ QMainWindow {
     background: #F5F7FA;
     color: #111827;
 }
+QWidget#MainContainer, QWidget#MainArea, QStackedWidget#PagesStack,
+QWidget#PageViewport, QWidget[pageRoot="true"] {
+    background: #F5F7FA;
+}
+QWidget#AnalyticsPage, QWidget#AnalyticsContent, QWidget#AnalyticsViewport,
+QScrollArea#PageScroll, QScrollArea#AnalyticsScroll {
+    background: #F5F7FA;
+}
 QWidget {
     color: #111827;
 }
@@ -100,7 +108,7 @@ QFrame#Card {
     border: 1px solid #E5E7EB;
     border-radius: 14px;
 }
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTimeEdit, QDateEdit, QDateTimeEdit {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
     border-radius: 10px;
@@ -116,11 +124,14 @@ QLabel[sellPriceHint="true"] {
 QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
     color: #9CA3AF;
 }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTimeEdit:focus, QDateEdit:focus, QDateTimeEdit:focus {
     border: 1px solid #2563EB;
 }
 QSpinBox::up-button, QSpinBox::down-button,
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+QTimeEdit::up-button, QTimeEdit::down-button,
+QDateEdit::up-button, QDateEdit::down-button,
+QDateTimeEdit::up-button, QDateTimeEdit::down-button {
     width: 0px;
     border: none;
     padding: 0px;
@@ -137,6 +148,11 @@ QPlainTextEdit, QTextEdit {
 }
 QScrollArea {
     background: transparent;
+    border: none;
+}
+QScrollArea#PageScroll, QScrollArea#AnalyticsScroll {
+    background: #F5F7FA;
+    border: none;
 }
 QPushButton {
     background: #2563EB;
@@ -218,6 +234,11 @@ QHeaderView::section {
     font-size: 13px;
     font-weight: 600;
 }
+QTableView QTableCornerButton::section,
+QTableWidget QTableCornerButton::section {
+    background: #F3F4F6;
+    border: none;
+}
 QTableWidget {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
@@ -262,6 +283,54 @@ QProgressBar {
 QProgressBar::chunk {
     background: #2563EB;
     border-radius: 8px;
+}
+QScrollBar:vertical {
+    background: #F1F5F9;
+    width: 12px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #CBD5E1;
+    min-height: 24px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+    height: 0px;
+}
+QScrollBar:horizontal {
+    background: #F1F5F9;
+    height: 12px;
+    margin: 0px;
+}
+QScrollBar::handle:horizontal {
+    background: #CBD5E1;
+    min-width: 24px;
+    border-radius: 6px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #94A3B8;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+    width: 0px;
+}
+QScrollArea QScrollBar:vertical, QTableView QScrollBar:vertical, QTableWidget QScrollBar:vertical {
+    background: #F1F5F9;
+    width: 12px;
+}
+QScrollArea QScrollBar::handle:vertical, QTableView QScrollBar::handle:vertical, QTableWidget QScrollBar::handle:vertical {
+    background: #CBD5E1;
+    min-height: 24px;
+    border-radius: 6px;
+}
+QScrollArea QScrollBar::handle:vertical:hover, QTableView QScrollBar::handle:vertical:hover, QTableWidget QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
 }
 QLabel[textRole="muted"] {
     color: #6B7280;
@@ -333,6 +402,14 @@ DARK_THEME = """
 QMainWindow {
     background: #0F172A;
     color: #F8FAFC;
+}
+QWidget#MainContainer, QWidget#MainArea, QStackedWidget#PagesStack,
+QWidget#PageViewport, QWidget[pageRoot="true"] {
+    background: #0F172A;
+}
+QWidget#AnalyticsPage, QWidget#AnalyticsContent, QWidget#AnalyticsViewport,
+QScrollArea#PageScroll, QScrollArea#AnalyticsScroll {
+    background: #0F172A;
 }
 QWidget {
     color: #E5E7EB;
@@ -420,7 +497,7 @@ QFrame#Card {
     border: 1px solid #1F2937;
     border-radius: 14px;
 }
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTimeEdit, QDateEdit, QDateTimeEdit {
     background: #0B1220;
     border: 1px solid #1F2937;
     border-radius: 10px;
@@ -437,11 +514,14 @@ QLabel[sellPriceHint="true"] {
 QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
     color: #94A3B8;
 }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTimeEdit:focus, QDateEdit:focus, QDateTimeEdit:focus {
     border: 1px solid #60A5FA;
 }
 QSpinBox::up-button, QSpinBox::down-button,
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+QTimeEdit::up-button, QTimeEdit::down-button,
+QDateEdit::up-button, QDateEdit::down-button,
+QDateTimeEdit::up-button, QDateTimeEdit::down-button {
     width: 0px;
     border: none;
     padding: 0px;
@@ -458,6 +538,11 @@ QPlainTextEdit, QTextEdit {
 }
 QScrollArea {
     background: transparent;
+    border: none;
+}
+QScrollArea#PageScroll, QScrollArea#AnalyticsScroll {
+    background: #0F172A;
+    border: none;
 }
 QPushButton {
     background: #2563EB;
@@ -541,6 +626,11 @@ QHeaderView::section {
     font-weight: 600;
     color: #F8FAFC;
 }
+QTableView QTableCornerButton::section,
+QTableWidget QTableCornerButton::section {
+    background: #111827;
+    border: none;
+}
 QTableWidget {
     background: #0B1220;
     border: 1px solid #1F2937;
@@ -586,8 +676,56 @@ QProgressBar::chunk {
     background: #2563EB;
     border-radius: 8px;
 }
+QScrollBar:vertical {
+    background: #0B1220;
+    width: 12px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #334155;
+    min-height: 24px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #475569;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+    height: 0px;
+}
+QScrollBar:horizontal {
+    background: #0B1220;
+    height: 12px;
+    margin: 0px;
+}
+QScrollBar::handle:horizontal {
+    background: #334155;
+    min-width: 24px;
+    border-radius: 6px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #475569;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+    width: 0px;
+}
+QScrollArea QScrollBar:vertical, QTableView QScrollBar:vertical, QTableWidget QScrollBar:vertical {
+    background: #0B1220;
+    width: 12px;
+}
+QScrollArea QScrollBar::handle:vertical, QTableView QScrollBar::handle:vertical, QTableWidget QScrollBar::handle:vertical {
+    background: #334155;
+    min-height: 24px;
+    border-radius: 6px;
+}
+QScrollArea QScrollBar::handle:vertical:hover, QTableView QScrollBar::handle:vertical:hover, QTableWidget QScrollBar::handle:vertical:hover {
+    background: #475569;
+}
 QLabel[textRole="muted"] {
-    color: #94A3B8;
+    color: #B4C2D8;
 }
 QLabel[fieldLabel="true"] {
     color: #CBD5E1;
@@ -595,7 +733,7 @@ QLabel[fieldLabel="true"] {
     font-weight: 600;
 }
 QLabel[textRole="muted"][size="small"] {
-    color: #94A3B8;
+    color: #B4C2D8;
     font-size: 11px;
 }
 QLabel[textRole="danger"] {

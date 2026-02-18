@@ -17,6 +17,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -311,6 +312,9 @@ class JalaliDateTimePicker(QWidget):
         self.time_edit = QTimeEdit()
         self.time_edit.setDisplayFormat("HH:mm:ss")
         self.time_edit.setMinimumHeight(32)
+        self.time_edit.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.time_edit.setAlignment(Qt.AlignCenter)
+        self.time_edit.setLayoutDirection(Qt.LeftToRight)
 
         for year in range(1390, 1451):
             self.year_combo.addItem(str(year), year)

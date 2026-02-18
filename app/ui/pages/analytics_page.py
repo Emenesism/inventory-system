@@ -28,6 +28,8 @@ class AnalyticsPage(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("AnalyticsPage")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setLayoutDirection(Qt.RightToLeft)
         self.invoice_service = invoice_service
 
@@ -36,11 +38,19 @@ class AnalyticsPage(QWidget):
         outer_layout.setSpacing(0)
 
         self._scroll = QScrollArea(self)
+        self._scroll.setObjectName("AnalyticsScroll")
+        self._scroll.setAttribute(Qt.WA_StyledBackground, True)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         outer_layout.addWidget(self._scroll)
+        viewport = self._scroll.viewport()
+        if viewport is not None:
+            viewport.setObjectName("AnalyticsViewport")
+            viewport.setAttribute(Qt.WA_StyledBackground, True)
 
         self._content = QWidget()
+        self._content.setObjectName("AnalyticsContent")
+        self._content.setAttribute(Qt.WA_StyledBackground, True)
         self._scroll.setWidget(self._content)
 
         layout = QVBoxLayout(self._content)
@@ -128,6 +138,7 @@ class AnalyticsPage(QWidget):
         top_header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         top_header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.top_products_table.verticalHeader().setDefaultSectionSize(32)
+        self.top_products_table.verticalHeader().setVisible(False)
         self.top_products_table.setMinimumHeight(230)
         self.top_products_table.setAlternatingRowColors(True)
         self.top_products_table.setEditTriggers(
@@ -177,6 +188,7 @@ class AnalyticsPage(QWidget):
         unsold_header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         unsold_header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.unsold_table.verticalHeader().setDefaultSectionSize(32)
+        self.unsold_table.verticalHeader().setVisible(False)
         self.unsold_table.setMinimumHeight(250)
         self.unsold_table.setAlternatingRowColors(True)
         self.unsold_table.setEditTriggers(QAbstractItemView.NoEditTriggers)

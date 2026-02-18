@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QLocale, Qt, QTimer, Signal
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,7 +24,7 @@ from app.services.sales_import_service import (
     SalesPreviewRow,
     SalesPreviewSummary,
 )
-from app.utils.numeric import format_number
+from app.utils.numeric import format_number, normalize_numeric_text
 from app.utils.text import normalize_text
 
 
@@ -94,8 +94,16 @@ class QuantityDelegate(QStyledItemDelegate):
         if index.column() != 1:
             return super().createEditor(parent, option, index)
         editor = QLineEdit(parent)
-        editor.setValidator(QIntValidator(0, 1_000_000, editor))
+        validator = QIntValidator(0, 1_000_000, editor)
+        validator.setLocale(QLocale.c())
+        editor.setValidator(validator)
         editor.setAlignment(Qt.AlignCenter)
+        editor.setInputMethodHints(Qt.ImhDigitsOnly | Qt.ImhPreferNumbers)
+        editor.textEdited.connect(
+            lambda text, widget=editor: self._normalize_numeric_editor(
+                widget, text
+            )
+        )
         return editor
 
     def setEditorData(self, editor, index) -> None:  # noqa: ANN001
@@ -106,10 +114,23 @@ class QuantityDelegate(QStyledItemDelegate):
 
     def setModelData(self, editor, model, index) -> None:  # noqa: ANN001
         if isinstance(editor, QLineEdit):
-            text = editor.text().strip()
-            model.setData(index, text if text != "" else "0")
+            text = normalize_numeric_text(editor.text().strip())
+            digits_only = "".join(ch for ch in text if "0" <= ch <= "9")
+            model.setData(index, digits_only if digits_only != "" else "0")
             return
         super().setModelData(editor, model, index)
+
+    @staticmethod
+    def _normalize_numeric_editor(editor: QLineEdit, text: str) -> None:
+        normalized_text = normalize_numeric_text(text)
+        normalized = "".join(ch for ch in normalized_text if "0" <= ch <= "9")
+        if normalized == text:
+            return
+        cursor = editor.cursorPosition()
+        editor.blockSignals(True)
+        editor.setText(normalized)
+        editor.blockSignals(False)
+        editor.setCursorPosition(min(cursor, len(normalized)))
 
 
 class SalesImportPage(QWidget):

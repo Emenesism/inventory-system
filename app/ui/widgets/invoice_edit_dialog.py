@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QLocale, Qt
+from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
@@ -533,7 +534,7 @@ class InvoiceEditDialog(QDialog):
             return None
         if value != value:
             return None
-        return value
+        return float(round(value))
 
     @staticmethod
     def _parse_quantity(text: str) -> int | None:
@@ -585,6 +586,18 @@ class _EnterMoveDelegate(QStyledItemDelegate):
     ):
         editor = super().createEditor(parent, option, index)
         if isinstance(editor, QLineEdit):
+            if index.column() in {1, 2}:
+                validator = QIntValidator(0, 1_000_000_000, editor)
+                validator.setLocale(QLocale.c())
+                editor.setValidator(validator)
+                editor.setInputMethodHints(
+                    Qt.ImhDigitsOnly | Qt.ImhPreferNumbers
+                )
+                editor.textEdited.connect(
+                    lambda text, widget=editor: self._normalize_numeric_editor(
+                        widget, text
+                    )
+                )
             editor.setLayoutDirection(Qt.RightToLeft)
             editor.setAlignment(
                 Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
@@ -608,3 +621,15 @@ class _EnterMoveDelegate(QStyledItemDelegate):
                 self._on_enter()
             return True
         return super().eventFilter(editor, event)
+
+    @staticmethod
+    def _normalize_numeric_editor(editor: QLineEdit, text: str) -> None:
+        normalized = normalize_numeric_text(text)
+        digits_only = "".join(ch for ch in normalized if "0" <= ch <= "9")
+        if digits_only == text:
+            return
+        cursor = editor.cursorPosition()
+        editor.blockSignals(True)
+        editor.setText(digits_only)
+        editor.blockSignals(False)
+        editor.setCursorPosition(min(cursor, len(digits_only)))
