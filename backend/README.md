@@ -90,6 +90,9 @@ What it does:
 - runs DB migrations (including `stock` table creation)
 - imports all rows from `../stock.xlsx` into `stock`
 - also syncs `products` from `stock.xlsx` (enabled by default)
+- if `../pro_clean_with_price.xlsx` exists, maps `sell_price` by product name:
+  - exact normalized match first
+  - fuzzy match with similarity `>= 96%` as fallback
 - imports legacy tables from `../invoices.db`:
   - `admins`
   - `invoices`
@@ -106,6 +109,8 @@ cd backend
 go run ./cmd/import_legacy \
   --stock /path/to/stock.xlsx \
   --sqlite /path/to/invoices.db \
+  --sell-price /path/to/pro_clean_with_price.xlsx \
+  --sell-price-threshold 96 \
   --replace
 ```
 

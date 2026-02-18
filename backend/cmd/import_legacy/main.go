@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -24,10 +25,12 @@ import (
 )
 
 type options struct {
-	stockPath    string
-	sqlitePath   string
-	replace      bool
-	syncProducts bool
+	stockPath          string
+	sqlitePath         string
+	sellPricePath      string
+	sellPriceThreshold float64
+	replace            bool
+	syncProducts       bool
 }
 
 type legacyData struct {
@@ -81,6 +84,14 @@ type legacyBasalamID struct {
 	SavedAt string
 }
 
+type sellPriceSyncStats struct {
+	ExactMatched      int
+	FuzzyMatched      int
+	Unchanged         int
+	PriceRows         int
+	DuplicateNameRows int
+}
+
 func main() {
 	opts := parseFlags()
 
@@ -103,6 +114,26 @@ func main() {
 	stockRows, err := readStockRows(opts.stockPath)
 	if err != nil {
 		log.Fatalf("read stock file: %v", err)
+	}
+	if opts.sellPricePath != "" {
+		priceRows, err := readSellPriceRows(opts.sellPricePath)
+		if err != nil {
+			log.Fatalf("read sell price file: %v", err)
+		}
+		stats := applySellPriceOverrides(
+			stockRows,
+			priceRows,
+			opts.sellPriceThreshold,
+		)
+		log.Printf(
+			"sell price sync complete: price_rows=%d exact=%d fuzzy=%d unchanged=%d duplicate_names=%d threshold=%.2f",
+			stats.PriceRows,
+			stats.ExactMatched,
+			stats.FuzzyMatched,
+			stats.Unchanged,
+			stats.DuplicateNameRows,
+			opts.sellPriceThreshold,
+		)
 	}
 
 	legacy, err := readLegacySQLite(opts.sqlitePath)
@@ -139,6 +170,18 @@ func parseFlags() options {
 		"../invoices.db",
 		"path to legacy invoices.db file",
 	)
+	flag.StringVar(
+		&opts.sellPricePath,
+		"sell-price",
+		"",
+		"optional path to price excel (Product Name + Price) for sell_price mapping",
+	)
+	flag.Float64Var(
+		&opts.sellPriceThreshold,
+		"sell-price-threshold",
+		96,
+		"minimum similarity percent (0-100) for fuzzy sell_price mapping",
+	)
 	flag.BoolVar(
 		&opts.replace,
 		"replace",
@@ -152,6 +195,9 @@ func parseFlags() options {
 		"also upsert stock rows into products table",
 	)
 	flag.Parse()
+	if opts.sellPriceThreshold < 0 || opts.sellPriceThreshold > 100 {
+		log.Fatalf("invalid --sell-price-threshold: %.2f (expected 0..100)", opts.sellPriceThreshold)
+	}
 	return opts
 }
 
@@ -167,6 +213,256 @@ func readStockRows(path string) ([]domain.InventoryImportRow, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return rows, nil
+}
+
+func readSellPriceRows(path string) ([]excel.ProductPriceRow, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer file.Close()
+
+	rows, err := excel.ParseProductPriceRows(file)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return rows, nil
+}
+
+func applySellPriceOverrides(
+	stockRows []domain.InventoryImportRow,
+	priceRows []excel.ProductPriceRow,
+	threshold float64,
+) sellPriceSyncStats {
+	stats := sellPriceSyncStats{
+		Unchanged: len(stockRows),
+		PriceRows: len(priceRows),
+	}
+	if len(stockRows) == 0 || len(priceRows) == 0 {
+		return stats
+	}
+
+	type priceEntry struct {
+		ProductName string
+		SellPrice   float64
+		Normalized  string
+		Runes       []rune
+	}
+
+	normalizedToPrice := make(map[string]priceEntry, len(priceRows))
+	entries := make([]priceEntry, 0, len(priceRows))
+	firstRuneIndex := make(map[rune][]int)
+	allEntryIndexes := make([]int, 0, len(priceRows))
+	for _, row := range priceRows {
+		name := strings.TrimSpace(row.ProductName)
+		if name == "" {
+			continue
+		}
+		normalized := normalizeProductName(name)
+		if normalized == "" {
+			continue
+		}
+		entry := priceEntry{
+			ProductName: name,
+			SellPrice:   row.Price,
+			Normalized:  normalized,
+			Runes:       []rune(normalized),
+		}
+		if _, exists := normalizedToPrice[normalized]; exists {
+			stats.DuplicateNameRows++
+			continue
+		}
+		normalizedToPrice[normalized] = entry
+		entryIndex := len(entries)
+		entries = append(entries, entry)
+		allEntryIndexes = append(allEntryIndexes, entryIndex)
+		first := firstRune(entry.Runes)
+		firstRuneIndex[first] = append(firstRuneIndex[first], entryIndex)
+	}
+	if len(entries) == 0 {
+		return stats
+	}
+
+	for idx := range stockRows {
+		name := strings.TrimSpace(stockRows[idx].ProductName)
+		if name == "" {
+			continue
+		}
+		normalized := normalizeProductName(name)
+		if normalized == "" {
+			continue
+		}
+		if exact, ok := normalizedToPrice[normalized]; ok {
+			stockRows[idx].SellPrice = exact.SellPrice
+			stats.ExactMatched++
+			stats.Unchanged--
+			continue
+		}
+
+		candidateIndexes := firstRuneIndex[firstRune([]rune(normalized))]
+		if len(candidateIndexes) == 0 {
+			candidateIndexes = allEntryIndexes
+		}
+		targetRunes := []rune(normalized)
+		bestScore := -1.0
+		bestDistance := math.MaxInt
+		bestSellPrice := 0.0
+
+		for _, candidateIndex := range candidateIndexes {
+			entry := entries[candidateIndex]
+			score, distance, ok := similarityPercent(
+				targetRunes,
+				entry.Runes,
+				threshold,
+			)
+			if !ok {
+				continue
+			}
+			if score > bestScore || (score == bestScore && distance < bestDistance) {
+				bestScore = score
+				bestDistance = distance
+				bestSellPrice = entry.SellPrice
+			}
+		}
+		if bestScore >= threshold {
+			stockRows[idx].SellPrice = bestSellPrice
+			stats.FuzzyMatched++
+			stats.Unchanged--
+		}
+	}
+
+	return stats
+}
+
+func normalizeProductName(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"\u200c", " ", // zwnj
+		"\u200f", " ", // rtl mark
+		"\u200e", " ", // ltr mark
+		"\u064a", "\u06cc", // ي -> ی
+		"\u0643", "\u06a9", // ك -> ک
+		"\u0629", "\u0647", // ة -> ه
+		"،", " ",
+		",", " ",
+		":", " ",
+		";", " ",
+		"/", " ",
+		"\\", " ",
+		"(", " ",
+		")", " ",
+		"[", " ",
+		"]", " ",
+		"{", " ",
+		"}", " ",
+		"-", " ",
+		"_", " ",
+		"+", " ",
+	)
+	value = replacer.Replace(value)
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func firstRune(chars []rune) rune {
+	if len(chars) == 0 {
+		return rune(0)
+	}
+	return chars[0]
+}
+
+func similarityPercent(
+	left []rune,
+	right []rune,
+	threshold float64,
+) (float64, int, bool) {
+	maxLen := len(left)
+	if len(right) > maxLen {
+		maxLen = len(right)
+	}
+	if maxLen == 0 {
+		return 100.0, 0, true
+	}
+	if threshold >= 100 {
+		if string(left) == string(right) {
+			return 100.0, 0, true
+		}
+		return 0, 1, false
+	}
+	maxDistance := int(math.Floor((100.0 - threshold) * float64(maxLen) / 100.0))
+	if maxDistance < 1 {
+		maxDistance = 1
+	}
+	if abs(len(left)-len(right)) > maxDistance {
+		return 0, 0, false
+	}
+	distance, ok := levenshteinWithin(left, right, maxDistance)
+	if !ok {
+		return 0, distance, false
+	}
+	score := 100.0 * (1.0 - (float64(distance) / float64(maxLen)))
+	return score, distance, score >= threshold
+}
+
+func levenshteinWithin(left []rune, right []rune, maxDistance int) (int, bool) {
+	leftLen := len(left)
+	rightLen := len(right)
+	if leftLen == 0 {
+		return rightLen, rightLen <= maxDistance
+	}
+	if rightLen == 0 {
+		return leftLen, leftLen <= maxDistance
+	}
+	if abs(leftLen-rightLen) > maxDistance {
+		return maxDistance + 1, false
+	}
+
+	prev := make([]int, rightLen+1)
+	curr := make([]int, rightLen+1)
+	for j := 0; j <= rightLen; j++ {
+		prev[j] = j
+	}
+
+	for i := 1; i <= leftLen; i++ {
+		start := max(1, i-maxDistance)
+		end := min(rightLen, i+maxDistance)
+		curr[0] = i
+		rowMin := curr[0]
+		for j := 1; j < start; j++ {
+			curr[j] = maxDistance + 1
+		}
+		for j := start; j <= end; j++ {
+			cost := 1
+			if left[i-1] == right[j-1] {
+				cost = 0
+			}
+			deletion := prev[j] + 1
+			insertion := curr[j-1] + 1
+			substitution := prev[j-1] + cost
+			curr[j] = min(deletion, min(insertion, substitution))
+			if curr[j] < rowMin {
+				rowMin = curr[j]
+			}
+		}
+		for j := end + 1; j <= rightLen; j++ {
+			curr[j] = maxDistance + 1
+		}
+		if rowMin > maxDistance {
+			return rowMin, false
+		}
+		prev, curr = curr, prev
+	}
+	distance := prev[rightLen]
+	return distance, distance <= maxDistance
+}
+
+func abs(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func readLegacySQLite(path string) (legacyData, error) {
