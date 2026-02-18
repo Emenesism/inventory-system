@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -34,6 +35,8 @@ class InventoryPage(QWidget):
         self._proxy: NormalizedFilterProxyModel | None = None
         self._column_names: list[str] = []
         self._column_widths: dict[str, int] = {}
+        self._auto_column_widths: dict[str, int] = {}
+        self._header_min_widths: dict[str, int] = {}
         self._editable_columns: list[str] | None = None
         self._blocked_columns: set[str] | None = None
         self._name_changes: dict[str, str] = {}
@@ -166,6 +169,7 @@ class InventoryPage(QWidget):
             str(column): self._localized_header_label(str(column))
             for column in dataframe.columns
         }
+        self._prepare_column_width_hints(dataframe, header_labels)
         self._model = DataFrameTableModel(
             dataframe,
             editable_columns=active_editable,
@@ -192,11 +196,15 @@ class InventoryPage(QWidget):
             header.setSectionResizeMode(col, QHeaderView.Interactive)
         for col in range(self._model.columnCount()):
             column_name = self._column_names[col]
+            min_width = self._effective_minimum_column_width(column_name)
             saved_width = self._column_widths.get(column_name)
             if saved_width and saved_width > 24:
-                header.resizeSection(col, int(saved_width))
+                header.resizeSection(col, max(int(saved_width), min_width))
                 continue
-            header.resizeSection(col, self._default_column_width(column_name))
+            header.resizeSection(
+                col,
+                max(min_width, self._preferred_column_width(column_name)),
+            )
         self._defer_fit_columns()
         if product_col is not None:
             self._proxy.sort(product_col, Qt.AscendingOrder)
@@ -502,7 +510,7 @@ class InventoryPage(QWidget):
             return
         widths = [int(header.sectionSize(col)) for col in range(column_count)]
         min_widths = [
-            self._minimum_column_width(self._column_names[col])
+            self._effective_minimum_column_width(self._column_names[col])
             for col in range(column_count)
         ]
 
@@ -568,6 +576,72 @@ class InventoryPage(QWidget):
                 self._column_widths[self._column_names[col]] = target
         finally:
             self._auto_adjusting_columns = False
+
+    def _prepare_column_width_hints(
+        self, dataframe: pd.DataFrame, header_labels: dict[str, str]
+    ) -> None:
+        self._auto_column_widths = {}
+        self._header_min_widths = {}
+        if not self._column_names:
+            return
+        table_metrics = self.table.fontMetrics()
+        header_metrics = self.table.horizontalHeader().fontMetrics()
+        for column_name in self._column_names:
+            header_text = header_labels.get(
+                column_name, self._localized_header_label(column_name)
+            )
+            header_width = self._text_width(header_metrics, header_text, 36)
+            min_width = max(
+                self._minimum_column_width(column_name), header_width
+            )
+            value_width = self._longest_value_width(
+                dataframe, column_name, table_metrics
+            )
+            self._header_min_widths[column_name] = int(min_width)
+            self._auto_column_widths[column_name] = int(
+                max(min_width, value_width)
+            )
+
+    def _preferred_column_width(self, column_name: str) -> int:
+        preferred = self._auto_column_widths.get(column_name)
+        if preferred and preferred > 0:
+            return int(preferred)
+        return self._default_column_width(column_name)
+
+    def _effective_minimum_column_width(self, column_name: str) -> int:
+        return max(
+            self._minimum_column_width(column_name),
+            int(self._header_min_widths.get(column_name, 0)),
+        )
+
+    def _longest_value_width(
+        self, dataframe: pd.DataFrame, column_name: str, metrics: QFontMetrics
+    ) -> int:
+        if dataframe.empty or column_name not in dataframe.columns:
+            return 0
+        values = (
+            dataframe[column_name]
+            .fillna("")
+            .astype(str)
+            .str.replace("\n", " ", regex=False)
+            .str.strip()
+        )
+        if values.empty:
+            return 0
+        values = values.mask(values.str.lower() == "nan", "")
+        lengths = values.str.len()
+        max_len = int(lengths.max()) if not lengths.empty else 0
+        if max_len <= 0:
+            return 0
+        longest_text = str(values.loc[lengths.idxmax()])
+        return self._text_width(metrics, longest_text, 28)
+
+    @staticmethod
+    def _text_width(metrics: QFontMetrics, text: str, padding: int) -> int:
+        normalized = str(text or "").strip()
+        if not normalized:
+            normalized = " "
+        return int(metrics.horizontalAdvance(normalized) + max(padding, 0))
 
     @staticmethod
     def _default_column_width(column_name: str) -> int:
