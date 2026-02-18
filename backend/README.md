@@ -86,6 +86,20 @@ cd backend
 ./scripts/import_legacy_data.sh
 ```
 
+This wrapper auto-falls back to Docker if local `go>=1.25` and `sqlite3` are not available.
+
+Docker-only entrypoint (explicit):
+
+```bash
+cd backend
+./scripts/import_legacy_data_docker.sh
+```
+
+Notes:
+- requires Docker on the server
+- default Docker network mode is `host` (best for `DATABASE_URL=...@127.0.0.1:5432/...`)
+- override network mode if needed: `IMPORT_DOCKER_NETWORK_MODE=bridge ./scripts/import_legacy_data_docker.sh`
+
 What it does:
 - runs DB migrations (including `stock` table creation)
 - imports all rows from `../stock.xlsx` into `stock`
@@ -102,7 +116,7 @@ What it does:
 
 Default mode in wrapper script is `--replace` (truncate + reload).
 
-Direct command (custom paths/options):
+Direct local command (requires local `go>=1.25` and `sqlite3`):
 
 ```bash
 cd backend
