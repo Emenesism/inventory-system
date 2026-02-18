@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.action_log_service import ActionEntry, ActionLogService
+from app.ui.fonts import format_html_font_stack, resolve_export_font_roles
 from app.utils.dates import to_jalali_datetime
 
 
@@ -215,10 +216,16 @@ class ActionsPage(QWidget):
         self._set_html_details(self._wrap_action_body(action, fallback))
 
     def _set_html_details(self, body_html: str) -> None:
+        font_roles = resolve_export_font_roles()
+        font_stack = format_html_font_stack(
+            [font_roles["body"], font_roles["header"], font_roles["title"]]
+        )
         html = (
             "<html><head><meta charset='utf-8'>"
             "<style>"
-            "body{font-family:Vazirmatn,Tahoma,sans-serif; text-align:right; margin:0; padding:0;}"
+            "body{font-family:"
+            + font_stack
+            + "; text-align:right; margin:0; padding:0;}"
             ".action-shell{padding:2px 0 4px 0;}"
             ".action-meta{margin-bottom:10px; padding:4px 6px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc;}"
             ".action-meta-table{width:100%; border-collapse:separate; border-spacing:6px 2px; table-layout:fixed;}"

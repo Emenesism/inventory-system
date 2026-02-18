@@ -6,6 +6,7 @@ from PySide6.QtCore import QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontDatabase,
     QFontMetricsF,
     QPageLayout,
     QPageSize,
@@ -14,6 +15,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtPrintSupport import QPrinter
 
+from app.ui.fonts import resolve_export_font_roles
 from app.utils.dates import to_jalali_datetime
 from app.utils.excel import _aggregate_invoice_lines
 from app.utils.numeric import format_amount
@@ -69,11 +71,19 @@ def _draw_invoice_pdf(
     total_qty = sum(int(line["quantity"]) for line in merged_lines)
     total_amount = sum(float(line["total_amount"]) for line in merged_lines)
 
-    title_font = QFont("Vazirmatn", 18, QFont.Bold)
-    header_font = QFont("Vazirmatn", 11, QFont.Bold)
-    body_font = QFont("Vazirmatn", 11)
-    product_font = QFont("Vazirmatn", 10)
-    label_font = QFont("Vazirmatn", 10, QFont.Bold)
+    font_roles = resolve_export_font_roles(QFontDatabase.families())
+
+    title_font = QFont(font_roles["title"], 18)
+    title_font.setWeight(QFont.ExtraBold)
+
+    header_font = QFont(font_roles["header"], 11)
+    header_font.setWeight(QFont.DemiBold)
+
+    body_font = QFont(font_roles["body"], 11)
+    product_font = QFont(font_roles["product"], 10)
+
+    label_font = QFont(font_roles["label"], 10)
+    label_font.setWeight(QFont.DemiBold)
 
     def _font_height(font: QFont) -> float:
         return QFontMetricsF(font, painter.device()).height()

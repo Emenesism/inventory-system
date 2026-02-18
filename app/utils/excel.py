@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.ui.fonts import resolve_export_font_roles
 from app.utils.dates import to_jalali_datetime
 
 
@@ -152,8 +153,11 @@ def style_inventory_export_sheet(
     )
     thin = Side(border_style="thin", color="FFC7CED6")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    header_font = Font(size=11, bold=True, color="FFFFFFFF")
-    body_font = Font(size=11)
+    font_roles = resolve_export_font_roles()
+    header_font = Font(
+        name=font_roles["header"], size=11, bold=True, color="FFFFFFFF"
+    )
+    body_font = Font(name=font_roles["body"], size=11)
 
     numeric_headers = {
         "ردیف",
@@ -290,10 +294,11 @@ def _populate_invoice_sheet(ws, invoice, lines) -> None:
     ws.sheet_view.rightToLeft = True
 
     # Styles
-    title_font = Font(name="Vazirmatn", size=18, bold=True)
-    header_font = Font(name="Vazirmatn", size=11, bold=True)
-    body_font = Font(name="Vazirmatn", size=11)
-    label_font = Font(name="Vazirmatn", size=10, bold=True)
+    font_roles = resolve_export_font_roles()
+    title_font = Font(name=font_roles["title"], size=18, bold=True)
+    header_font = Font(name=font_roles["header"], size=11, bold=True)
+    body_font = Font(name=font_roles["body"], size=11)
+    label_font = Font(name=font_roles["label"], size=10, bold=True)
     header_fill = PatternFill(
         start_color="E8F3E1", end_color="E8F3E1", fill_type="solid"
     )

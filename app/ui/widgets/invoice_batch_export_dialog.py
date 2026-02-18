@@ -40,6 +40,7 @@ from app.services.invoice_service import (
     InvoiceService,
     InvoiceSummary,
 )
+from app.ui.fonts import format_html_font_stack, resolve_export_font_roles
 from app.ui.widgets.toast import ToastManager
 from app.utils import dialogs
 from app.utils.dates import (
@@ -939,10 +940,14 @@ class InvoiceBatchExportDialog(QDialog):
         )
 
     def _wrap_details_html(self, body_html: str) -> str:
+        font_roles = resolve_export_font_roles()
+        font_stack = format_html_font_stack(
+            [font_roles["body"], font_roles["header"], font_roles["title"]]
+        )
         return (
             "<html><head><meta charset='utf-8'>"
             "<style>"
-            "body{font-family:Vazirmatn,Tahoma,sans-serif;"
+            "body{font-family:" + font_stack + ";"
             "direction:rtl; text-align:right; margin:0; width:100%;}"
             "p{margin:0 0 8px 0; width:100%;}"
             "div,p,span,table,tr,td,th{direction:rtl; text-align:right;"
