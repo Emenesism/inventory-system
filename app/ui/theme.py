@@ -119,6 +119,13 @@ QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
     border: 1px solid #2563EB;
 }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 0px;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+}
 QPlainTextEdit, QTextEdit {
     background: #FFFFFF;
     border: 1px solid #E5E7EB;
@@ -432,6 +439,13 @@ QLineEdit::placeholder, QPlainTextEdit::placeholder, QTextEdit::placeholder {
 }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
     border: 1px solid #60A5FA;
+}
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 0px;
+    border: none;
+    padding: 0px;
+    margin: 0px;
 }
 QPlainTextEdit, QTextEdit {
     background: #0B1220;

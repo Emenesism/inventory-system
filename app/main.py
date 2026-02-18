@@ -21,6 +21,7 @@ from app.core.logging_setup import setup_logging
 from app.data.inventory_store import InventoryStore
 from app.services.inventory_service import InventoryService
 from app.ui.fonts import resolve_ui_font_stack
+from app.ui.input_guards import NumericWheelGuard
 from app.ui.main_window import MainWindow
 
 
@@ -36,6 +37,7 @@ def main() -> int:
     app.setStyle("Fusion")
     _install_qt_message_handler()
     _log_app_lifecycle(app)
+    _install_numeric_input_wheel_guard(app)
 
     config = AppConfig.load()
     store = InventoryStore()
@@ -184,6 +186,13 @@ def _install_unraisable_hook() -> None:
 def _log_app_lifecycle(app: QApplication) -> None:
     logger = logging.getLogger("AppLifecycle")
     app.aboutToQuit.connect(lambda: logger.warning("Application about to quit"))
+
+
+def _install_numeric_input_wheel_guard(app: QApplication) -> None:
+    guard = NumericWheelGuard(app)
+    app.installEventFilter(guard)
+    # Keep explicit reference so bindings do not garbage-collect the guard.
+    app._numeric_wheel_guard = guard  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":
