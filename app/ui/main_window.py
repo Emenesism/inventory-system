@@ -238,6 +238,31 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(min_width, min_height)
         self.resize(target_width, target_height)
 
+    def _ui_scale_factor(self) -> float:
+        screen = self.screen()
+        if screen is None:
+            app = QApplication.instance()
+            if app is not None:
+                screen = app.primaryScreen()
+        factors: list[float] = [1.0]
+        if screen is not None:
+            dpi = float(screen.logicalDotsPerInch() or 96.0)
+            if dpi > 0:
+                factors.append(dpi / 96.0)
+            try:
+                ratio = float(screen.devicePixelRatio())
+            except Exception:  # noqa: BLE001
+                ratio = 1.0
+            if ratio > 0:
+                factors.append(ratio)
+        try:
+            window_ratio = float(self.devicePixelRatioF())
+        except Exception:  # noqa: BLE001
+            window_ratio = 1.0
+        if window_ratio > 0:
+            factors.append(window_ratio)
+        return max(1.0, min(2.0, max(factors)))
+
     def _register_page(self, name: str, page: QWidget) -> None:
         wrapper = self._wrap_page(page)
         self.pages.addWidget(wrapper)
@@ -436,7 +461,12 @@ class MainWindow(QMainWindow):
                 self._set_sidebar_visible(False)
 
     def _apply_responsive_layout(self, force: bool = False) -> None:
-        compact = self.width() <= self._sidebar_compact_threshold
+        scale = self._ui_scale_factor()
+        threshold = self._sidebar_compact_threshold
+        if scale > 1.05:
+            # Collapse sidebar earlier on higher DPI so pages retain usable width.
+            threshold = int(threshold * min(scale, 1.35))
+        compact = self.width() <= threshold
         if not force and compact == self._compact_mode:
             return
         self._compact_mode = compact

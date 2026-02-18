@@ -409,7 +409,6 @@ class InventoryPage(QWidget):
         if self._auto_adjusting_columns:
             return
         self._last_user_resized_col = logical_index
-        self._defer_fit_columns()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -418,11 +417,21 @@ class InventoryPage(QWidget):
 
     def _apply_responsive_toolbar(self, force: bool = False) -> None:
         width = self.width() or self.sizeHint().width()
-        if width >= 1260:
+        scale = self._ui_scale_factor()
+        if scale > 1.05:
+            wide_breakpoint = int(1260 * min(scale, 1.35))
+            two_rows_breakpoint = int(930 * min(scale, 1.35))
+            compact_breakpoint = int(700 * min(scale, 1.3))
+        else:
+            wide_breakpoint = 1260
+            two_rows_breakpoint = 930
+            compact_breakpoint = 700
+
+        if width >= wide_breakpoint:
             mode = "wide"
-        elif width >= 930:
+        elif width >= two_rows_breakpoint:
             mode = "two_rows"
-        elif width >= 700:
+        elif width >= compact_breakpoint:
             mode = "compact"
         else:
             mode = "tiny"
@@ -431,6 +440,8 @@ class InventoryPage(QWidget):
         self._toolbar_mode = mode
 
         margins = 24 if mode == "wide" else 16 if mode == "two_rows" else 12
+        if scale >= 1.15 and mode != "wide":
+            margins += 2
         self._main_layout.setContentsMargins(margins, margins, margins, margins)
         self._main_layout.setSpacing(16 if mode == "wide" else 12)
 
@@ -444,6 +455,34 @@ class InventoryPage(QWidget):
             self._toolbar_layout.setColumnStretch(col, 0)
 
         if mode == "wide":
+            for button in self._toolbar_buttons:
+                button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                button.setMaximumWidth(220)
+                button.setMinimumHeight(0)
+                button.setMaximumHeight(16777215)
+                button.setProperty("denseToolbarButton", False)
+                button.style().unpolish(button)
+                button.style().polish(button)
+        else:
+            use_dense_buttons = scale >= 1.15
+            button_min_height = 32 if use_dense_buttons else 0
+            for button in self._toolbar_buttons:
+                if use_dense_buttons:
+                    button.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                    button.setMaximumWidth(136)
+                    button.setMaximumHeight(34)
+                else:
+                    button.setSizePolicy(
+                        QSizePolicy.Expanding, QSizePolicy.Fixed
+                    )
+                    button.setMaximumWidth(16777215)
+                    button.setMaximumHeight(16777215)
+                button.setMinimumHeight(button_min_height)
+                button.setProperty("denseToolbarButton", use_dense_buttons)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+        if mode == "wide":
             self.search_input.setMinimumWidth(220)
             self.search_input.setMaximumWidth(420)
             self._toolbar_layout.addWidget(
@@ -455,9 +494,43 @@ class InventoryPage(QWidget):
                 self._toolbar_layout.addWidget(button, 0, 3 + idx)
             return
 
-        self.search_input.setMinimumWidth(140)
+        if scale >= 1.15:
+            # High-DPI compact mode: keep controls grouped on the left.
+            self.search_input.setMinimumWidth(200)
+            self.search_input.setMaximumWidth(280)
+            self._toolbar_layout.addWidget(
+                self.title_label,
+                0,
+                0,
+                1,
+                2,
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute,
+            )
+            self._toolbar_layout.setColumnStretch(6, 1)
+            self._toolbar_layout.addWidget(
+                self.search_input,
+                0,
+                8,
+                1,
+                4,
+                Qt.AlignVCenter | Qt.AlignLeft | Qt.AlignAbsolute,
+            )
+            start_row = 1
+            start_col = 7
+            for idx, button in enumerate(self._toolbar_buttons):
+                self._toolbar_layout.addWidget(
+                    button,
+                    start_row,
+                    start_col + idx,
+                    1,
+                    1,
+                    Qt.AlignVCenter | Qt.AlignLeft | Qt.AlignAbsolute,
+                )
+            return
+
+        self.search_input.setMinimumWidth(170 if scale >= 1.15 else 140)
         if mode == "two_rows":
-            self.search_input.setMaximumWidth(360)
+            self.search_input.setMaximumWidth(420 if scale >= 1.15 else 360)
         else:
             self.search_input.setMaximumWidth(16777215)
 
@@ -467,12 +540,22 @@ class InventoryPage(QWidget):
         self._toolbar_layout.setColumnStretch(1, 1)
         self._toolbar_layout.addWidget(self.search_input, 0, 2)
 
-        columns = 5 if mode == "two_rows" else 3 if mode == "compact" else 2
+        if scale >= 1.15:
+            columns = len(self._toolbar_buttons)
+        elif mode == "two_rows":
+            columns = 5
+        elif mode == "compact":
+            columns = 3
+        else:
+            columns = 2
         start_row = 1
         for idx, button in enumerate(self._toolbar_buttons):
             row = start_row + (idx // columns)
             col = idx % columns
-            self._toolbar_layout.addWidget(button, row, col)
+            if scale >= 1.15:
+                self._toolbar_layout.addWidget(button, row, col, Qt.AlignRight)
+            else:
+                self._toolbar_layout.addWidget(button, row, col)
 
     def _defer_fit_columns(self) -> None:
         if not self._model:
@@ -501,6 +584,10 @@ class InventoryPage(QWidget):
         header = self.table.horizontalHeader()
         viewport_width = self.table.viewport().width()
         if viewport_width <= 0:
+            return
+        if self._ui_scale_factor() >= 1.15 and viewport_width <= 1050:
+            # Keep user widths on high-DPI/narrow layouts instead of forcing a
+            # tight auto-fit that can feel "unresizable".
             return
         total_width = sum(
             header.sectionSize(col) for col in range(column_count)
@@ -635,6 +722,31 @@ class InventoryPage(QWidget):
             return 0
         longest_text = str(values.loc[lengths.idxmax()])
         return self._text_width(metrics, longest_text, 28)
+
+    def _ui_scale_factor(self) -> float:
+        screen = self.screen()
+        if screen is None:
+            app = QApplication.instance()
+            if app is not None:
+                screen = app.primaryScreen()
+        factors: list[float] = [1.0]
+        if screen is not None:
+            dpi = float(screen.logicalDotsPerInch() or 96.0)
+            if dpi > 0:
+                factors.append(dpi / 96.0)
+            try:
+                ratio = float(screen.devicePixelRatio())
+            except Exception:  # noqa: BLE001
+                ratio = 1.0
+            if ratio > 0:
+                factors.append(ratio)
+        try:
+            widget_ratio = float(self.devicePixelRatioF())
+        except Exception:  # noqa: BLE001
+            widget_ratio = 1.0
+        if widget_ratio > 0:
+            factors.append(widget_ratio)
+        return max(1.0, min(2.0, max(factors)))
 
     @staticmethod
     def _text_width(metrics: QFontMetrics, text: str, padding: int) -> int:

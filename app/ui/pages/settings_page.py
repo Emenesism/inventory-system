@@ -3,10 +3,13 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
+    QBoxLayout,
     QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -47,6 +50,7 @@ class SettingsPage(QWidget):
         self.action_log_service = action_log_service
         self._current_admin_provider = current_admin_provider
         self.current_admin: AdminUser | None = None
+        self._layout_mode: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -227,11 +231,14 @@ class SettingsPage(QWidget):
         self.admin_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.admin_table.setAlternatingRowColors(True)
         self.admin_table.setLayoutDirection(Qt.RightToLeft)
-        self.admin_table.horizontalHeader().setDefaultAlignment(
-            self._RIGHT_ALIGN
-        )
-        self.admin_table.horizontalHeader().setStretchLastSection(True)
+        admin_header = self.admin_table.horizontalHeader()
+        admin_header.setDefaultAlignment(self._RIGHT_ALIGN)
+        admin_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        admin_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        admin_header.setStretchLastSection(False)
+        admin_header.setMinimumSectionSize(72)
         self.admin_table.verticalHeader().setDefaultSectionSize(30)
+        self.admin_table.setMinimumHeight(220)
         admin_layout.addWidget(self.admin_table)
 
         admin_button_row = QHBoxLayout()
@@ -244,21 +251,31 @@ class SettingsPage(QWidget):
         )
         admin_layout.addLayout(admin_button_row)
 
-        content_row = QHBoxLayout()
-        content_row.setSpacing(16)
-        content_row.addWidget(account_card, 3)
-        content_row.addWidget(self.admin_card, 2)
-        layout.addLayout(content_row, 1)
+        self._content_layout = QBoxLayout(QBoxLayout.LeftToRight)
+        self._content_layout.setSpacing(16)
+        self._content_layout.addWidget(account_card, 3)
+        self._content_layout.addWidget(self.admin_card, 2)
+        layout.addLayout(self._content_layout, 1)
 
         self.admin_card.hide()
 
         layout.addStretch(1)
+        self._apply_responsive_layout(force=True)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._apply_responsive_layout(force=True)
 
     def set_current_admin(self, admin: AdminUser | None) -> None:
         self.current_admin = admin
         if admin is None:
             self.user_value.setText("-")
             self.admin_card.hide()
+            self._apply_responsive_layout(force=True)
             return
         self.user_value.setText(f"{admin.username} ({admin.role})")
         if admin.role == "manager":
@@ -266,6 +283,7 @@ class SettingsPage(QWidget):
             self._refresh_admins()
         else:
             self.admin_card.hide()
+        self._apply_responsive_layout(force=True)
 
     def refresh_admins(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
@@ -436,6 +454,63 @@ class SettingsPage(QWidget):
         self.config.save()
         if self.on_theme_changed:
             self.on_theme_changed(self.config.theme)
+
+    def _apply_responsive_layout(self, force: bool = False) -> None:
+        width = self.width() or self.sizeHint().width()
+        scale = self._ui_scale_factor()
+        if scale >= 1.15:
+            stack_threshold = int(1120 * min(scale, 1.35))
+        else:
+            stack_threshold = 980
+        mode = "stacked" if width < stack_threshold else "split"
+        if not force and mode == self._layout_mode:
+            return
+        self._layout_mode = mode
+
+        if mode == "stacked":
+            self._content_layout.setDirection(QBoxLayout.TopToBottom)
+            self._content_layout.setSpacing(14 if scale >= 1.15 else 12)
+            self._content_layout.setStretch(0, 0)
+            self._content_layout.setStretch(1, 0)
+        else:
+            self._content_layout.setDirection(QBoxLayout.LeftToRight)
+            self._content_layout.setSpacing(16)
+            self._content_layout.setStretch(0, 3)
+            self._content_layout.setStretch(1, 2)
+
+        row_height = 30
+        if scale >= 1.15:
+            row_height = 38 if mode == "stacked" else 36
+        self.admin_table.verticalHeader().setDefaultSectionSize(row_height)
+        if scale >= 1.15:
+            self.admin_table.setStyleSheet("font-size: 13px;")
+        else:
+            self.admin_table.setStyleSheet("")
+
+    def _ui_scale_factor(self) -> float:
+        screen = self.screen()
+        if screen is None:
+            app = QApplication.instance()
+            if app is not None:
+                screen = app.primaryScreen()
+        factors: list[float] = [1.0]
+        if screen is not None:
+            dpi = float(screen.logicalDotsPerInch() or 96.0)
+            if dpi > 0:
+                factors.append(dpi / 96.0)
+            try:
+                ratio = float(screen.devicePixelRatio())
+            except Exception:  # noqa: BLE001
+                ratio = 1.0
+            if ratio > 0:
+                factors.append(ratio)
+        try:
+            widget_ratio = float(self.devicePixelRatioF())
+        except Exception:  # noqa: BLE001
+            widget_ratio = 1.0
+        if widget_ratio > 0:
+            factors.append(widget_ratio)
+        return max(1.0, min(2.0, max(factors)))
 
     @staticmethod
     def _configure_line_edit_rtl(line_edit: QLineEdit) -> None:

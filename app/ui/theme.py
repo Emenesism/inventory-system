@@ -160,6 +160,10 @@ QPushButton {
     border-radius: 10px;
     padding: 8px 14px;
 }
+QPushButton[denseToolbarButton="true"] {
+    padding: 5px 10px;
+    min-height: 28px;
+}
 QPushButton:hover {
     background: #1D4ED8;
 }
@@ -549,6 +553,10 @@ QPushButton {
     color: #FFFFFF;
     border-radius: 10px;
     padding: 8px 14px;
+}
+QPushButton[denseToolbarButton="true"] {
+    padding: 5px 10px;
+    min-height: 28px;
 }
 QPushButton:hover {
     background: #1D4ED8;
