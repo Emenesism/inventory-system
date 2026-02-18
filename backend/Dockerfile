@@ -15,7 +15,7 @@ RUN set -eux; \
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS=-mod=mod \
     go build -trimpath -ldflags="-s -w" -o /out/reza-backend ./cmd/server
 
 FROM scratch
