@@ -20,6 +20,7 @@ class InventoryService:
         self._logger = logging.getLogger(self.__class__.__name__)
         self._client = BackendClient(config.backend_url)
         self._loaded = False
+        self._sell_price_alarm_percent = 20.0
 
     def set_inventory_path(self, path: str | Path | None) -> None:
         self.store.set_path(path)
@@ -56,8 +57,12 @@ class InventoryService:
             raise InventoryFileError(f"فایل قیمت پیدا نشد: {path_obj}")
 
         suffix = path_obj.suffix.lower()
-        mime_type = "text/csv" if suffix == ".csv" else (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime_type = (
+            "text/csv"
+            if suffix == ".csv"
+            else (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         )
         try:
             with path_obj.open("rb") as handle:
@@ -68,6 +73,48 @@ class InventoryService:
         except BackendAPIError as exc:
             raise InventoryFileError(str(exc)) from exc
         return payload if isinstance(payload, dict) else {}
+
+    def fetch_sell_price_alarm_percent(self) -> float:
+        try:
+            payload = self._client.get("/api/v1/settings/sell-price-alarm")
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        percent_raw = (
+            payload.get("percent", 20.0) if isinstance(payload, dict) else 20.0
+        )
+        try:
+            percent = float(percent_raw)
+        except (TypeError, ValueError) as exc:
+            raise InventoryFileError("مقدار درصد هشدار نامعتبر است.") from exc
+        if percent < 0:
+            percent = 0.0
+        self._sell_price_alarm_percent = percent
+        return self._sell_price_alarm_percent
+
+    def update_sell_price_alarm_percent(self, percent: float) -> float:
+        try:
+            payload = self._client.patch(
+                "/api/v1/settings/sell-price-alarm",
+                json_body={"percent": float(percent)},
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        percent_raw = (
+            payload.get("percent", percent)
+            if isinstance(payload, dict)
+            else percent
+        )
+        try:
+            value = float(percent_raw)
+        except (TypeError, ValueError) as exc:
+            raise InventoryFileError("پاسخ درصد هشدار نامعتبر است.") from exc
+        if value < 0:
+            value = 0.0
+        self._sell_price_alarm_percent = value
+        return self._sell_price_alarm_percent
+
+    def get_cached_sell_price_alarm_percent(self) -> float:
+        return float(self._sell_price_alarm_percent)
 
     def load(self) -> pd.DataFrame:
         try:
