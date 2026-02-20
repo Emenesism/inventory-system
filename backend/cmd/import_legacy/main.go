@@ -215,14 +215,14 @@ func readStockRows(path string) ([]domain.InventoryImportRow, error) {
 	return rows, nil
 }
 
-func readSellPriceRows(path string) ([]excel.ProductPriceRow, error) {
+func readSellPriceRows(path string) ([]domain.ProductPriceRow, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer file.Close()
 
-	rows, err := excel.ParseProductPriceRows(file)
+	rows, _, err := excel.ParseProductPriceRows(path, file)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -231,7 +231,7 @@ func readSellPriceRows(path string) ([]excel.ProductPriceRow, error) {
 
 func applySellPriceOverrides(
 	stockRows []domain.InventoryImportRow,
-	priceRows []excel.ProductPriceRow,
+	priceRows []domain.ProductPriceRow,
 	threshold float64,
 ) sellPriceSyncStats {
 	stats := sellPriceSyncStats{
