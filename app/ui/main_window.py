@@ -139,6 +139,8 @@ class MainWindow(QMainWindow):
             self._set_current_admin,
             self.action_log_service,
             self._get_current_admin,
+            self.inventory_service,
+            self.refresh_inventory_views,
         )
 
         self._register_page("Inventory", self.inventory_page)
