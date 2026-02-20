@@ -50,6 +50,25 @@ class InventoryService:
         self.config.save()
         return payload if isinstance(payload, dict) else {}
 
+    def import_sell_prices(self, path: str | Path) -> dict[str, object]:
+        path_obj = Path(path)
+        if not path_obj.exists():
+            raise InventoryFileError(f"فایل قیمت پیدا نشد: {path_obj}")
+
+        suffix = path_obj.suffix.lower()
+        mime_type = "text/csv" if suffix == ".csv" else (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        try:
+            with path_obj.open("rb") as handle:
+                payload = self._client.post(
+                    "/api/v1/inventory/import-sell-prices",
+                    files={"file": (path_obj.name, handle, mime_type)},
+                )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        return payload if isinstance(payload, dict) else {}
+
     def load(self) -> pd.DataFrame:
         try:
             items: list[dict[str, object]] = []
