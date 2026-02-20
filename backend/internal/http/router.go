@@ -27,6 +27,7 @@ func NewRouter(handler *Handler) http.Handler {
 		r.Get("/inventory/summary", handler.InventorySummary)
 		r.Get("/inventory/low-stock", handler.LowStock)
 		r.Post("/inventory/import-excel", handler.ImportInventoryExcel)
+		r.Post("/inventory/import-sell-prices", handler.ImportSellPrices)
 		r.Post("/inventory/replace", handler.ReplaceInventory)
 
 		r.Get("/invoices", handler.ListInvoices)
