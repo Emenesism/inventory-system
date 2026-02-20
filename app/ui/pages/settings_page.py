@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -20,8 +21,10 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
+from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
+from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.utils import dialogs
 
@@ -38,15 +41,19 @@ class SettingsPage(QWidget):
         on_admin_updated=None,
         action_log_service: ActionLogService | None = None,
         current_admin_provider=None,
+        inventory_service: InventoryService | None = None,
+        on_inventory_updated=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setLayoutDirection(Qt.RightToLeft)
         self.config = config
         self.invoice_service = invoice_service
+        self.inventory_service = inventory_service
         self.admin_service = admin_service
         self.on_theme_changed = on_theme_changed
         self.on_admin_updated = on_admin_updated
+        self.on_inventory_updated = on_inventory_updated
         self.action_log_service = action_log_service
         self._current_admin_provider = current_admin_provider
         self.current_admin: AdminUser | None = None
@@ -165,6 +172,41 @@ class SettingsPage(QWidget):
         )
         account_layout.addLayout(pass_button_row)
 
+        self.sell_price_card = QFrame()
+        self.sell_price_card.setObjectName("Card")
+        sell_price_layout = QVBoxLayout(self.sell_price_card)
+        sell_price_layout.setContentsMargins(12, 12, 12, 12)
+        sell_price_layout.setSpacing(8)
+
+        sell_price_title = QLabel(self.tr("به‌روزرسانی قیمت فروش"))
+        sell_price_title.setStyleSheet("font-size: 14px; font-weight: 700;")
+        sell_price_title.setAlignment(self._RIGHT_ALIGN)
+        sell_price_layout.addWidget(sell_price_title)
+
+        sell_price_hint = QLabel(
+            self.tr(
+                "فایل CSV یا XLSX محصولات را انتخاب کنید تا فقط قیمت فروش کالاهای موجود به‌روزرسانی شود (نام کالا تغییر نمی‌کند)."
+            )
+        )
+        sell_price_hint.setProperty("textRole", "muted")
+        sell_price_hint.setWordWrap(True)
+        sell_price_hint.setAlignment(self._RIGHT_ALIGN)
+        sell_price_layout.addWidget(sell_price_hint)
+
+        sell_price_button_row = QHBoxLayout()
+        self.import_sell_price_button = QPushButton(
+            self.tr("درون‌ریزی قیمت فروش از فایل")
+        )
+        self.import_sell_price_button.clicked.connect(self._import_sell_prices)
+        sell_price_button_row.addWidget(
+            self.import_sell_price_button,
+            0,
+            self._RIGHT_ALIGN,
+        )
+        sell_price_layout.addLayout(sell_price_button_row)
+        account_layout.addWidget(self.sell_price_card)
+        self.sell_price_card.hide()
+
         self.admin_card = QFrame()
         self.admin_card.setObjectName("Card")
         admin_layout = QVBoxLayout(self.admin_card)
@@ -275,14 +317,17 @@ class SettingsPage(QWidget):
         if admin is None:
             self.user_value.setText("-")
             self.admin_card.hide()
+            self.sell_price_card.hide()
             self._apply_responsive_layout(force=True)
             return
         self.user_value.setText(f"{admin.username} ({admin.role})")
         if admin.role == "manager":
             self.admin_card.show()
+            self.sell_price_card.show()
             self._refresh_admins()
         else:
             self.admin_card.hide()
+            self.sell_price_card.hide()
         self._apply_responsive_layout(force=True)
 
     def refresh_admins(self) -> None:
@@ -448,6 +493,84 @@ class SettingsPage(QWidget):
                 admin=admin,
             )
         dialogs.show_info(self, self.tr("مدیر"), self.tr("مدیر حذف شد."))
+
+    def _import_sell_prices(self) -> None:
+        if self.current_admin is None or self.current_admin.role != "manager":
+            return
+        if self.inventory_service is None:
+            dialogs.show_error(
+                self,
+                self.tr("به‌روزرسانی قیمت فروش"),
+                self.tr("سرویس موجودی در دسترس نیست."),
+            )
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr("انتخاب فایل قیمت فروش"),
+            "",
+            self.tr("فایل قیمت (*.xlsx *.xlsm *.csv)"),
+        )
+        if not file_path:
+            return
+
+        try:
+            payload = self.inventory_service.import_sell_prices(file_path)
+            self.inventory_service.load()
+        except InventoryFileError as exc:
+            dialogs.show_error(self, self.tr("به‌روزرسانی قیمت فروش"), str(exc))
+            return
+
+        if self.on_inventory_updated:
+            self.on_inventory_updated()
+
+        total_rows = int(payload.get("total_rows", 0) or 0)
+        matched_rows = int(payload.get("matched_rows", 0) or 0)
+        updated_products = int(payload.get("updated_products", 0) or 0)
+        unmatched_count = int(payload.get("unmatched_count", 0) or 0)
+        unmatched_names_raw = payload.get("unmatched_names", [])
+        unmatched_names = (
+            [str(item) for item in unmatched_names_raw if str(item).strip()]
+            if isinstance(unmatched_names_raw, list)
+            else []
+        )
+        format_name = str(payload.get("detected_format", "") or "")
+        file_name = str(payload.get("file_name", "") or "")
+
+        details_lines = [
+            self.tr("فایل: {file}").format(file=file_name),
+            self.tr("نوع تشخیص‌داده‌شده: {mode}").format(mode=format_name or "-"),
+            self.tr("کل ردیف‌ها: {count}").format(count=total_rows),
+            self.tr("ردیف‌های منطبق: {count}").format(count=matched_rows),
+            self.tr("کالاهای به‌روزشده: {count}").format(count=updated_products),
+            self.tr("نام‌های بدون تطبیق: {count}").format(count=unmatched_count),
+            self.tr("تغییر نام کالا: انجام نمی‌شود"),
+        ]
+        if unmatched_names:
+            details_lines.append(
+                self.tr("نمونه نام‌های بدون تطبیق: {names}").format(
+                    names="، ".join(unmatched_names[:8])
+                )
+            )
+
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else self.current_admin
+        )
+        if self.action_log_service:
+            self.action_log_service.log_action(
+                "sell_price_import",
+                self.tr("درون‌ریزی قیمت فروش"),
+                "\n".join(details_lines),
+                admin=admin,
+            )
+
+        dialogs.show_info(
+            self,
+            self.tr("به‌روزرسانی قیمت فروش"),
+            "\n".join(details_lines),
+        )
 
     def _apply_theme(self, _index: int) -> None:
         self.config.theme = str(self.theme_combo.currentData() or "light")
