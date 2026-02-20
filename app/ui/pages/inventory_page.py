@@ -54,6 +54,7 @@ class InventoryPage(QWidget):
         self._column_fit_timer.setInterval(140)
         self._column_fit_timer.timeout.connect(self._apply_deferred_fit)
         self._toolbar_mode: str | None = None
+        self._sell_price_alarm_percent = 20.0
 
         self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(24, 24, 24, 24)
@@ -116,7 +117,7 @@ class InventoryPage(QWidget):
         card_layout.setContentsMargins(16, 16, 16, 16)
 
         self.table = QTableView()
-        self.table.setSortingEnabled(False)
+        self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setAlternatingRowColors(True)
         if hasattr(self.table, "setUniformRowHeights"):
@@ -124,7 +125,8 @@ class InventoryPage(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(40)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionsClickable(False)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._prepare_for_sorting)
         header.sectionResized.connect(self._remember_column_width)
         self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         self.table.verticalScrollBar().valueChanged.connect(
@@ -176,6 +178,7 @@ class InventoryPage(QWidget):
             header_labels=header_labels,
             lazy_load=lazy_enabled,
             chunk_size=chunk_size,
+            sell_price_alarm_percent=self._sell_price_alarm_percent,
         )
         self._model.cell_edited.connect(self._handle_cell_edit)
         self._proxy = NormalizedFilterProxyModel(self)
@@ -183,6 +186,7 @@ class InventoryPage(QWidget):
         self._proxy.setDynamicSortFilter(True)
         self._proxy.setSortCaseSensitivity(Qt.CaseInsensitive)
         self._proxy.setSortLocaleAware(True)
+        self._proxy.setSortRole(Qt.UserRole)
         self.table.setModel(self._proxy)
         self._wire_selection_model()
         if filter_text:
@@ -190,7 +194,7 @@ class InventoryPage(QWidget):
             self._proxy.set_filter_text(filter_text)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionsClickable(False)
+        header.setSectionsClickable(True)
         product_col = self._product_column_index()
         for col in range(self._model.columnCount()):
             header.setSectionResizeMode(col, QHeaderView.Interactive)
@@ -208,6 +212,22 @@ class InventoryPage(QWidget):
         self._defer_fit_columns()
         if product_col is not None:
             self._proxy.sort(product_col, Qt.AscendingOrder)
+
+    def set_sell_price_alarm_percent(self, percent: float) -> None:
+        try:
+            value = float(percent)
+        except (TypeError, ValueError):
+            value = 20.0
+        if value < 0:
+            value = 0.0
+        if value > 100:
+            value = 100.0
+        self._sell_price_alarm_percent = value
+        if self._model is None:
+            return
+        self._model.set_sell_price_alarm_percent(value)
+        if self._proxy is not None:
+            self._proxy.invalidate()
 
     def get_dataframe(self):  # noqa: ANN001
         if not self._model:
@@ -332,6 +352,12 @@ class InventoryPage(QWidget):
     def _update_delete_button(self) -> None:
         enabled = self.table.isEnabled() and self._has_selection()
         self.delete_row_button.setEnabled(enabled)
+
+    def _prepare_for_sorting(self, _section: int) -> None:
+        if self._model is None:
+            return
+        # Sorting should consider the full dataset, not just lazy-loaded rows.
+        self._model.set_lazy_loading(False)
 
     def _handle_cell_edit(
         self,
