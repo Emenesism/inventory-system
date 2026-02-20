@@ -196,6 +196,24 @@ func ensureCoreSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			`,
 		},
 		{
+			name: "app_settings table",
+			sql: `
+				CREATE TABLE IF NOT EXISTS app_settings (
+					key TEXT PRIMARY KEY,
+					value_numeric NUMERIC(14,4) NOT NULL,
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+				)
+			`,
+		},
+		{
+			name: "default sell price alarm setting",
+			sql: `
+				INSERT INTO app_settings (key, value_numeric)
+				VALUES ('sell_price_alarm_percent', 20)
+				ON CONFLICT (key) DO NOTHING
+			`,
+		},
+		{
 			name: "products quantity index",
 			sql:  `CREATE INDEX IF NOT EXISTS idx_products_quantity ON products (quantity)`,
 		},
