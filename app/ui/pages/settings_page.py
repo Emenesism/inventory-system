@@ -27,6 +27,7 @@ from app.services.admin_service import AdminService, AdminUser
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
 from app.utils import dialogs
+from app.utils.numeric import normalize_numeric_text
 
 
 class SettingsPage(QWidget):
@@ -193,6 +194,46 @@ class SettingsPage(QWidget):
         sell_price_hint.setAlignment(self._RIGHT_ALIGN)
         sell_price_layout.addWidget(sell_price_hint)
 
+        sell_price_alarm_form = QGridLayout()
+        sell_price_alarm_form.setHorizontalSpacing(10)
+        sell_price_alarm_form.setVerticalSpacing(8)
+
+        sell_price_alarm_label = QLabel(self.tr("حداقل اختلاف درصدی"))
+        sell_price_alarm_label.setProperty("fieldLabel", True)
+        sell_price_alarm_label.setAlignment(self._RIGHT_ALIGN)
+        self.sell_price_alarm_input = QLineEdit()
+        self.sell_price_alarm_input.setPlaceholderText(self.tr("مثال: 20"))
+        self._configure_line_edit_rtl(self.sell_price_alarm_input)
+        sell_price_alarm_form.addWidget(sell_price_alarm_label, 0, 0)
+        sell_price_alarm_form.addWidget(self.sell_price_alarm_input, 0, 1)
+        sell_price_alarm_form.setColumnStretch(0, 0)
+        sell_price_alarm_form.setColumnStretch(1, 1)
+        sell_price_layout.addLayout(sell_price_alarm_form)
+
+        sell_price_alarm_hint = QLabel(
+            self.tr(
+                "اگر درصد سود فروش نسبت به آخرین قیمت خرید کمتر از این مقدار باشد، قیمت فروش با طیف قرمز نمایش داده می‌شود."
+            )
+        )
+        sell_price_alarm_hint.setProperty("textRole", "muted")
+        sell_price_alarm_hint.setWordWrap(True)
+        sell_price_alarm_hint.setAlignment(self._RIGHT_ALIGN)
+        sell_price_layout.addWidget(sell_price_alarm_hint)
+
+        sell_price_alarm_button_row = QHBoxLayout()
+        self.save_sell_price_alarm_button = QPushButton(
+            self.tr("ذخیره درصد هشدار")
+        )
+        self.save_sell_price_alarm_button.clicked.connect(
+            self._save_sell_price_alarm_percent
+        )
+        sell_price_alarm_button_row.addWidget(
+            self.save_sell_price_alarm_button,
+            0,
+            self._RIGHT_ALIGN,
+        )
+        sell_price_layout.addLayout(sell_price_alarm_button_row)
+
         sell_price_button_row = QHBoxLayout()
         self.import_sell_price_button = QPushButton(
             self.tr("درون‌ریزی قیمت فروش از فایل")
@@ -325,6 +366,7 @@ class SettingsPage(QWidget):
             self.admin_card.show()
             self.sell_price_card.show()
             self._refresh_admins()
+            self._load_sell_price_alarm_percent()
         else:
             self.admin_card.hide()
             self.sell_price_card.hide()
@@ -493,6 +535,87 @@ class SettingsPage(QWidget):
                 admin=admin,
             )
         dialogs.show_info(self, self.tr("مدیر"), self.tr("مدیر حذف شد."))
+
+    def _load_sell_price_alarm_percent(self) -> None:
+        if self.inventory_service is None:
+            return
+        try:
+            percent = self.inventory_service.fetch_sell_price_alarm_percent()
+        except InventoryFileError:
+            percent = (
+                self.inventory_service.get_cached_sell_price_alarm_percent()
+            )
+        text = f"{percent:.2f}".rstrip("0").rstrip(".")
+        self.sell_price_alarm_input.setText(text)
+
+    def _save_sell_price_alarm_percent(self) -> None:
+        if self.current_admin is None or self.current_admin.role != "manager":
+            return
+        if self.inventory_service is None:
+            dialogs.show_error(
+                self,
+                self.tr("درصد هشدار قیمت فروش"),
+                self.tr("سرویس موجودی در دسترس نیست."),
+            )
+            return
+        raw = self.sell_price_alarm_input.text().strip()
+        normalized = normalize_numeric_text(raw)
+        if not normalized:
+            dialogs.show_error(
+                self,
+                self.tr("درصد هشدار قیمت فروش"),
+                self.tr("درصد هشدار را وارد کنید."),
+            )
+            return
+        try:
+            percent = float(normalized)
+        except ValueError:
+            dialogs.show_error(
+                self,
+                self.tr("درصد هشدار قیمت فروش"),
+                self.tr("فرمت درصد هشدار معتبر نیست."),
+            )
+            return
+        if percent < 0 or percent > 100:
+            dialogs.show_error(
+                self,
+                self.tr("درصد هشدار قیمت فروش"),
+                self.tr("درصد هشدار باید بین ۰ تا ۱۰۰ باشد."),
+            )
+            return
+        try:
+            saved_percent = (
+                self.inventory_service.update_sell_price_alarm_percent(percent)
+            )
+        except InventoryFileError as exc:
+            dialogs.show_error(
+                self,
+                self.tr("درصد هشدار قیمت فروش"),
+                str(exc),
+            )
+            return
+        self.sell_price_alarm_input.setText(
+            f"{saved_percent:.2f}".rstrip("0").rstrip(".")
+        )
+        if self.on_inventory_updated:
+            self.on_inventory_updated()
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else self.current_admin
+        )
+        if self.action_log_service:
+            self.action_log_service.log_action(
+                "sell_price_alarm_update",
+                self.tr("به‌روزرسانی درصد هشدار قیمت فروش"),
+                self.tr("درصد جدید: {percent}").format(percent=saved_percent),
+                admin=admin,
+            )
+        dialogs.show_info(
+            self,
+            self.tr("درصد هشدار قیمت فروش"),
+            self.tr("درصد هشدار قیمت فروش ذخیره شد."),
+        )
 
     def _import_sell_prices(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":
