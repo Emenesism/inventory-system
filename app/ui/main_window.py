@@ -380,6 +380,11 @@ class MainWindow(QMainWindow):
 
     def initialize_inventory(self) -> None:
         try:
+            try:
+                self.inventory_service.fetch_sell_price_alarm_percent()
+            except InventoryFileError:
+                # Keep default alarm percent if backend setting is unavailable.
+                pass
             self.inventory_service.load()
             self.refresh_inventory_views()
             self.toast.show(self.tr("موجودی از بک‌اند بارگذاری شد"), "success")
@@ -421,6 +426,9 @@ class MainWindow(QMainWindow):
             return
 
         df = self.inventory_service.get_dataframe()
+        self.inventory_page.set_sell_price_alarm_percent(
+            self.inventory_service.get_cached_sell_price_alarm_percent()
+        )
         self.inventory_page.set_inventory(df)
         self.purchase_page.set_product_provider(
             self.inventory_service.get_product_names
