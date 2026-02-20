@@ -235,6 +235,41 @@ func (h *Handler) ImportInventoryExcel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ImportSellPrices(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse multipart form")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file field is required")
+		return
+	}
+	defer file.Close()
+
+	rows, detectedFormat, err := excel.ParseProductPriceRows(header.Filename, file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := h.svc.ImportSellPrices(r.Context(), rows)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"file_name":        header.Filename,
+		"detected_format":  detectedFormat,
+		"total_rows":       result.TotalRows,
+		"matched_rows":     result.MatchedRows,
+		"updated_products": result.UpdatedProducts,
+		"unmatched_count":  result.UnmatchedCount,
+		"unmatched_names":  result.UnmatchedNames,
+	})
+}
+
 type replaceInventoryRequest struct {
 	Rows []domain.InventoryImportRow `json:"rows"`
 }
