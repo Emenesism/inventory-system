@@ -270,6 +270,37 @@ func (h *Handler) ImportSellPrices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) GetSellPriceAlarmPercent(w http.ResponseWriter, r *http.Request) {
+	percent, err := h.svc.GetSellPriceAlarmPercent(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"percent": percent,
+	})
+}
+
+type updateSellPriceAlarmPercentRequest struct {
+	Percent float64 `json:"percent"`
+}
+
+func (h *Handler) UpdateSellPriceAlarmPercent(w http.ResponseWriter, r *http.Request) {
+	var req updateSellPriceAlarmPercentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	percent, err := h.svc.SetSellPriceAlarmPercent(r.Context(), req.Percent)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"percent": percent,
+	})
+}
+
 type replaceInventoryRequest struct {
 	Rows []domain.InventoryImportRow `json:"rows"`
 }
