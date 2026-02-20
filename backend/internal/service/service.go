@@ -61,6 +61,16 @@ func (s *Service) ReplaceInventory(ctx context.Context, rows []domain.InventoryI
 	return s.repo.ReplaceInventory(ctx, rows)
 }
 
+func (s *Service) ImportSellPrices(
+	ctx context.Context,
+	rows []domain.ProductPriceRow,
+) (domain.SellPriceImportResult, error) {
+	if len(rows) == 0 {
+		return domain.SellPriceImportResult{}, fmt.Errorf("price rows are required")
+	}
+	return s.repo.ImportSellPrices(ctx, rows)
+}
+
 func (s *Service) InventorySummary(ctx context.Context) (repository.InventorySummary, error) {
 	return s.repo.GetInventorySummary(ctx)
 }
