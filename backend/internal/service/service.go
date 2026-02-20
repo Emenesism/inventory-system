@@ -79,6 +79,17 @@ func (s *Service) LowStock(ctx context.Context, threshold int) ([]domain.LowStoc
 	return s.repo.GetLowStock(ctx, threshold)
 }
 
+func (s *Service) GetSellPriceAlarmPercent(ctx context.Context) (float64, error) {
+	return s.repo.GetSellPriceAlarmPercent(ctx)
+}
+
+func (s *Service) SetSellPriceAlarmPercent(
+	ctx context.Context,
+	percent float64,
+) (float64, error) {
+	return s.repo.SetSellPriceAlarmPercent(ctx, percent)
+}
+
 func (s *Service) CreatePurchaseInvoice(
 	ctx context.Context,
 	invoiceName *string,
