@@ -3,11 +3,14 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"backend/internal/domain"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (r *Repository) ReplaceInventory(ctx context.Context, rows []domain.InventoryImportRow) error {
@@ -298,4 +301,55 @@ func normalizeSellPriceLookupName(value string) string {
 	normalized := replaced.Replace(value)
 	normalized = strings.Join(strings.Fields(normalized), " ")
 	return strings.ToLower(strings.TrimSpace(normalized))
+}
+
+func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, error) {
+	const (
+		settingKey   = "sell_price_alarm_percent"
+		defaultValue = 20.0
+	)
+	var value float64
+	err := r.pool.QueryRow(ctx, `
+		SELECT value_numeric::double precision
+		FROM app_settings
+		WHERE key = $1
+	`, settingKey).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if _, execErr := r.pool.Exec(ctx, `
+			INSERT INTO app_settings (key, value_numeric)
+			VALUES ($1, $2)
+			ON CONFLICT (key) DO NOTHING
+		`, settingKey, defaultValue); execErr != nil {
+			return 0, fmt.Errorf("init sell price alarm setting: %w", execErr)
+		}
+		return defaultValue, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get sell price alarm setting: %w", err)
+	}
+	if value < 0 {
+		value = 0
+	}
+	return value, nil
+}
+
+func (r *Repository) SetSellPriceAlarmPercent(
+	ctx context.Context,
+	percent float64,
+) (float64, error) {
+	if percent < 0 || percent > 100 {
+		return 0, fmt.Errorf("percent must be between 0 and 100")
+	}
+	const settingKey = "sell_price_alarm_percent"
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO app_settings (key, value_numeric, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (key)
+		DO UPDATE SET
+			value_numeric = EXCLUDED.value_numeric,
+			updated_at = NOW()
+	`, settingKey, percent); err != nil {
+		return 0, fmt.Errorf("set sell price alarm setting: %w", err)
+	}
+	return percent, nil
 }
