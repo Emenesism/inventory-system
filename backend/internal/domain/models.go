@@ -101,6 +101,19 @@ type InventoryImportRow struct {
 	Source       *string `json:"source,omitempty"`
 }
 
+type ProductPriceRow struct {
+	ProductName string  `json:"product_name"`
+	Price       float64 `json:"price"`
+}
+
+type SellPriceImportResult struct {
+	TotalRows       int      `json:"total_rows"`
+	MatchedRows     int      `json:"matched_rows"`
+	UpdatedProducts int      `json:"updated_products"`
+	UnmatchedCount  int      `json:"unmatched_count"`
+	UnmatchedNames  []string `json:"unmatched_names,omitempty"`
+}
+
 type LowStockRow struct {
 	ProductName string  `json:"product_name"`
 	Quantity    int     `json:"quantity"`
