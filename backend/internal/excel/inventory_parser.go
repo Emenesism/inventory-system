@@ -172,7 +172,9 @@ func mapColumns(header []string) map[string]int {
 }
 
 func normalizeHeader(raw string) string {
-	value := strings.TrimSpace(strings.ToLower(raw))
+	value := strings.TrimSpace(raw)
+	value = strings.TrimPrefix(value, "\ufeff")
+	value = strings.ToLower(value)
 	value = strings.ReplaceAll(value, "_", " ")
 	value = strings.Join(strings.Fields(value), " ")
 	return value
