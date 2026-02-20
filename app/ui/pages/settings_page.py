@@ -173,26 +173,18 @@ class SettingsPage(QWidget):
         )
         account_layout.addLayout(pass_button_row)
 
-        self.sell_price_card = QFrame()
-        self.sell_price_card.setObjectName("Card")
-        sell_price_layout = QVBoxLayout(self.sell_price_card)
-        sell_price_layout.setContentsMargins(12, 12, 12, 12)
-        sell_price_layout.setSpacing(8)
+        self.sell_price_alarm_card = QFrame()
+        self.sell_price_alarm_card.setObjectName("Card")
+        sell_price_alarm_layout = QVBoxLayout(self.sell_price_alarm_card)
+        sell_price_alarm_layout.setContentsMargins(12, 12, 12, 12)
+        sell_price_alarm_layout.setSpacing(8)
 
-        sell_price_title = QLabel(self.tr("به‌روزرسانی قیمت فروش"))
-        sell_price_title.setStyleSheet("font-size: 14px; font-weight: 700;")
-        sell_price_title.setAlignment(self._RIGHT_ALIGN)
-        sell_price_layout.addWidget(sell_price_title)
-
-        sell_price_hint = QLabel(
-            self.tr(
-                "فایل CSV یا XLSX محصولات را انتخاب کنید تا فقط قیمت فروش کالاهای موجود به‌روزرسانی شود (نام کالا تغییر نمی‌کند)."
-            )
+        sell_price_alarm_title = QLabel(self.tr("هشدار اختلاف قیمت فروش"))
+        sell_price_alarm_title.setStyleSheet(
+            "font-size: 14px; font-weight: 700;"
         )
-        sell_price_hint.setProperty("textRole", "muted")
-        sell_price_hint.setWordWrap(True)
-        sell_price_hint.setAlignment(self._RIGHT_ALIGN)
-        sell_price_layout.addWidget(sell_price_hint)
+        sell_price_alarm_title.setAlignment(self._RIGHT_ALIGN)
+        sell_price_alarm_layout.addWidget(sell_price_alarm_title)
 
         sell_price_alarm_form = QGridLayout()
         sell_price_alarm_form.setHorizontalSpacing(10)
@@ -208,17 +200,7 @@ class SettingsPage(QWidget):
         sell_price_alarm_form.addWidget(self.sell_price_alarm_input, 0, 1)
         sell_price_alarm_form.setColumnStretch(0, 0)
         sell_price_alarm_form.setColumnStretch(1, 1)
-        sell_price_layout.addLayout(sell_price_alarm_form)
-
-        sell_price_alarm_hint = QLabel(
-            self.tr(
-                "اگر درصد سود فروش نسبت به آخرین قیمت خرید کمتر از این مقدار باشد، قیمت فروش با طیف قرمز نمایش داده می‌شود."
-            )
-        )
-        sell_price_alarm_hint.setProperty("textRole", "muted")
-        sell_price_alarm_hint.setWordWrap(True)
-        sell_price_alarm_hint.setAlignment(self._RIGHT_ALIGN)
-        sell_price_layout.addWidget(sell_price_alarm_hint)
+        sell_price_alarm_layout.addLayout(sell_price_alarm_form)
 
         sell_price_alarm_button_row = QHBoxLayout()
         self.save_sell_price_alarm_button = QPushButton(
@@ -232,7 +214,33 @@ class SettingsPage(QWidget):
             0,
             self._RIGHT_ALIGN,
         )
-        sell_price_layout.addLayout(sell_price_alarm_button_row)
+        sell_price_alarm_layout.addLayout(sell_price_alarm_button_row)
+
+        account_layout.addWidget(self.sell_price_alarm_card)
+        self.sell_price_alarm_card.hide()
+
+        self.sell_price_import_card = QFrame()
+        self.sell_price_import_card.setObjectName("Card")
+        sell_price_import_layout = QVBoxLayout(self.sell_price_import_card)
+        sell_price_import_layout.setContentsMargins(12, 12, 12, 12)
+        sell_price_import_layout.setSpacing(8)
+
+        sell_price_import_title = QLabel(self.tr("به‌روزرسانی قیمت فروش"))
+        sell_price_import_title.setStyleSheet(
+            "font-size: 14px; font-weight: 700;"
+        )
+        sell_price_import_title.setAlignment(self._RIGHT_ALIGN)
+        sell_price_import_layout.addWidget(sell_price_import_title)
+
+        sell_price_import_hint = QLabel(
+            self.tr(
+                "فایل CSV یا XLSX محصولات را انتخاب کنید تا فقط قیمت فروش کالاهای موجود به‌روزرسانی شود (نام کالا تغییر نمی‌کند)."
+            )
+        )
+        sell_price_import_hint.setProperty("textRole", "muted")
+        sell_price_import_hint.setWordWrap(True)
+        sell_price_import_hint.setAlignment(self._RIGHT_ALIGN)
+        sell_price_import_layout.addWidget(sell_price_import_hint)
 
         sell_price_button_row = QHBoxLayout()
         self.import_sell_price_button = QPushButton(
@@ -244,9 +252,10 @@ class SettingsPage(QWidget):
             0,
             self._RIGHT_ALIGN,
         )
-        sell_price_layout.addLayout(sell_price_button_row)
-        account_layout.addWidget(self.sell_price_card)
-        self.sell_price_card.hide()
+        sell_price_import_layout.addLayout(sell_price_button_row)
+
+        account_layout.addWidget(self.sell_price_import_card)
+        self.sell_price_import_card.hide()
 
         self.admin_card = QFrame()
         self.admin_card.setObjectName("Card")
@@ -358,18 +367,21 @@ class SettingsPage(QWidget):
         if admin is None:
             self.user_value.setText("-")
             self.admin_card.hide()
-            self.sell_price_card.hide()
+            self.sell_price_alarm_card.hide()
+            self.sell_price_import_card.hide()
             self._apply_responsive_layout(force=True)
             return
         self.user_value.setText(f"{admin.username} ({admin.role})")
         if admin.role == "manager":
             self.admin_card.show()
-            self.sell_price_card.show()
+            self.sell_price_alarm_card.show()
+            self.sell_price_import_card.show()
             self._refresh_admins()
             self._load_sell_price_alarm_percent()
         else:
             self.admin_card.hide()
-            self.sell_price_card.hide()
+            self.sell_price_alarm_card.hide()
+            self.sell_price_import_card.hide()
         self._apply_responsive_layout(force=True)
 
     def refresh_admins(self) -> None:

@@ -219,12 +219,10 @@ QTableView {
     alternate-background-color: #EAF2FF;
 }
 QTableView::item {
-    background: #FFFFFF;
     color: #111827;
     padding: 4px;
 }
 QTableView::item:alternate {
-    background: #EAF2FF;
     color: #111827;
 }
 QTableView::item:selected {
@@ -253,12 +251,10 @@ QTableWidget {
     alternate-background-color: #EAF2FF;
 }
 QTableWidget::item {
-    background: #FFFFFF;
     color: #111827;
     padding: 4px;
 }
 QTableWidget::item:alternate {
-    background: #EAF2FF;
     color: #111827;
 }
 QTableWidget::item:selected {
@@ -614,12 +610,10 @@ QTableView {
     alternate-background-color: #16263D;
 }
 QTableView::item {
-    background: #0B1220;
     color: #E5E7EB;
     padding: 4px;
 }
 QTableView::item:alternate {
-    background: #16263D;
     color: #E5E7EB;
 }
 QTableView::item:selected {
@@ -650,12 +644,10 @@ QTableWidget {
     alternate-background-color: #16263D;
 }
 QTableWidget::item {
-    background: #0B1220;
     color: #E5E7EB;
     padding: 4px;
 }
 QTableWidget::item:alternate {
-    background: #16263D;
     color: #E5E7EB;
 }
 QTableWidget::item:selected {
