@@ -2,8 +2,19 @@ from __future__ import annotations
 
 import re
 from html import escape
+from typing import Callable
 
-from PySide6.QtCore import QCoreApplication, Qt, QTimer
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QCoreApplication,
+    QModelIndex,
+    QObject,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -13,8 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -23,6 +33,137 @@ from PySide6.QtWidgets import (
 from app.services.action_log_service import ActionEntry, ActionLogService
 from app.ui.fonts import format_html_font_stack, resolve_export_font_roles
 from app.utils.dates import to_jalali_datetime
+
+
+class _ActionsLoadWorker(QObject):
+    loaded = Signal(object)
+    failed = Signal(str)
+    finished = Signal()
+
+    def __init__(
+        self,
+        action_service: ActionLogService,
+        *,
+        include_count: bool,
+        limit: int,
+        offset: int,
+        search: str | None,
+        refresh: bool,
+        request_id: int,
+    ) -> None:
+        super().__init__()
+        self._action_service = action_service
+        self._include_count = include_count
+        self._limit = limit
+        self._offset = offset
+        self._search = search
+        self._refresh = refresh
+        self._request_id = request_id
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            total_count = None
+            if self._include_count:
+                total_count = self._action_service.count_actions(self._search)
+            items = self._action_service.list_actions(
+                limit=self._limit,
+                offset=self._offset,
+                search=self._search,
+            )
+            self.loaded.emit(
+                {
+                    "request_id": self._request_id,
+                    "refresh": self._refresh,
+                    "items": items,
+                    "total_count": total_count,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit()
+
+
+class _ActionsTableModel(QAbstractTableModel):
+    def __init__(
+        self,
+        headers: list[str],
+        format_action: Callable[[ActionEntry], str],
+        unknown_admin_text: str,
+    ) -> None:
+        super().__init__()
+        self._headers = headers
+        self._format_action = format_action
+        self._unknown_admin_text = unknown_admin_text
+        self._entries: list[ActionEntry] = []
+        self._display: list[tuple[str, str, str, str]] = []
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return len(self._entries)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return 4
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):  # noqa: ANN001
+        if not index.isValid():
+            return None
+        row = index.row()
+        col = index.column()
+        if row < 0 or row >= len(self._entries):
+            return None
+        if role == Qt.DisplayRole:
+            return self._display[row][col]
+        if role == Qt.TextAlignmentRole:
+            if col == 3:
+                return Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+            return Qt.AlignCenter
+        if role == Qt.UserRole:
+            return self._entries[row].action_id
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.DisplayRole,
+    ):  # noqa: ANN001, N802
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            if 0 <= section < len(self._headers):
+                return self._headers[section]
+            return None
+        return str(section + 1)
+
+    def clear(self) -> None:
+        self.beginResetModel()
+        self._entries = []
+        self._display = []
+        self.endResetModel()
+
+    def append_entries(self, entries: list[ActionEntry]) -> None:
+        if not entries:
+            return
+        start = len(self._entries)
+        end = start + len(entries) - 1
+        self.beginInsertRows(QModelIndex(), start, end)
+        self._entries.extend(entries)
+        self._display.extend(self._build_display(entry) for entry in entries)
+        self.endInsertRows()
+
+    def entry_at_row(self, row: int) -> ActionEntry | None:
+        if row < 0 or row >= len(self._entries):
+            return None
+        return self._entries[row]
+
+    def _build_display(self, entry: ActionEntry) -> tuple[str, str, str, str]:
+        return (
+            to_jalali_datetime(entry.created_at),
+            entry.admin_username or self._unknown_admin_text,
+            self._format_action(entry),
+            entry.title,
+        )
 
 
 class ActionsPage(QWidget):
@@ -37,6 +178,13 @@ class ActionsPage(QWidget):
         self._total_count = 0
         self._loading_more = False
         self._actions: list[ActionEntry] = []
+        self._current_search = ""
+        self._request_id = 0
+        self._pending_refresh = False
+        self._pending_load_more = False
+        self._pending_search_text: str | None = None
+        self._load_thread: QThread | None = None
+        self._load_worker: _ActionsLoadWorker | None = None
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -88,15 +236,19 @@ class ActionsPage(QWidget):
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(
-            [
-                self.tr("تاریخ"),
-                self.tr("ادمین"),
-                self.tr("نوع"),
-                self.tr("عنوان"),
-            ]
+        headers = [
+            self.tr("تاریخ"),
+            self.tr("ادمین"),
+            self.tr("نوع"),
+            self.tr("عنوان"),
+        ]
+        self._table_model = _ActionsTableModel(
+            headers=headers,
+            format_action=self._format_action,
+            unknown_admin_text=self.tr("نامشخص"),
         )
+        self.table = QTableView()
+        self.table.setModel(self._table_model)
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -108,7 +260,11 @@ class ActionsPage(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(32)
         if hasattr(self.table, "setUniformRowHeights"):
             self.table.setUniformRowHeights(True)
-        self.table.itemSelectionChanged.connect(self._show_details)
+        selection_model = self.table.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(
+                lambda *_: self._show_details()
+            )
         self.table.verticalScrollBar().valueChanged.connect(
             self._maybe_load_more
         )
@@ -167,37 +323,134 @@ class ActionsPage(QWidget):
 
     def refresh(self) -> None:
         self._search_timer.stop()
+        search = self.search_input.text().strip()
+        if self._load_thread is not None and self._load_thread.isRunning():
+            self._pending_refresh = True
+            self._pending_search_text = search
+            return
+        self._pending_refresh = False
+        self._pending_load_more = False
         self._actions = []
         self._loaded_count = 0
-        search = self.search_input.text().strip()
-        self._total_count = self.action_service.count_actions(
-            search if search else None
-        )
+        self._total_count = 0
+        self._current_search = search
         self.total_label.setText(
             self.tr("تعداد اقدامات: {count}").format(count=self._total_count)
         )
-        self.table.blockSignals(True)
-        self.table.setRowCount(0)
-        self.table.blockSignals(False)
+        self._table_model.clear()
         self.details_label.setText(self.tr("جزئیات اقدام را انتخاب کنید."))
         self.details_text.clear()
-        self._load_more()
+        self.load_more_button.setEnabled(False)
+        self._start_load_worker(
+            include_count=True,
+            offset=0,
+            refresh=True,
+        )
 
     def _queue_refresh(self, _text: str) -> None:
         self._search_timer.start()
 
-    def _show_details(self) -> None:
-        row = self.table.currentRow()
-        if row < 0:
+    def _start_load_worker(
+        self,
+        *,
+        include_count: bool,
+        offset: int,
+        refresh: bool,
+    ) -> None:
+        if self._load_thread is not None and self._load_thread.isRunning():
+            if refresh:
+                self._pending_refresh = True
+                self._pending_search_text = self.search_input.text().strip()
+            else:
+                self._pending_load_more = True
             return
-        item = self.table.item(row, 0)
-        if not item:
-            return
-        action_id = item.data(Qt.UserRole)
-        action = next(
-            (entry for entry in self._actions if entry.action_id == action_id),
-            None,
+        self._loading_more = True
+        self.load_more_button.setEnabled(False)
+        self._request_id += 1
+        request_id = self._request_id
+        worker = _ActionsLoadWorker(
+            self.action_service,
+            include_count=include_count,
+            limit=self._page_size,
+            offset=offset,
+            search=self._current_search or None,
+            refresh=refresh,
+            request_id=request_id,
         )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._on_worker_loaded)
+        worker.failed.connect(self._on_worker_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_worker_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._load_worker = worker
+        self._load_thread = thread
+        thread.start()
+
+    @Slot(object)
+    def _on_worker_loaded(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        request_id = int(payload.get("request_id", 0) or 0)
+        if request_id != self._request_id:
+            return
+        refresh = bool(payload.get("refresh"))
+        items = payload.get("items", [])
+        if not isinstance(items, list):
+            items = []
+        batch = [item for item in items if isinstance(item, ActionEntry)]
+        if refresh:
+            self._actions = []
+            self._loaded_count = 0
+            total_count = int(payload.get("total_count", 0) or 0)
+            self._total_count = total_count
+            self.total_label.setText(
+                self.tr("تعداد اقدامات: {count}").format(count=total_count)
+            )
+            self._table_model.clear()
+            self.details_label.setText(self.tr("جزئیات اقدام را انتخاب کنید."))
+            self.details_text.clear()
+
+        if batch:
+            start_row = self._table_model.rowCount()
+            self._actions.extend(batch)
+            self._loaded_count += len(batch)
+            self._table_model.append_entries(batch)
+            if start_row == 0 and self._actions:
+                self.table.selectRow(0)
+        elif refresh:
+            self.details_label.setText(self.tr("اقدامی ثبت نشده است."))
+
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+
+    @Slot(str)
+    def _on_worker_failed(self, _error: str) -> None:
+        # Keep previous data visible if backend call fails.
+        self.load_more_button.setEnabled(False)
+
+    def _on_worker_finished(self) -> None:
+        self._load_worker = None
+        self._load_thread = None
+        self._loading_more = False
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+        if self._pending_refresh:
+            pending_search = self._pending_search_text
+            self._pending_refresh = False
+            self._pending_search_text = None
+            if pending_search is not None:
+                self._current_search = pending_search
+            self.refresh()
+            return
+        if self._pending_load_more:
+            self._pending_load_more = False
+            self._load_more()
+
+    def _show_details(self) -> None:
+        row = self.table.currentIndex().row()
+        action = self._table_model.entry_at_row(row)
         if not action:
             return
         header = f"{action.title} | {to_jalali_datetime(action.created_at)}"
@@ -714,41 +967,11 @@ class ActionsPage(QWidget):
         if self._loading_more or self._loaded_count >= self._total_count:
             self.load_more_button.setEnabled(False)
             return
-        self._loading_more = True
-        search = self.search_input.text().strip()
-        batch = self.action_service.list_actions(
-            limit=self._page_size,
+        self._start_load_worker(
+            include_count=False,
             offset=self._loaded_count,
-            search=search if search else None,
+            refresh=False,
         )
-        if not batch:
-            self._loading_more = False
-            self.load_more_button.setEnabled(False)
-            return
-
-        start_row = self.table.rowCount()
-        self.table.setUpdatesEnabled(False)
-        self.table.blockSignals(True)
-        self.table.setRowCount(start_row + len(batch))
-        for row_offset, entry in enumerate(batch):
-            row_idx = start_row + row_offset
-            date_item = QTableWidgetItem(to_jalali_datetime(entry.created_at))
-            date_item.setData(Qt.UserRole, entry.action_id)
-            self.table.setItem(row_idx, 0, date_item)
-            admin_text = entry.admin_username or self.tr("نامشخص")
-            self.table.setItem(row_idx, 1, QTableWidgetItem(admin_text))
-            self.table.setItem(
-                row_idx, 2, QTableWidgetItem(self._format_action(entry))
-            )
-            self.table.setItem(row_idx, 3, QTableWidgetItem(entry.title))
-        self._actions.extend(batch)
-        self._loaded_count += len(batch)
-        self.table.blockSignals(False)
-        self.table.setUpdatesEnabled(True)
-        self._loading_more = False
-        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
-        if start_row == 0 and self._actions:
-            self.table.selectRow(0)
 
     def _format_action(self, entry: ActionEntry) -> str:
         t = lambda text: QCoreApplication.translate(  # noqa: E731

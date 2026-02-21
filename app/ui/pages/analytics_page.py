@@ -3,7 +3,15 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QModelIndex,
+    QObject,
+    Qt,
+    QThread,
+    Signal,
+    Slot,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -14,8 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -89,6 +96,59 @@ class _AnalyticsLoadWorker(QObject):
         finally:
             self.succeeded.emit(payload)
             self.finished.emit()
+
+
+class _AnalyticsTableModel(QAbstractTableModel):
+    def __init__(
+        self,
+        headers: list[str],
+        alignments: list[Qt.AlignmentFlag],
+    ) -> None:
+        super().__init__()
+        self._headers = headers
+        self._alignments = alignments
+        self._rows: list[tuple[str, ...]] = []
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return len(self._headers)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):  # noqa: ANN001
+        if not index.isValid():
+            return None
+        row = index.row()
+        col = index.column()
+        if row < 0 or row >= len(self._rows):
+            return None
+        if role == Qt.DisplayRole:
+            value = self._rows[row][col] if col < len(self._rows[row]) else ""
+            return str(value)
+        if role == Qt.TextAlignmentRole:
+            if 0 <= col < len(self._alignments):
+                return self._alignments[col]
+            return Qt.AlignCenter
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.DisplayRole,
+    ):  # noqa: ANN001, N802
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            if 0 <= section < len(self._headers):
+                return self._headers[section]
+            return None
+        return str(section + 1)
+
+    def set_rows(self, rows: list[tuple[str, ...]]) -> None:
+        self.beginResetModel()
+        self._rows = list(rows)
+        self.endResetModel()
 
 
 class AnalyticsPage(QWidget):
@@ -199,15 +259,22 @@ class AnalyticsPage(QWidget):
         top_header.addWidget(self.top_limit_combo)
         top_layout.addLayout(top_header)
 
-        self.top_products_table = QTableWidget(0, 4)
-        self.top_products_table.setHorizontalHeaderLabels(
-            [
+        self._top_products_model = _AnalyticsTableModel(
+            headers=[
                 self.tr("کالا"),
                 self.tr("تعداد فروش"),
                 self.tr("تعداد فاکتور"),
                 self.tr("آخرین فروش"),
-            ]
+            ],
+            alignments=[
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute,
+                Qt.AlignCenter,
+                Qt.AlignCenter,
+                Qt.AlignCenter,
+            ],
         )
+        self.top_products_table = QTableView()
+        self.top_products_table.setModel(self._top_products_model)
         top_header_view = self.top_products_table.horizontalHeader()
         top_header_view.setSectionResizeMode(0, QHeaderView.Stretch)
         top_header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -220,6 +287,8 @@ class AnalyticsPage(QWidget):
         self.top_products_table.setEditTriggers(
             QAbstractItemView.NoEditTriggers
         )
+        if hasattr(self.top_products_table, "setUniformRowHeights"):
+            self.top_products_table.setUniformRowHeights(True)
         top_layout.addWidget(self.top_products_table)
         layout.addWidget(top_card)
 
@@ -249,15 +318,22 @@ class AnalyticsPage(QWidget):
         unsold_header.addWidget(self.unsold_days_combo)
         unsold_layout.addLayout(unsold_header)
 
-        self.unsold_table = QTableWidget(0, 4)
-        self.unsold_table.setHorizontalHeaderLabels(
-            [
+        self._unsold_model = _AnalyticsTableModel(
+            headers=[
                 self.tr("کالا"),
                 self.tr("موجودی"),
                 self.tr("آخرین بروزرسانی"),
                 self.tr("منبع"),
-            ]
+            ],
+            alignments=[
+                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute,
+                Qt.AlignCenter,
+                Qt.AlignCenter,
+                Qt.AlignCenter,
+            ],
         )
+        self.unsold_table = QTableView()
+        self.unsold_table.setModel(self._unsold_model)
         unsold_header_view = self.unsold_table.horizontalHeader()
         unsold_header_view.setSectionResizeMode(0, QHeaderView.Stretch)
         unsold_header_view.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -268,6 +344,8 @@ class AnalyticsPage(QWidget):
         self.unsold_table.setMinimumHeight(250)
         self.unsold_table.setAlternatingRowColors(True)
         self.unsold_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        if hasattr(self.unsold_table, "setUniformRowHeights"):
+            self.unsold_table.setUniformRowHeights(True)
         unsold_layout.addWidget(self.unsold_table)
         layout.addWidget(unsold_card)
 
@@ -418,65 +496,38 @@ class AnalyticsPage(QWidget):
         )
 
     def _render_top_products(self, items: list[dict]) -> None:
-        self.top_products_table.setRowCount(len(items))
-        for row_idx, item in enumerate(items):
-            product_item = QTableWidgetItem(
-                display_text(item.get("product_name", ""), fallback="")
-            )
-            product_item.setTextAlignment(
-                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
-            )
-            self.top_products_table.setItem(row_idx, 0, product_item)
-
-            qty_item = QTableWidgetItem(
-                f"{self._safe_int(item.get('sold_qty')):,}"
-            )
-            qty_item.setTextAlignment(Qt.AlignCenter)
-            self.top_products_table.setItem(row_idx, 1, qty_item)
-
-            invoice_count_item = QTableWidgetItem(
-                f"{self._safe_int(item.get('invoice_count')):,}"
-            )
-            invoice_count_item.setTextAlignment(Qt.AlignCenter)
-            self.top_products_table.setItem(row_idx, 2, invoice_count_item)
-
+        rows: list[tuple[str, str, str, str]] = []
+        for item in items:
             last_sold_raw = str(item.get("last_sold_at", "") or "").strip()
             last_sold_text = (
                 to_jalali_datetime(last_sold_raw) if last_sold_raw else "-"
             )
-            last_sold_item = QTableWidgetItem(last_sold_text)
-            last_sold_item.setTextAlignment(Qt.AlignCenter)
-            self.top_products_table.setItem(row_idx, 3, last_sold_item)
+            rows.append(
+                (
+                    display_text(item.get("product_name", ""), fallback=""),
+                    f"{self._safe_int(item.get('sold_qty')):,}",
+                    f"{self._safe_int(item.get('invoice_count')):,}",
+                    last_sold_text,
+                )
+            )
+        self._top_products_model.set_rows(rows)
 
     def _render_unsold_products(self, items: list[dict]) -> None:
-        self.unsold_table.setRowCount(len(items))
-        for row_idx, item in enumerate(items):
-            product_item = QTableWidgetItem(
-                display_text(item.get("product_name", ""), fallback="")
-            )
-            product_item.setTextAlignment(
-                Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
-            )
-            self.unsold_table.setItem(row_idx, 0, product_item)
-
-            quantity_item = QTableWidgetItem(
-                f"{self._safe_int(item.get('quantity')):,}"
-            )
-            quantity_item.setTextAlignment(Qt.AlignCenter)
-            self.unsold_table.setItem(row_idx, 1, quantity_item)
-
+        rows: list[tuple[str, str, str, str]] = []
+        for item in items:
             updated_raw = str(item.get("updated_at", "") or "").strip()
-            updated_item = QTableWidgetItem(
+            updated_text = (
                 to_jalali_datetime(updated_raw) if updated_raw else "-"
             )
-            updated_item.setTextAlignment(Qt.AlignCenter)
-            self.unsold_table.setItem(row_idx, 2, updated_item)
-
-            source_item = QTableWidgetItem(
-                display_text(item.get("source", ""), fallback="-")
+            rows.append(
+                (
+                    display_text(item.get("product_name", ""), fallback=""),
+                    f"{self._safe_int(item.get('quantity')):,}",
+                    updated_text,
+                    display_text(item.get("source", ""), fallback="-"),
+                )
             )
-            source_item.setTextAlignment(Qt.AlignCenter)
-            self.unsold_table.setItem(row_idx, 3, source_item)
+        self._unsold_model.set_rows(rows)
 
     @staticmethod
     def _safe_int(value: object) -> int:

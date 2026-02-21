@@ -1,18 +1,26 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QCoreApplication, QEventLoop, Qt, QTimer
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QCoreApplication,
+    QModelIndex,
+    QObject,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +44,108 @@ COL_ALARM = _t("حد هشدار")
 COL_NEEDED = _t("نیاز")
 COL_AVG_BUY = _t("میانگین خرید")
 COL_SOURCE = _t("منبع")
+
+
+class _LowStockLoadWorker(QObject):
+    loaded = Signal(object)
+    finished = Signal()
+
+    def __init__(
+        self,
+        inventory_service: InventoryService,
+        threshold: int,
+    ) -> None:
+        super().__init__()
+        self._inventory_service = inventory_service
+        self._threshold = threshold
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            rows = self._inventory_service.get_low_stock_rows(self._threshold)
+        except InventoryFileError:
+            rows = []
+        self.loaded.emit(rows)
+        self.finished.emit()
+
+
+class _LowStockTableModel(QAbstractTableModel):
+    def __init__(self, headers: list[str]) -> None:
+        super().__init__()
+        self._headers = headers
+        self._rows: list[dict[str, object]] = []
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        return len(self._headers)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):  # noqa: ANN001
+        if not index.isValid():
+            return None
+        row = index.row()
+        col = index.column()
+        if row < 0 or row >= len(self._rows):
+            return None
+        item = self._rows[row]
+        if role == Qt.DisplayRole:
+            if col == 0:
+                return str(item.get("product", ""))
+            if col == 1:
+                return str(int(item.get("quantity", 0) or 0))
+            if col == 2:
+                return str(int(item.get("alarm", 0) or 0))
+            if col == 3:
+                return str(int(item.get("needed", 0) or 0))
+            if col == 4:
+                return format_amount(float(item.get("avg_buy", 0.0) or 0.0))
+            if col == 5:
+                return str(item.get("source", ""))
+            return ""
+        if role == Qt.TextAlignmentRole:
+            if col in (0, 5):
+                return Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
+            return Qt.AlignCenter
+        if role == Qt.BackgroundRole:
+            qty = int(item.get("quantity", 0) or 0)
+            alarm = int(item.get("alarm", 0) or 0)
+            return self._severity_brush(qty, alarm)
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.DisplayRole,
+    ):  # noqa: ANN001, N802
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            if 0 <= section < len(self._headers):
+                return self._headers[section]
+            return None
+        return str(section + 1)
+
+    def set_rows(self, rows: list[dict[str, object]]) -> None:
+        self.beginResetModel()
+        self._rows = list(rows)
+        self.endResetModel()
+
+    @staticmethod
+    def _severity_brush(qty: int, alarm: int) -> QBrush | None:
+        if alarm <= 0:
+            return None
+        deficit = max(alarm - qty, 0)
+        severity = min(deficit / alarm, 1.0)
+        if severity <= 0:
+            return None
+        low = (255, 244, 228)
+        high = (255, 153, 153)
+        red = int(low[0] + (high[0] - low[0]) * severity)
+        green = int(low[1] + (high[1] - low[1]) * severity)
+        blue = int(low[2] + (high[2] - low[2]) * severity)
+        return QBrush(QColor(red, green, blue))
 
 
 class LowStockPage(QWidget):
@@ -66,6 +176,10 @@ class LowStockPage(QWidget):
         self.action_log_service = action_log_service
         self._current_admin_provider = current_admin_provider
         self._rows: list[dict[str, object]] = []
+        self._load_thread: QThread | None = None
+        self._load_worker: _LowStockLoadWorker | None = None
+        self._pending_refresh = False
+        self._controls_enabled = True
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.setInterval(90)
@@ -81,13 +195,13 @@ class LowStockPage(QWidget):
         header.addWidget(title)
         header.addStretch(1)
 
-        export_button = QPushButton(self.tr("خروجی"))
-        export_button.clicked.connect(self._export)
-        header.addWidget(export_button)
+        self.export_button = QPushButton(self.tr("خروجی"))
+        self.export_button.clicked.connect(self._export)
+        header.addWidget(self.export_button)
 
-        refresh_button = QPushButton(self.tr("بروزرسانی"))
-        refresh_button.clicked.connect(self.refresh)
-        header.addWidget(refresh_button)
+        self.refresh_button = QPushButton(self.tr("بروزرسانی"))
+        self.refresh_button.clicked.connect(self.refresh)
+        header.addWidget(self.refresh_button)
         layout.addLayout(header)
 
         summary_card = QFrame()
@@ -108,33 +222,38 @@ class LowStockPage(QWidget):
         table_layout = QVBoxLayout(table_card)
         table_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(
-            [
-                self.tr("کالا"),
-                self.tr("تعداد"),
-                self.tr("هشدار"),
-                self.tr("نیاز"),
-                self.tr("میانگین خرید"),
-                self.tr("منبع"),
-            ]
-        )
+        headers = [
+            self.tr("کالا"),
+            self.tr("تعداد"),
+            self.tr("هشدار"),
+            self.tr("نیاز"),
+            self.tr("میانگین خرید"),
+            self.tr("منبع"),
+        ]
+        self._table_model = _LowStockTableModel(headers)
+        self.table = QTableView()
+        self.table.setModel(self._table_model)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setWordWrap(False)
         self.table.setTextElideMode(Qt.ElideRight)
         header_view = self.table.horizontalHeader()
-        for col in range(self.table.columnCount()):
+        for col in range(self._table_model.columnCount()):
             header_view.setSectionResizeMode(col, QHeaderView.Interactive)
         header_view.setStretchLastSection(False)
         header_view.setMinimumSectionSize(64)
         self.table.verticalHeader().setDefaultSectionSize(32)
+        if hasattr(self.table, "setUniformRowHeights"):
+            self.table.setUniformRowHeights(True)
         table_layout.addWidget(self.table)
         layout.addWidget(table_card)
 
     def set_enabled_state(self, enabled: bool) -> None:
+        self._controls_enabled = bool(enabled)
         self.table.setEnabled(enabled)
+        self.refresh_button.setEnabled(enabled and self._load_thread is None)
+        self.export_button.setEnabled(enabled and bool(self._rows))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -146,20 +265,39 @@ class LowStockPage(QWidget):
 
     def refresh(self) -> None:
         if not self.inventory_service.is_loaded():
-            self.table.setRowCount(0)
+            self._rows = []
+            self._table_model.set_rows([])
             self.items_label.setText(self.tr("کالاهای زیر حد هشدار: 0"))
             self.total_needed_label.setText(self.tr("مجموع نیاز: 0"))
+            self.export_button.setEnabled(False)
             return
+        if self._load_thread is not None and self._load_thread.isRunning():
+            self._pending_refresh = True
+            return
+        self.refresh_button.setEnabled(False)
+        worker = _LowStockLoadWorker(
+            self.inventory_service,
+            int(self.config.low_stock_threshold),
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._on_rows_loaded)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_refresh_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._load_worker = worker
+        self._load_thread = thread
+        thread.start()
 
+    @Slot(object)
+    def _on_rows_loaded(self, payload: object) -> None:
+        rows_data = payload if isinstance(payload, list) else []
         rows: list[dict[str, object]] = []
-        try:
-            low_stock_rows = self.inventory_service.get_low_stock_rows(
-                self.config.low_stock_threshold
-            )
-        except InventoryFileError:
-            low_stock_rows = []
-        for row in low_stock_rows:
-            source_text = display_text(row.get("source", ""), fallback="")
+        for row in rows_data:
+            if not isinstance(row, dict):
+                continue
             rows.append(
                 {
                     "product": str(row.get("product_name", "")).strip(),
@@ -167,11 +305,11 @@ class LowStockPage(QWidget):
                     "alarm": int(row.get("alarm", 0) or 0),
                     "needed": int(row.get("needed", 0) or 0),
                     "avg_buy": float(row.get("avg_buy_price", 0.0) or 0.0),
-                    "source": source_text,
+                    "source": display_text(row.get("source", ""), fallback=""),
                 }
             )
-
         self._rows = rows
+        self._table_model.set_rows(rows)
         self.items_label.setText(
             self.tr("کالاهای زیر حد هشدار: {count}").format(count=len(rows))
         )
@@ -180,56 +318,19 @@ class LowStockPage(QWidget):
                 count=sum(item["needed"] for item in rows)
             )
         )
-
-        sorting_enabled = self.table.isSortingEnabled()
-        self.table.setSortingEnabled(False)
-        self.table.setUpdatesEnabled(False)
-        self.table.blockSignals(True)
-
-        self.table.setRowCount(len(rows))
-        for row_idx, item in enumerate(rows):
-            product_item = QTableWidgetItem(item["product"])
-            self.table.setItem(row_idx, 0, product_item)
-
-            qty_item = QTableWidgetItem(str(item["quantity"]))
-            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row_idx, 1, qty_item)
-
-            min_item = QTableWidgetItem(str(item["alarm"]))
-            min_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row_idx, 2, min_item)
-
-            needed_item = QTableWidgetItem(str(item["needed"]))
-            needed_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row_idx, 3, needed_item)
-
-            avg_item = QTableWidgetItem(self._format_amount(item["avg_buy"]))
-            avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row_idx, 4, avg_item)
-
-            source_item = QTableWidgetItem(item["source"])
-            self.table.setItem(row_idx, 5, source_item)
-
-            self._apply_severity_color(
-                [
-                    product_item,
-                    qty_item,
-                    min_item,
-                    needed_item,
-                    avg_item,
-                    source_item,
-                ],
-                int(item["quantity"]),
-                int(item["alarm"]),
-            )
-
-            if row_idx % 200 == 0:
-                QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
-
-        self.table.blockSignals(False)
-        self.table.setUpdatesEnabled(True)
-        self.table.setSortingEnabled(sorting_enabled)
+        self.export_button.setEnabled(self._controls_enabled and bool(rows))
         self._defer_fit_columns()
+
+    def _on_refresh_finished(self) -> None:
+        self._load_worker = None
+        self._load_thread = None
+        self.refresh_button.setEnabled(self._controls_enabled)
+        self.export_button.setEnabled(
+            self._controls_enabled and bool(self._rows)
+        )
+        if self._pending_refresh:
+            self._pending_refresh = False
+            self.refresh()
 
     def request_layout_refresh(self) -> None:
         self._defer_fit_columns()
@@ -282,10 +383,6 @@ class LowStockPage(QWidget):
                 admin=admin,
             )
 
-    @staticmethod
-    def _format_amount(value: float) -> str:
-        return format_amount(value)
-
     def _apply_export_colors(self, file_path: str, df) -> None:
         try:
             from openpyxl import load_workbook
@@ -330,27 +427,12 @@ class LowStockPage(QWidget):
 
         wb.save(file_path)
 
-    def _apply_severity_color(
-        self, items: list[QTableWidgetItem], qty: int, alarm: int
-    ) -> None:
-        if alarm <= 0:
-            return
-        deficit = max(alarm - qty, 0)
-        severity = min(deficit / alarm, 1.0)
-        if severity <= 0:
-            return
-        # Blend from light warning to strong red based on severity.
-        low = (255, 244, 228)
-        high = (255, 153, 153)
-        red = int(low[0] + (high[0] - low[0]) * severity)
-        green = int(low[1] + (high[1] - low[1]) * severity)
-        blue = int(low[2] + (high[2] - low[2]) * severity)
-        brush = QBrush(QColor(red, green, blue))
-        for item in items:
-            item.setBackground(brush)
-
     def _fit_columns(self) -> None:
-        if self.table.columnCount() <= self._PRODUCT_COL:
+        model = self.table.model()
+        if model is None:
+            return
+        column_count = int(model.columnCount())
+        if column_count <= self._PRODUCT_COL:
             return
         header = self.table.horizontalHeader()
         viewport_width = self.table.viewport().width()
@@ -360,7 +442,7 @@ class LowStockPage(QWidget):
         widths: list[int] = []
         min_widths: list[int] = []
         max_widths: list[int] = []
-        for col in range(self.table.columnCount()):
+        for col in range(column_count):
             self.table.resizeColumnToContents(col)
             natural = int(header.sectionSize(col))
             min_width = self._column_min_width(col)

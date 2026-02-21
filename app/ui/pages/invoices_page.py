@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QObject, QPoint, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -31,6 +31,86 @@ from app.utils.pdf import export_invoice_pdf
 from app.utils.text import normalize_text
 
 
+class _InvoicesListWorker(QObject):
+    loaded = Signal(object)
+    failed = Signal(str)
+    finished = Signal()
+
+    def __init__(
+        self,
+        invoice_service: InvoiceService,
+        *,
+        limit: int,
+        offset: int,
+        invoice_type: str,
+        refresh: bool,
+        request_id: int,
+    ) -> None:
+        super().__init__()
+        self._invoice_service = invoice_service
+        self._limit = limit
+        self._offset = offset
+        self._invoice_type = invoice_type
+        self._refresh = refresh
+        self._request_id = request_id
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            page = self._invoice_service.list_invoices_page(
+                limit=self._limit,
+                offset=self._offset,
+                invoice_type=self._invoice_type,
+            )
+            self.loaded.emit(
+                {
+                    "request_id": self._request_id,
+                    "refresh": self._refresh,
+                    "items": page.items,
+                    "total_count": page.total_count,
+                    "total_amount": page.total_amount,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit()
+
+
+class _InvoiceLinesWorker(QObject):
+    loaded = Signal(object)
+    failed = Signal(str)
+    finished = Signal()
+
+    def __init__(
+        self,
+        invoice_service: InvoiceService,
+        *,
+        invoice_id: int,
+        request_id: int,
+    ) -> None:
+        super().__init__()
+        self._invoice_service = invoice_service
+        self._invoice_id = invoice_id
+        self._request_id = request_id
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            lines = self._invoice_service.get_invoice_lines(self._invoice_id)
+            self.loaded.emit(
+                {
+                    "request_id": self._request_id,
+                    "invoice_id": self._invoice_id,
+                    "lines": lines,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit()
+
+
 class InvoicesPage(QWidget):
     def __init__(
         self,
@@ -59,6 +139,16 @@ class InvoicesPage(QWidget):
         self._loading_more = False
         self._show_prices = True
         self._can_edit = False
+        self._list_thread: QThread | None = None
+        self._list_worker: _InvoicesListWorker | None = None
+        self._list_request_id = 0
+        self._pending_refresh = False
+        self._pending_load_more = False
+        self._lines_thread: QThread | None = None
+        self._lines_worker: _InvoiceLinesWorker | None = None
+        self._lines_request_id = 0
+        self._pending_lines_invoice_id: int | None = None
+        self._active_lines_invoice_id: int | None = None
         self._invoice_filters: list[tuple[str, str, str]] = [
             ("all", self.tr("همه"), ""),
             ("sales_all", self.tr("همه فروش‌ها"), "sales"),
@@ -85,9 +175,9 @@ class InvoicesPage(QWidget):
         self.factor_button.clicked.connect(self._open_factor_export)
         header.addWidget(self.factor_button)
 
-        refresh_button = QPushButton(self.tr("بروزرسانی"))
-        refresh_button.clicked.connect(self.refresh)
-        header.addWidget(refresh_button)
+        self.refresh_button = QPushButton(self.tr("بروزرسانی"))
+        self.refresh_button.clicked.connect(self.refresh)
+        header.addWidget(self.refresh_button)
 
         self.edit_button = QPushButton(self.tr("ویرایش فاکتور"))
         self.edit_button.clicked.connect(self._edit_selected_invoice)
@@ -259,16 +349,20 @@ class InvoicesPage(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        if self._list_thread is not None and self._list_thread.isRunning():
+            self._pending_refresh = True
+            self._pending_load_more = False
+            return
+        self._pending_refresh = False
+        self._pending_load_more = False
+        self._lines_request_id += 1
+        self._active_lines_invoice_id = None
+        self._pending_lines_invoice_id = None
         self.invoices = []
         self._loaded_count = 0
+        self._total_count = 0
+        self._total_amount = 0.0
         self._loading_more = False
-        first_page = self.invoice_service.list_invoices_page(
-            limit=self._page_size,
-            offset=0,
-            invoice_type=self._active_filter_type,
-        )
-        self._total_count = int(first_page.total_count)
-        self._total_amount = float(first_page.total_amount)
         self.total_invoices_label.setText(
             self.tr("تعداد فاکتورها: {count}").format(count=self._total_count)
         )
@@ -281,11 +375,10 @@ class InvoicesPage(QWidget):
             self.tr("برای مشاهده جزئیات یک فاکتور را انتخاب کنید.")
         )
         self.lines_table.setRowCount(0)
-        self._append_invoice_batch(first_page.items)
-        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
-        if not self.invoices:
-            self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
+        self._set_list_controls_enabled(False)
+        self.load_more_button.setEnabled(False)
         self._update_action_buttons()
+        self._start_list_worker(refresh=True, offset=0)
 
     def _set_filter(self, filter_key: str) -> None:
         if filter_key == self._active_filter_key:
@@ -340,15 +433,24 @@ class InvoicesPage(QWidget):
     def _show_selected_details(self) -> None:
         row = self.invoices_table.currentRow()
         if row < 0:
+            self._active_lines_invoice_id = None
+            self._pending_lines_invoice_id = None
+            self.lines_table.setRowCount(0)
             return
         item = self.invoices_table.item(row, 0)
         if not item:
             return
         invoice_id = item.data(Qt.UserRole)
-        lines = self.invoice_service.get_invoice_lines(int(invoice_id))
+        if invoice_id is None:
+            return
+        invoice_id_int = int(invoice_id)
+        self._pending_lines_invoice_id = None
+        self._active_lines_invoice_id = invoice_id_int
+        self.lines_table.setRowCount(0)
+        self.lines_table.setEnabled(False)
 
         inv = next(
-            (inv for inv in self.invoices if inv.invoice_id == invoice_id),
+            (inv for inv in self.invoices if inv.invoice_id == invoice_id_int),
             None,
         )
         invoice_type = inv.invoice_type if inv else ""
@@ -381,6 +483,167 @@ class InvoicesPage(QWidget):
         else:
             header = self.tr("جزئیات فاکتور")
         self.details_label.setText(header)
+        self._start_lines_worker(invoice_id_int)
+
+    def _maybe_load_more(self) -> None:
+        if self._loading_more or self._loaded_count >= self._total_count:
+            return
+        bar = self.invoices_table.verticalScrollBar()
+        if bar.maximum() == 0:
+            return
+        if bar.value() >= bar.maximum() - 20:
+            self._load_more()
+
+    def _load_more(self) -> None:
+        if self._list_thread is not None and self._list_thread.isRunning():
+            self._pending_load_more = True
+            return
+        if self._loading_more or self._loaded_count >= self._total_count:
+            self.load_more_button.setEnabled(False)
+            return
+        self._pending_load_more = False
+        self._set_list_controls_enabled(False)
+        self.load_more_button.setEnabled(False)
+        self._start_list_worker(refresh=False, offset=self._loaded_count)
+
+    def _set_list_controls_enabled(self, enabled: bool) -> None:
+        self.refresh_button.setEnabled(enabled)
+        for button in self._filter_buttons.values():
+            button.setEnabled(enabled)
+
+    def _start_list_worker(self, *, refresh: bool, offset: int) -> None:
+        if self._list_thread is not None and self._list_thread.isRunning():
+            if refresh:
+                self._pending_refresh = True
+            else:
+                self._pending_load_more = True
+            return
+        self._loading_more = True
+        self._list_request_id += 1
+        worker = _InvoicesListWorker(
+            self.invoice_service,
+            limit=self._page_size,
+            offset=offset,
+            invoice_type=self._active_filter_type,
+            refresh=refresh,
+            request_id=self._list_request_id,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._on_list_loaded)
+        worker.failed.connect(self._on_list_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_list_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._list_worker = worker
+        self._list_thread = thread
+        thread.start()
+
+    @Slot(object)
+    def _on_list_loaded(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        request_id = int(payload.get("request_id", 0) or 0)
+        if request_id != self._list_request_id:
+            return
+        refresh = bool(payload.get("refresh"))
+        items = payload.get("items", [])
+        batch = [item for item in items if isinstance(item, InvoiceSummary)]
+        self._total_count = int(payload.get("total_count", 0) or 0)
+        self._total_amount = float(payload.get("total_amount", 0.0) or 0.0)
+        self.total_invoices_label.setText(
+            self.tr("تعداد فاکتورها: {count}").format(count=self._total_count)
+        )
+        self._set_total_amount_label()
+        self._set_filter_hint()
+        if refresh:
+            self.invoices = []
+            self._loaded_count = 0
+            self.invoices_table.blockSignals(True)
+            self.invoices_table.setRowCount(0)
+            self.invoices_table.blockSignals(False)
+            self.details_label.setText(
+                self.tr("برای مشاهده جزئیات یک فاکتور را انتخاب کنید.")
+            )
+            self.lines_table.setRowCount(0)
+        if batch:
+            self._append_invoice_batch(batch)
+        elif refresh:
+            self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+
+    @Slot(str)
+    def _on_list_failed(self, _error: str) -> None:
+        self.load_more_button.setEnabled(False)
+        if not self.invoices:
+            self.details_label.setText(self.tr("خطا در دریافت فاکتورها."))
+
+    def _on_list_finished(self) -> None:
+        self._list_worker = None
+        self._list_thread = None
+        self._loading_more = False
+        self._set_list_controls_enabled(True)
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+        if self._pending_refresh:
+            self._pending_refresh = False
+            self._pending_load_more = False
+            self.refresh()
+            return
+        if self._pending_load_more:
+            self._pending_load_more = False
+            self._load_more()
+
+    def _start_lines_worker(self, invoice_id: int) -> None:
+        if self._lines_thread is not None and self._lines_thread.isRunning():
+            self._pending_lines_invoice_id = invoice_id
+            return
+        self._lines_request_id += 1
+        worker = _InvoiceLinesWorker(
+            self.invoice_service,
+            invoice_id=invoice_id,
+            request_id=self._lines_request_id,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._on_lines_loaded)
+        worker.failed.connect(self._on_lines_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_lines_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._lines_worker = worker
+        self._lines_thread = thread
+        thread.start()
+
+    @Slot(object)
+    def _on_lines_loaded(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        request_id = int(payload.get("request_id", 0) or 0)
+        if request_id != self._lines_request_id:
+            return
+        invoice_id = int(payload.get("invoice_id", 0) or 0)
+        selected_invoice_id = self._selected_invoice_id()
+        if selected_invoice_id is None or selected_invoice_id != invoice_id:
+            return
+        lines = payload.get("lines", [])
+        if not isinstance(lines, list):
+            lines = []
+        inv = next(
+            (
+                invoice
+                for invoice in self.invoices
+                if invoice.invoice_id == invoice_id
+            ),
+            None,
+        )
+        invoice_type = inv.invoice_type if inv else ""
+        show_price = self._should_show_prices(invoice_type)
+        self.lines_table.setColumnHidden(1, not show_price)
+        self.lines_table.setColumnHidden(3, not show_price)
 
         self.lines_table.setRowCount(len(lines))
         for row_idx, line in enumerate(lines):
@@ -405,39 +668,22 @@ class InvoicesPage(QWidget):
             total_item.setTextAlignment(Qt.AlignCenter)
             self.lines_table.setItem(row_idx, 3, total_item)
 
-    def _maybe_load_more(self) -> None:
-        if self._loading_more or self._loaded_count >= self._total_count:
+    @Slot(str)
+    def _on_lines_failed(self, _error: str) -> None:
+        selected_invoice_id = self._selected_invoice_id()
+        if selected_invoice_id is None:
             return
-        bar = self.invoices_table.verticalScrollBar()
-        if bar.maximum() == 0:
-            return
-        if bar.value() >= bar.maximum() - 20:
-            self._load_more()
+        self.lines_table.setRowCount(0)
+        self.details_label.setText(self.tr("خطا در دریافت جزئیات فاکتور."))
 
-    def _load_more(self) -> None:
-        if self._loading_more or self._loaded_count >= self._total_count:
-            self.load_more_button.setEnabled(False)
-            return
-        self._loading_more = True
-        batch_page = self.invoice_service.list_invoices_page(
-            limit=self._page_size,
-            offset=self._loaded_count,
-            invoice_type=self._active_filter_type,
-        )
-        batch = batch_page.items
-        self._total_count = int(batch_page.total_count)
-        self._total_amount = float(batch_page.total_amount)
-        self._set_total_amount_label()
-        self._set_filter_hint()
-        if not batch:
-            self._loading_more = False
-            self.load_more_button.setEnabled(False)
-            if not self.invoices:
-                self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
-            return
-        self._append_invoice_batch(batch)
-        self._loading_more = False
-        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+    def _on_lines_finished(self) -> None:
+        self._lines_worker = None
+        self._lines_thread = None
+        self.lines_table.setEnabled(True)
+        next_invoice_id = self._pending_lines_invoice_id
+        self._pending_lines_invoice_id = None
+        if next_invoice_id is not None:
+            self._start_lines_worker(next_invoice_id)
 
     def _append_invoice_batch(self, batch: list[InvoiceSummary]) -> None:
         if not batch:
