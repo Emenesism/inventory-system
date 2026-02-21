@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
+from typing import Any
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from app.models.errors import InventoryFileError
 from app.services.action_log_service import ActionLogService
@@ -16,6 +18,69 @@ from app.utils.excel import (
     style_inventory_export_sheet,
 )
 from app.utils.text import is_empty_marker, normalize_text
+
+
+@dataclass
+class _InventorySaveContext:
+    df: Any
+    old_df: Any
+    admin: Any
+    admin_username: str | None
+    name_changes: list[tuple[str, str]]
+
+
+class _InventorySaveWorker(QObject):
+    progress = Signal(str)
+    succeeded = Signal(dict)
+    failed = Signal(str)
+    finished = Signal()
+
+    def __init__(
+        self,
+        inventory_service: InventoryService,
+        invoice_service: InvoiceService | None,
+        df,
+        admin_username: str | None,
+        name_changes: list[tuple[str, str]],
+    ) -> None:  # noqa: ANN001
+        super().__init__()
+        self._inventory_service = inventory_service
+        self._invoice_service = invoice_service
+        self._df = df
+        self._admin_username = admin_username
+        self._name_changes = name_changes
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.progress.emit("saving_inventory")
+            self._inventory_service.save(
+                self._df, admin_username=self._admin_username
+            )
+            result: dict[str, Any] = {
+                "updated_lines": 0,
+                "updated_invoice_ids": [],
+                "rename_error": "",
+            }
+            if self._name_changes and self._invoice_service is not None:
+                self.progress.emit("renaming_invoices")
+                try:
+                    rename_result = self._invoice_service.rename_products(
+                        self._name_changes, admin_username=self._admin_username
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result["rename_error"] = str(exc)
+                else:
+                    result["updated_lines"] = int(rename_result.updated_lines)
+                    result["updated_invoice_ids"] = [
+                        int(invoice_id)
+                        for invoice_id in rename_result.updated_invoice_ids
+                    ]
+            self.succeeded.emit(result)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit()
 
 
 class InventoryController(QObject):
@@ -41,6 +106,9 @@ class InventoryController(QObject):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._last_inventory_log_details: str | None = None
         self._last_inventory_log_at: float = 0.0
+        self._save_thread: QThread | None = None
+        self._save_worker: _InventorySaveWorker | None = None
+        self._save_context: _InventorySaveContext | None = None
 
         self.page.reload_requested.connect(self.reload)
         self.page.save_requested.connect(self.save)
@@ -58,6 +126,9 @@ class InventoryController(QObject):
         self.toast.show(self.tr("موجودی بارگذاری مجدد شد"), "success")
 
     def save(self) -> None:
+        if self._save_thread is not None and self._save_thread.isRunning():
+            self.toast.show(self.tr("ذخیره موجودی در حال انجام است"), "info")
+            return
         df = self.page.get_dataframe()
         if df is None:
             return
@@ -71,13 +142,6 @@ class InventoryController(QObject):
             else None
         )
         admin_username = admin.username if admin else None
-        try:
-            self.inventory_service.save(df, admin_username=admin_username)
-        except InventoryFileError as exc:
-            dialogs.show_error(self.page, self.tr("خطای موجودی"), str(exc))
-            self.toast.show(self.tr("ذخیره موجودی ناموفق بود"), "error")
-            self._logger.exception("Failed to save inventory")
-            return
         name_changes = self.page.get_name_changes()
         if name_changes and df is not None and "product_name" in df.columns:
             current_names = {
@@ -89,108 +153,183 @@ class InventoryController(QObject):
                 for old, new in name_changes
                 if normalize_text(new) in current_names
             ]
+        self._save_context = _InventorySaveContext(
+            df=df,
+            old_df=old_df,
+            admin=admin,
+            admin_username=admin_username,
+            name_changes=name_changes,
+        )
+        self._start_save_worker()
+
+    def _start_save_worker(self) -> None:
+        context = self._save_context
+        if context is None:
+            return
+        self.page.set_save_in_progress(True, self.tr("در حال ذخیره موجودی..."))
+        self.toast.show(self.tr("ذخیره موجودی آغاز شد"), "info")
+        thread = QThread(self)
+        worker = _InventorySaveWorker(
+            self.inventory_service,
+            self.invoice_service,
+            context.df,
+            context.admin_username,
+            context.name_changes,
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_save_progress)
+        worker.succeeded.connect(self._on_save_succeeded)
+        worker.failed.connect(self._on_save_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_save_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._save_thread = thread
+        self._save_worker = worker
+        thread.start()
+
+    @Slot(str)
+    def _on_save_progress(self, stage: str) -> None:
+        status_map = {
+            "saving_inventory": self.tr("در حال ذخیره موجودی..."),
+            "renaming_invoices": self.tr(
+                "در حال به‌روزرسانی نام کالاها در فاکتورها..."
+            ),
+        }
+        self.page.set_save_in_progress(
+            True, status_map.get(stage, self.tr("در حال ذخیره موجودی..."))
+        )
+
+    @Slot(dict)
+    def _on_save_succeeded(self, payload: dict[str, Any]) -> None:
+        context = self._save_context
+        if context is None:
+            self.page.set_save_in_progress(False)
+            return
+        self.page.set_save_in_progress(
+            True, self.tr("در حال نهایی‌سازی ذخیره...")
+        )
         clear_changes = True
-        if name_changes and self.invoice_service is not None:
-            try:
-                rename_result = self.invoice_service.rename_products(
-                    name_changes, admin_username=admin_username
-                )
-            except Exception:  # noqa: BLE001
-                clear_changes = False
-                dialogs.show_error(
-                    self.page,
-                    self.tr("خطای به‌روزرسانی فاکتور"),
-                    self.tr("به‌روزرسانی نام کالاها در فاکتورها ناموفق بود."),
-                )
-                self._logger.exception(
-                    "Failed to update invoice product names."
-                )
-            else:
-                updated = rename_result.updated_lines
-                if updated:
-                    invoice_ids = rename_result.updated_invoice_ids
-                    invoice_count = len(invoice_ids)
-                    if self._refresh_history_views is not None:
-                        self._refresh_history_views()
-                    if self.action_log_service:
-                        before_names = "\n".join(
-                            f"- {old}" for old, _ in name_changes
+        rename_error = str(payload.get("rename_error", "")).strip()
+        if rename_error:
+            clear_changes = False
+            dialogs.show_error(
+                self.page,
+                self.tr("خطای به‌روزرسانی فاکتور"),
+                self.tr("به‌روزرسانی نام کالاها در فاکتورها ناموفق بود."),
+            )
+            self._logger.error(
+                "Failed to update invoice product names: %s", rename_error
+            )
+        else:
+            updated = int(payload.get("updated_lines", 0) or 0)
+            if updated:
+                invoice_ids = [
+                    int(invoice_id)
+                    for invoice_id in payload.get("updated_invoice_ids", [])
+                ]
+                invoice_count = len(invoice_ids)
+                if self._refresh_history_views is not None:
+                    self._refresh_history_views()
+                if self.action_log_service:
+                    before_names = "\n".join(
+                        f"- {old}" for old, _ in context.name_changes
+                    )
+                    after_names = "\n".join(
+                        f"- {new}" for _, new in context.name_changes
+                    )
+                    detail_lines = [
+                        self.tr("قبل:\n{before_names}").format(
+                            before_names=before_names or self.tr("(هیچ)")
+                        ),
+                        self.tr("بعد:\n{after_names}").format(
+                            after_names=after_names or self.tr("(هیچ)")
+                        ),
+                    ]
+                    if invoice_ids:
+                        invoice_text = ", ".join(
+                            str(invoice_id) for invoice_id in invoice_ids
                         )
-                        after_names = "\n".join(
-                            f"- {new}" for _, new in name_changes
-                        )
-                        detail_lines = [
-                            self.tr("قبل:\n{before_names}").format(
-                                before_names=before_names or self.tr("(هیچ)")
-                            ),
-                            self.tr("بعد:\n{after_names}").format(
-                                after_names=after_names or self.tr("(هیچ)")
-                            ),
-                        ]
-                        if invoice_ids:
-                            invoice_text = ", ".join(
-                                str(invoice_id) for invoice_id in invoice_ids
-                            )
-                            detail_lines.append(
-                                self.tr("فاکتورهای تحت تاثیر: {ids}").format(
-                                    ids=invoice_text
-                                )
-                            )
                         detail_lines.append(
-                            self.tr("تعداد ردیف‌های تغییرکرده: {count}").format(
-                                count=updated
+                            self.tr("فاکتورهای تحت تاثیر: {ids}").format(
+                                ids=invoice_text
                             )
                         )
-                        details = "\n".join(detail_lines)
-                        self.action_log_service.log_action(
-                            "invoice_product_rename",
-                            self.tr("به‌روزرسانی نام کالا در فاکتورها"),
-                            details,
-                            admin=admin,
+                    detail_lines.append(
+                        self.tr("تعداد ردیف‌های تغییرکرده: {count}").format(
+                            count=updated
                         )
-                    shown_ids = ", ".join(
-                        str(invoice_id) for invoice_id in invoice_ids[:25]
                     )
-                    if len(invoice_ids) > 25:
-                        shown_ids += (
-                            f", ... (+{len(invoice_ids) - 25} "
-                            + self.tr("مورد دیگر")
-                            + ")"
-                        )
-                    if shown_ids:
-                        dialogs.show_info(
-                            self.page,
-                            self.tr("به‌روزرسانی فاکتور"),
-                            (
-                                self.tr(
-                                    "{updated} ردیف فاکتور در {count} فاکتور به‌روزرسانی شد.\n"
-                                ).format(updated=updated, count=invoice_count)
-                                + self.tr("شناسه فاکتورها: {ids}").format(
-                                    ids=shown_ids
-                                )
-                            ),
-                        )
-                    self.toast.show(
-                        self.tr(
-                            "{updated} ردیف در {count} فاکتور به‌روزرسانی شد"
-                        ).format(updated=updated, count=invoice_count),
-                        "success",
+                    details = "\n".join(detail_lines)
+                    self.action_log_service.log_action(
+                        "invoice_product_rename",
+                        self.tr("به‌روزرسانی نام کالا در فاکتورها"),
+                        details,
+                        admin=context.admin,
                     )
+                shown_ids = ", ".join(
+                    str(invoice_id) for invoice_id in invoice_ids[:25]
+                )
+                if len(invoice_ids) > 25:
+                    shown_ids += (
+                        f", ... (+{len(invoice_ids) - 25} "
+                        + self.tr("مورد دیگر")
+                        + ")"
+                    )
+                if shown_ids:
+                    dialogs.show_info(
+                        self.page,
+                        self.tr("به‌روزرسانی فاکتور"),
+                        (
+                            self.tr(
+                                "{updated} ردیف فاکتور در {count} فاکتور به‌روزرسانی شد.\n"
+                            ).format(updated=updated, count=invoice_count)
+                            + self.tr("شناسه فاکتورها: {ids}").format(
+                                ids=shown_ids
+                            )
+                        ),
+                    )
+                self.toast.show(
+                    self.tr(
+                        "{updated} ردیف در {count} فاکتور به‌روزرسانی شد"
+                    ).format(updated=updated, count=invoice_count),
+                    "success",
+                )
         if clear_changes:
             self.page.clear_name_changes()
-        if old_df is not None:
-            details = self._build_inventory_diff(old_df, df)
+        if context.old_df is not None:
+            details = self._build_inventory_diff(context.old_df, context.df)
             if details and self.action_log_service:
                 if not self._is_duplicate_inventory_log(details):
                     self.action_log_service.log_action(
                         "inventory_edit",
                         self.tr("ویرایش دستی موجودی"),
                         details,
-                        admin=admin,
+                        admin=context.admin,
                     )
                     self._last_inventory_log_details = details
                     self._last_inventory_log_at = time.monotonic()
+        self._save_context = None
+        self.page.set_save_in_progress(False)
         self.toast.show(self.tr("موجودی ذخیره شد"), "success")
+
+    @Slot(str)
+    def _on_save_failed(self, message: str) -> None:
+        self.page.set_save_in_progress(False)
+        dialogs.show_error(
+            self.page,
+            self.tr("خطای موجودی"),
+            message or self.tr("ذخیره موجودی ناموفق بود."),
+        )
+        self.toast.show(self.tr("ذخیره موجودی ناموفق بود"), "error")
+        self._logger.error("Failed to save inventory: %s", message)
+        self._save_context = None
+
+    @Slot()
+    def _on_save_thread_finished(self) -> None:
+        self._save_thread = None
+        self._save_worker = None
 
     def export(self) -> None:
         df = self.page.get_dataframe()

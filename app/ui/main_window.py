@@ -530,7 +530,15 @@ class MainWindow(QMainWindow):
 
     def _shutdown_background_threads(self) -> None:
         threads = [
-            ("basalam", getattr(self.basalam_page, "_worker_thread", None))
+            ("basalam", getattr(self.basalam_page, "_worker_thread", None)),
+            (
+                "inventory-save",
+                getattr(
+                    getattr(self, "inventory_controller", None),
+                    "_save_thread",
+                    None,
+                ),
+            ),
         ]
         for name, thread in threads:
             if thread is None:

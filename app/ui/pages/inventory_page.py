@@ -55,6 +55,9 @@ class InventoryPage(QWidget):
         self._column_fit_timer.timeout.connect(self._apply_deferred_fit)
         self._toolbar_mode: str | None = None
         self._sell_price_alarm_percent = 20.0
+        self._controls_enabled = True
+        self._save_in_progress = False
+        self._save_button_default_text = self.tr("ذخیره تغییرات")
 
         self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(24, 24, 24, 24)
@@ -80,7 +83,7 @@ class InventoryPage(QWidget):
         self.reload_button = QPushButton(self.tr("بارگذاری مجدد"))
         self.reload_button.clicked.connect(self.reload_requested.emit)
 
-        self.save_button = QPushButton(self.tr("ذخیره تغییرات"))
+        self.save_button = QPushButton(self._save_button_default_text)
         self.save_button.clicked.connect(self.save_requested.emit)
 
         self.add_row_button = QPushButton(self.tr("افزودن ردیف"))
@@ -266,13 +269,31 @@ class InventoryPage(QWidget):
         self.set_inventory(current_df, blocked_columns=blocked_columns)
 
     def set_enabled_state(self, enabled: bool) -> None:
-        self.search_input.setEnabled(enabled)
-        self.reload_button.setEnabled(enabled)
-        self.save_button.setEnabled(enabled)
-        self.add_row_button.setEnabled(enabled)
-        self.delete_row_button.setEnabled(enabled and self._has_selection())
-        self.export_button.setEnabled(enabled)
-        self.table.setEnabled(enabled)
+        self._controls_enabled = bool(enabled)
+        self._apply_interaction_state()
+
+    def set_save_in_progress(
+        self, in_progress: bool, message: str | None = None
+    ) -> None:
+        self._save_in_progress = bool(in_progress)
+        if self._save_in_progress:
+            if message:
+                self.save_button.setText(message)
+            elif self.save_button.text() == self._save_button_default_text:
+                self.save_button.setText(self.tr("در حال ذخیره..."))
+        else:
+            self.save_button.setText(self._save_button_default_text)
+        self._apply_interaction_state()
+
+    def _apply_interaction_state(self) -> None:
+        interactive = self._controls_enabled and not self._save_in_progress
+        self.search_input.setEnabled(interactive)
+        self.reload_button.setEnabled(interactive)
+        self.save_button.setEnabled(interactive)
+        self.add_row_button.setEnabled(interactive)
+        self.export_button.setEnabled(interactive)
+        self.table.setEnabled(interactive)
+        self._update_delete_button()
 
     def add_row(self) -> None:
         if not self._model:
@@ -348,7 +369,12 @@ class InventoryPage(QWidget):
         return bool(self.table.selectedIndexes())
 
     def _update_delete_button(self) -> None:
-        enabled = self.table.isEnabled() and self._has_selection()
+        enabled = (
+            self._controls_enabled
+            and not self._save_in_progress
+            and self.table.isEnabled()
+            and self._has_selection()
+        )
         self.delete_row_button.setEnabled(enabled)
 
     def _handle_cell_edit(
