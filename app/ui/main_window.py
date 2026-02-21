@@ -199,9 +199,6 @@ class MainWindow(QMainWindow):
         self.purchase_page.set_product_provider(
             self.inventory_service.get_product_names
         )
-        self.purchase_page.set_sell_price_provider(
-            self.inventory_service.get_sell_price_for_product
-        )
 
         self.apply_theme(self.config.theme)
         self.initialize_inventory()
@@ -432,9 +429,6 @@ class MainWindow(QMainWindow):
         self.inventory_page.set_inventory(df)
         self.purchase_page.set_product_provider(
             self.inventory_service.get_product_names
-        )
-        self.purchase_page.set_sell_price_provider(
-            self.inventory_service.get_sell_price_for_product
         )
         self.sales_page.set_enabled_state(True)
         self.purchase_page.set_enabled_state(True)
