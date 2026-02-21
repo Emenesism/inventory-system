@@ -15,7 +15,7 @@ from app.utils import dialogs
 from app.utils.excel import (
     style_inventory_export_sheet,
 )
-from app.utils.text import normalize_text
+from app.utils.text import is_empty_marker, normalize_text
 
 
 class InventoryController(QObject):
@@ -414,18 +414,7 @@ class InventoryController(QObject):
 
     @staticmethod
     def _value_missing(value) -> bool:  # noqa: ANN001
-        if value is None:
-            return True
-        try:
-            compare = value != value
-            if isinstance(compare, bool):
-                if compare:
-                    return True
-            elif str(compare).strip().lower() == "true":
-                return True
-        except Exception:  # noqa: BLE001
-            pass
-        return str(value).strip().lower() in {"nan", "none", "<na>", "nat"}
+        return is_empty_marker(value)
 
     def _values_differ(self, a, b) -> bool:  # noqa: ANN001
         if self._value_missing(a) and self._value_missing(b):
