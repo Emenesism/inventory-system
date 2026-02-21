@@ -22,6 +22,7 @@ class DataFrameTableModel(QAbstractTableModel):
         "sell_price",
         "alarm",
     }
+    _SELL_PRICE_ALERT_BASE_OFFSET = 10000.0
 
     cell_edited = Signal(int, str, object, object)
 
@@ -384,7 +385,8 @@ class DataFrameTableModel(QAbstractTableModel):
         if sell_price is None:
             sell_price = 0.0
 
-        margin = ((sell_price - last_buy) / last_buy) * 100.0
+        alert_base = last_buy + self._SELL_PRICE_ALERT_BASE_OFFSET
+        margin = ((sell_price - alert_base) / alert_base) * 100.0
         threshold = self._sell_price_alarm_percent
         if margin < 0:
             return margin, max(0.0, threshold - margin), 1.0
@@ -403,11 +405,11 @@ class DataFrameTableModel(QAbstractTableModel):
             return "آخرین قیمت خرید صفر است؛ محاسبه درصد اختلاف ممکن نیست."
         if severity <= 0:
             return (
-                f"اختلاف فروش نسبت به آخرین خرید: {margin:.1f}% | "
+                f"اختلاف فروش نسبت به (آخرین خرید + 10000): {margin:.1f}% | "
                 f"حداقل مجاز: {self._sell_price_alarm_percent:.1f}%"
             )
         return (
-            f"اختلاف فروش نسبت به آخرین خرید: {margin:.1f}% | "
+            f"اختلاف فروش نسبت به (آخرین خرید + 10000): {margin:.1f}% | "
             f"کمبود نسبت به حداقل: {shortfall:.1f}% | "
             f"حداقل مجاز: {self._sell_price_alarm_percent:.1f}%"
         )
