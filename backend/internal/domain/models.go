@@ -101,6 +101,11 @@ type InventoryImportRow struct {
 	Source       *string `json:"source,omitempty"`
 }
 
+type InventorySyncResult struct {
+	Upserted int `json:"upserted"`
+	Deleted  int `json:"deleted"`
+}
+
 type ProductPriceRow struct {
 	ProductName string  `json:"product_name"`
 	Price       float64 `json:"price"`
