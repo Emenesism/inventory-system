@@ -11,7 +11,7 @@ from app.utils.numeric import (
     is_price_column,
     normalize_numeric_text,
 )
-from app.utils.text import normalize_text
+from app.utils.text import is_empty_marker, normalize_text
 
 
 class DataFrameTableModel(QAbstractTableModel):
@@ -90,7 +90,7 @@ class DataFrameTableModel(QAbstractTableModel):
         value = self._full_dataframe.iat[index.row(), index.column()]
         is_product_column = self._is_product_column(column_name)
         if role == Qt.DisplayRole:
-            if pd.isna(value):
+            if pd.isna(value) or is_empty_marker(value):
                 return "-" if column_name in {"منبع", "source"} else ""
             if isinstance(value, np.integer):
                 value = int(value)
@@ -118,7 +118,7 @@ class DataFrameTableModel(QAbstractTableModel):
         if role == Qt.UserRole:
             return self._sort_value(index.row(), str(column_name), value)
         if role == Qt.EditRole:
-            if pd.isna(value):
+            if pd.isna(value) or is_empty_marker(value):
                 return ""
             normalized_column = str(column_name).strip().lower()
             if normalized_column in self._INVENTORY_NUMERIC_COLUMNS or (
@@ -316,7 +316,7 @@ class DataFrameTableModel(QAbstractTableModel):
         for row in self._full_dataframe.itertuples(index=False, name=None):
             parts: list[str] = []
             for value in row:
-                if pd.isna(value):
+                if pd.isna(value) or is_empty_marker(value):
                     continue
                 parts.append(str(value))
             cache.append(normalize_text(" ".join(parts)))
@@ -328,7 +328,7 @@ class DataFrameTableModel(QAbstractTableModel):
         row_values = self._full_dataframe.iloc[row]
         parts: list[str] = []
         for value in row_values.values:
-            if pd.isna(value):
+            if pd.isna(value) or is_empty_marker(value):
                 continue
             parts.append(str(value))
         if row >= len(self._search_cache):
@@ -363,7 +363,11 @@ class DataFrameTableModel(QAbstractTableModel):
                 return 0.0
             return numeric
         if self._is_product_column(column_name):
+            if is_empty_marker(value):
+                return ""
             return normalize_text(str(value or ""))
+        if is_empty_marker(value):
+            return ""
         return normalize_text(str(value or ""))
 
     def _sell_price_alert_severity(self, row: int) -> float:
