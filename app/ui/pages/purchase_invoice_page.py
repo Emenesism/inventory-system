@@ -126,6 +126,8 @@ class PurchaseInvoicePage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.product_provider: Callable[[], list[str]] | None = None
+        self._cached_product_names: list[str] = []
+        self._product_cache_loaded = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -202,6 +204,8 @@ class PurchaseInvoicePage(QWidget):
 
     def set_product_provider(self, provider: Callable[[], list[str]]) -> None:
         self.product_provider = provider
+        self._cached_product_names = []
+        self._product_cache_loaded = False
 
     def add_row(self) -> None:
         row = self.table.rowCount()
@@ -318,7 +322,7 @@ class PurchaseInvoicePage(QWidget):
         from PySide6.QtCore import QStringListModel, Qt
         from PySide6.QtWidgets import QCompleter
 
-        matches = get_fuzzy_matches(text, self.product_provider())
+        matches = get_fuzzy_matches(text, self._get_cached_product_names())
         completer = widget.completer()
 
         if not matches:
@@ -340,3 +344,20 @@ class PurchaseInvoicePage(QWidget):
             else:
                 completer.setModel(QStringListModel(matches))
         completer.complete()
+
+    def _get_cached_product_names(self) -> list[str]:
+        if self._product_cache_loaded:
+            return self._cached_product_names
+        if self.product_provider is None:
+            self._product_cache_loaded = True
+            self._cached_product_names = []
+            return self._cached_product_names
+        try:
+            names = self.product_provider()
+        except Exception:  # noqa: BLE001
+            names = []
+        self._cached_product_names = [
+            value for value in (str(name).strip() for name in names) if value
+        ]
+        self._product_cache_loaded = True
+        return self._cached_product_names
