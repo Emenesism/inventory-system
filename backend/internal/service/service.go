@@ -61,6 +61,19 @@ func (s *Service) ReplaceInventory(ctx context.Context, rows []domain.InventoryI
 	return s.repo.ReplaceInventory(ctx, rows)
 }
 
+func (s *Service) SyncInventory(
+	ctx context.Context,
+	upserts []domain.InventoryImportRow,
+	deletes []string,
+) (domain.InventorySyncResult, error) {
+	if len(upserts) == 0 && len(deletes) == 0 {
+		return domain.InventorySyncResult{}, fmt.Errorf(
+			"upserts or deletes are required",
+		)
+	}
+	return s.repo.SyncInventory(ctx, upserts, deletes)
+}
+
 func (s *Service) ImportSellPrices(
 	ctx context.Context,
 	rows []domain.ProductPriceRow,
