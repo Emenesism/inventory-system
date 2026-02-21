@@ -9,7 +9,7 @@ from app.core.config import AppConfig
 from app.data.inventory_store import InventoryStore
 from app.models.errors import InventoryFileError
 from app.services.backend_client import BackendAPIError, BackendClient
-from app.utils.text import normalize_text
+from app.utils.text import is_empty_marker, normalize_text
 
 
 class InventoryService:
@@ -154,7 +154,11 @@ class InventoryService:
                         ),
                         "sell_price": float(item.get("sell_price", 0.0) or 0.0),
                         "alarm": item.get("alarm"),
-                        "source": item.get("source"),
+                        "source": (
+                            None
+                            if is_empty_marker(item.get("source"))
+                            else str(item.get("source")).strip()
+                        ),
                     }
                 )
             df = pd.DataFrame(rows)
@@ -237,9 +241,11 @@ class InventoryService:
                         and str(alarm_value).strip() != ""
                         else None
                     ),
-                    "source": None
-                    if source_value is None or str(source_value).strip() == ""
-                    else str(source_value).strip(),
+                    "source": (
+                        None
+                        if is_empty_marker(source_value)
+                        else str(source_value).strip()
+                    ),
                 }
             )
 
