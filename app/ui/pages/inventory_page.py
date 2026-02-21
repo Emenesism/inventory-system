@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from app.utils import dialogs
 from app.utils.search import NormalizedFilterProxyModel
 from app.utils.table_models import DataFrameTableModel
-from app.utils.text import normalize_text
+from app.utils.text import is_empty_marker, normalize_text
 
 
 class InventoryPage(QWidget):
@@ -724,21 +724,19 @@ class InventoryPage(QWidget):
     ) -> int:
         if dataframe.empty or column_name not in dataframe.columns:
             return 0
-        values = (
-            dataframe[column_name]
-            .fillna("")
-            .astype(str)
-            .str.replace("\n", " ", regex=False)
-            .str.strip()
-        )
-        if values.empty:
+        values = [
+            ""
+            if is_empty_marker(value)
+            else str(value).replace("\n", " ").strip()
+            for value in dataframe[column_name].tolist()
+        ]
+        if not values:
             return 0
-        values = values.mask(values.str.lower() == "nan", "")
-        lengths = values.str.len()
-        max_len = int(lengths.max()) if not lengths.empty else 0
+        lengths = [len(value) for value in values]
+        max_len = max(lengths) if lengths else 0
         if max_len <= 0:
             return 0
-        longest_text = str(values.loc[lengths.idxmax()])
+        longest_text = values[lengths.index(max_len)]
         return self._text_width(metrics, longest_text, 28)
 
     def _ui_scale_factor(self) -> float:
