@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from html import escape
 
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QCoreApplication, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -37,6 +37,10 @@ class ActionsPage(QWidget):
         self._total_count = 0
         self._loading_more = False
         self._actions: list[ActionEntry] = []
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self.refresh)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -55,7 +59,7 @@ class ActionsPage(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("جستجو در اقدامات..."))
-        self.search_input.textChanged.connect(self.refresh)
+        self.search_input.textChanged.connect(self._queue_refresh)
         header.addWidget(self.search_input)
 
         refresh_button = QPushButton(self.tr("بروزرسانی"))
@@ -162,6 +166,7 @@ class ActionsPage(QWidget):
             self._overlay.raise_()
 
     def refresh(self) -> None:
+        self._search_timer.stop()
         self._actions = []
         self._loaded_count = 0
         search = self.search_input.text().strip()
@@ -177,6 +182,9 @@ class ActionsPage(QWidget):
         self.details_label.setText(self.tr("جزئیات اقدام را انتخاب کنید."))
         self.details_text.clear()
         self._load_more()
+
+    def _queue_refresh(self, _text: str) -> None:
+        self._search_timer.start()
 
     def _show_details(self) -> None:
         row = self.table.currentRow()
