@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.services.invoice_service import InvoiceService
 from app.utils.dates import to_jalali_datetime
+from app.utils.text import display_text
 
 
 class AnalyticsPage(QWidget):
@@ -272,7 +273,9 @@ class AnalyticsPage(QWidget):
 
         self.top_products_table.setRowCount(len(items))
         for row_idx, item in enumerate(items):
-            product_item = QTableWidgetItem(str(item.get("product_name", "")))
+            product_item = QTableWidgetItem(
+                display_text(item.get("product_name", ""), fallback="")
+            )
             product_item.setTextAlignment(
                 Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
             )
@@ -309,7 +312,9 @@ class AnalyticsPage(QWidget):
 
         self.unsold_table.setRowCount(len(items))
         for row_idx, item in enumerate(items):
-            product_item = QTableWidgetItem(str(item.get("product_name", "")))
+            product_item = QTableWidgetItem(
+                display_text(item.get("product_name", ""), fallback="")
+            )
             product_item.setTextAlignment(
                 Qt.AlignVCenter | Qt.AlignRight | Qt.AlignAbsolute
             )
@@ -328,7 +333,9 @@ class AnalyticsPage(QWidget):
             updated_item.setTextAlignment(Qt.AlignCenter)
             self.unsold_table.setItem(row_idx, 2, updated_item)
 
-            source_item = QTableWidgetItem(str(item.get("source", "") or "-"))
+            source_item = QTableWidgetItem(
+                display_text(item.get("source", ""), fallback="-")
+            )
             source_item.setTextAlignment(Qt.AlignCenter)
             self.unsold_table.setItem(row_idx, 3, source_item)
 
