@@ -39,6 +39,7 @@ Default admin is auto-created on first run:
 - `GET /api/v1/inventory/low-stock`
 - `POST /api/v1/inventory/import-excel` (multipart field: `file`)
 - `POST /api/v1/inventory/replace`
+- `POST /api/v1/inventory/sync` (`upserts` + `deletes`)
 - `POST /api/v1/invoices/purchase`
 - `POST /api/v1/invoices/sales`
 - `GET /api/v1/invoices`
