@@ -322,6 +322,32 @@ func (h *Handler) ReplaceInventory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"replaced": len(req.Rows)})
 }
 
+type syncInventoryRequest struct {
+	Upserts []domain.InventoryImportRow `json:"upserts"`
+	Deletes []string                    `json:"deletes"`
+}
+
+func (h *Handler) SyncInventory(w http.ResponseWriter, r *http.Request) {
+	var req syncInventoryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(req.Upserts) == 0 && len(req.Deletes) == 0 {
+		writeError(w, http.StatusBadRequest, "upserts or deletes are required")
+		return
+	}
+	result, err := h.svc.SyncInventory(r.Context(), req.Upserts, req.Deletes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"upserted": result.Upserted,
+		"deleted":  result.Deleted,
+	})
+}
+
 type createPurchaseInvoiceRequest struct {
 	InvoiceName   *string                    `json:"invoice_name"`
 	AdminUsername *string                    `json:"admin_username"`
