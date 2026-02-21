@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 
 import requests
@@ -783,8 +784,11 @@ class BasalamPage(QWidget):
         parts = [part.strip() for part in name.split(" | ")]
         cleaned: list[str] = []
         for part in parts:
-            if " : " in part:
-                left = part.split(" : ", 1)[0].strip()
+            normalized_part = BasalamPage._normalize_property_colon_spacing(
+                part
+            )
+            if ":" in normalized_part:
+                left = normalized_part.split(":", 1)[0].strip()
                 if left in PROPERTY_TITLES:
                     continue
             if part:
@@ -792,6 +796,18 @@ class BasalamPage(QWidget):
         if cleaned:
             return " | ".join(cleaned)
         return name.strip()
+
+    @staticmethod
+    def _normalize_property_colon_spacing(name: str) -> str:
+        if not isinstance(name, str):
+            return ""
+        normalized = name.strip()
+        if not normalized:
+            return ""
+        for title in PROPERTY_TITLES:
+            pattern = rf"({re.escape(title)})\s*:\s*"
+            normalized = re.sub(pattern, rf"\1: ", normalized)
+        return normalized
 
     @staticmethod
     def _apply_export_merges(
@@ -1048,7 +1064,7 @@ class BasalamPage(QWidget):
         value = record.get("product")
         name = self._extract_name_from_value(value)
         if name:
-            return name
+            return self._normalize_property_colon_spacing(name)
         for key in (
             "product_name",
             "productTitle",
@@ -1058,7 +1074,7 @@ class BasalamPage(QWidget):
         ):
             value = record.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return self._normalize_property_colon_spacing(value)
         return None
 
     def _get_quantity(self, record: dict):
@@ -1147,12 +1163,13 @@ class BasalamPage(QWidget):
         for title in PROPERTY_TITLES:
             value = properties.get(title)
             if value:
-                parts.append(f"{title} : {value}")
+                parts.append(f"{title}: {value}")
         if not parts:
-            return name
+            return BasalamPage._normalize_property_colon_spacing(name)
         if name:
-            return name + " " + " | ".join(parts)
-        return " | ".join(parts)
+            combined = name + " " + " | ".join(parts)
+            return BasalamPage._normalize_property_colon_spacing(combined)
+        return BasalamPage._normalize_property_colon_spacing(" | ".join(parts))
 
     @staticmethod
     def _pretty_column(name: str) -> str:
