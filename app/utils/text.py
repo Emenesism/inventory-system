@@ -31,6 +31,7 @@ _PUNCTUATION = {
     "\u200c": " ",
     "\u200d": " ",
 }
+_EMPTY_MARKERS = {"nan", "none", "<na>", "nat", "null"}
 
 
 def normalize_text(value: str) -> str:
@@ -42,3 +43,29 @@ def normalize_text(value: str) -> str:
         text = text.replace(key, replacement)
     text = re.sub(r"\s+", " ", text).strip()
     return text.casefold()
+
+
+def is_empty_marker(value: object) -> bool:
+    if value is None:
+        return True
+    try:
+        compare = value != value
+        if isinstance(compare, bool) and compare:
+            return True
+        if (
+            not isinstance(compare, bool)
+            and str(compare).strip().casefold() == "true"
+        ):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    text = str(value).strip()
+    if not text:
+        return True
+    return text.casefold() in _EMPTY_MARKERS
+
+
+def display_text(value: object, fallback: str = "") -> str:
+    if is_empty_marker(value):
+        return fallback
+    return str(value).strip()
