@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -40,6 +40,7 @@ class _InventorySaveWorker(QObject):
         inventory_service: InventoryService,
         invoice_service: InvoiceService | None,
         df,
+        old_df,
         admin_username: str | None,
         name_changes: list[tuple[str, str]],
     ) -> None:  # noqa: ANN001
@@ -47,6 +48,7 @@ class _InventorySaveWorker(QObject):
         self._inventory_service = inventory_service
         self._invoice_service = invoice_service
         self._df = df
+        self._old_df = old_df
         self._admin_username = admin_username
         self._name_changes = name_changes
 
@@ -61,6 +63,9 @@ class _InventorySaveWorker(QObject):
                 "updated_lines": 0,
                 "updated_invoice_ids": [],
                 "rename_error": "",
+                "diff_details": "",
+                "diff_failed": False,
+                "diff_error": "",
             }
             if self._name_changes and self._invoice_service is not None:
                 self.progress.emit("renaming_invoices")
@@ -76,6 +81,17 @@ class _InventorySaveWorker(QObject):
                         int(invoice_id)
                         for invoice_id in rename_result.updated_invoice_ids
                     ]
+            if self._old_df is not None:
+                self.progress.emit("building_diff")
+                try:
+                    result["diff_details"] = (
+                        InventoryController.build_inventory_diff_for_worker(
+                            self._old_df, self._df
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result["diff_failed"] = True
+                    result["diff_error"] = str(exc)
             self.succeeded.emit(result)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
@@ -173,6 +189,7 @@ class InventoryController(QObject):
             self.inventory_service,
             self.invoice_service,
             context.df,
+            context.old_df,
             context.admin_username,
             context.name_changes,
         )
@@ -196,6 +213,7 @@ class InventoryController(QObject):
             "renaming_invoices": self.tr(
                 "در حال به‌روزرسانی نام کالاها در فاکتورها..."
             ),
+            "building_diff": self.tr("در حال آماده‌سازی گزارش تغییرات..."),
         }
         self.page.set_save_in_progress(
             True, status_map.get(stage, self.tr("در حال ذخیره موجودی..."))
@@ -298,18 +316,23 @@ class InventoryController(QObject):
                 )
         if clear_changes:
             self.page.clear_name_changes()
-        if context.old_df is not None:
+        details = str(payload.get("diff_details", "") or "")
+        if context.old_df is not None and bool(payload.get("diff_failed")):
+            self._logger.warning(
+                "Background diff builder failed; falling back to UI thread: %s",
+                str(payload.get("diff_error", "") or "-"),
+            )
             details = self._build_inventory_diff(context.old_df, context.df)
-            if details and self.action_log_service:
-                if not self._is_duplicate_inventory_log(details):
-                    self.action_log_service.log_action(
-                        "inventory_edit",
-                        self.tr("ویرایش دستی موجودی"),
-                        details,
-                        admin=context.admin,
-                    )
-                    self._last_inventory_log_details = details
-                    self._last_inventory_log_at = time.monotonic()
+        if details and self.action_log_service:
+            if not self._is_duplicate_inventory_log(details):
+                self.action_log_service.log_action(
+                    "inventory_edit",
+                    self.tr("ویرایش دستی موجودی"),
+                    details,
+                    admin=context.admin,
+                )
+                self._last_inventory_log_details = details
+                self._last_inventory_log_at = time.monotonic()
         self._save_context = None
         self.page.set_save_in_progress(False)
         self.toast.show(self.tr("موجودی ذخیره شد"), "success")
@@ -442,7 +465,157 @@ class InventoryController(QObject):
         }
         return mapping.get(normalized, str(column_name))
 
+    @classmethod
+    def build_inventory_diff_for_worker(cls, old_df, new_df) -> str:  # noqa: ANN001
+        return cls._build_inventory_diff_fast(old_df, new_df)
+
     def _build_inventory_diff(self, old_df, new_df) -> str:  # noqa: ANN001
+        try:
+            return self._build_inventory_diff_fast(
+                old_df, new_df, translate=self.tr
+            )
+        except Exception:  # noqa: BLE001
+            self._logger.exception(
+                "Fast inventory diff failed. Falling back to legacy diff builder."
+            )
+            return self._build_inventory_diff_legacy(old_df, new_df)
+
+    @classmethod
+    def _build_inventory_diff_fast(
+        cls,
+        old_df,
+        new_df,
+        translate: Callable[[str], str] | None = None,
+    ) -> str:  # noqa: ANN001
+        columns: list[str] = []
+        old_columns = list(old_df.columns) if old_df is not None else []
+        new_columns = list(new_df.columns) if new_df is not None else []
+        for col in old_columns + new_columns:
+            col_name = str(col)
+            if col_name not in columns:
+                columns.append(col_name)
+        if "product_name" in columns:
+            columns = ["product_name"] + [
+                col for col in columns if col != "product_name"
+            ]
+
+        old_map, old_order, old_indexed = cls._prepare_inventory_diff_data(
+            old_df
+        )
+        new_map, new_order, new_indexed = cls._prepare_inventory_diff_data(
+            new_df
+        )
+
+        sections: list[str] = []
+        added = 0
+        edited = 0
+        removed = 0
+
+        shared_order = [key for key in new_order if key in old_map]
+        changed_keys: set[str] = set()
+        if shared_order:
+            old_shared = old_indexed.reindex(shared_order)
+            new_shared = new_indexed.reindex(shared_order)
+            changed_flags = [False] * len(shared_order)
+            compare_columns = [col for col in columns if col != "product_name"]
+            for col in compare_columns:
+                if col in old_shared.columns:
+                    old_values = old_shared[col].to_numpy()
+                else:
+                    old_values = [None] * len(shared_order)
+                if col in new_shared.columns:
+                    new_values = new_shared[col].to_numpy()
+                else:
+                    new_values = [None] * len(shared_order)
+                for idx, (old_value, new_value) in enumerate(
+                    zip(old_values, new_values)
+                ):
+                    if changed_flags[idx]:
+                        continue
+                    if cls._values_differ_static(old_value, new_value):
+                        changed_flags[idx] = True
+            changed_keys = {
+                shared_order[idx]
+                for idx, is_changed in enumerate(changed_flags)
+                if is_changed
+            }
+
+        for key in new_order:
+            new_row = new_map.get(key)
+            if new_row is None:
+                continue
+            old_row = old_map.get(key)
+            name = str(new_row.get("product_name", "")).strip() or key
+            if old_row is None:
+                added += 1
+                sections.append(
+                    cls._tr(
+                        "[افزودن کالا] {name}\n"
+                        "قبل:\n"
+                        "(وجود ندارد)\n"
+                        "بعد:\n"
+                        "{after_block}",
+                        translate,
+                    ).format(
+                        name=name,
+                        after_block=cls._format_inventory_row_block_static(
+                            new_row, columns, translate=translate
+                        ),
+                    )
+                )
+                continue
+            if key not in changed_keys:
+                continue
+            edited += 1
+            sections.append(
+                cls._tr(
+                    "[ویرایش کالا] {name}\n"
+                    "قبل:\n"
+                    "{before_block}\n"
+                    "بعد:\n"
+                    "{after_block}",
+                    translate,
+                ).format(
+                    name=name,
+                    before_block=cls._format_inventory_row_block_static(
+                        old_row, columns, translate=translate
+                    ),
+                    after_block=cls._format_inventory_row_block_static(
+                        new_row, columns, translate=translate
+                    ),
+                )
+            )
+
+        for key in old_order:
+            if key in new_map:
+                continue
+            old_row = old_map.get(key)
+            if old_row is None:
+                continue
+            removed += 1
+            name = str(old_row.get("product_name", "")).strip() or key
+            sections.append(
+                cls._tr(
+                    "[حذف کالا] {name}\nقبل:\n{before_block}\nبعد:\n(حذف شد)",
+                    translate,
+                ).format(
+                    name=name,
+                    before_block=cls._format_inventory_row_block_static(
+                        old_row, columns, translate=translate
+                    ),
+                )
+            )
+
+        if not sections:
+            return ""
+
+        summary = cls._tr(
+            "خلاصه تغییرات موجودی | افزودن: {added} | ویرایش: {edited} | حذف: {removed}",
+            translate,
+        ).format(added=added, edited=edited, removed=removed)
+        return summary + "\n\n" + "\n\n".join(sections)
+
+    def _build_inventory_diff_legacy(self, old_df, new_df) -> str:  # noqa: ANN001
         def key_map(df):
             return {
                 normalize_text(str(row["product_name"])): row
@@ -462,7 +635,6 @@ class InventoryController(QObject):
 
         old_map = key_map(old_df)
         new_map = key_map(new_df)
-
         sections: list[str] = []
         added = 0
         edited = 0
@@ -488,7 +660,6 @@ class InventoryController(QObject):
                     )
                 )
                 continue
-
             changed = any(
                 self._values_differ(old_row.get(col), new_row.get(col))
                 for col in columns
@@ -496,7 +667,6 @@ class InventoryController(QObject):
             )
             if not changed:
                 continue
-
             edited += 1
             sections.append(
                 self.tr(
@@ -534,21 +704,46 @@ class InventoryController(QObject):
 
         if not sections:
             return ""
-
         summary = self.tr(
             "خلاصه تغییرات موجودی | افزودن: {added} | ویرایش: {edited} | حذف: {removed}"
         ).format(added=added, edited=edited, removed=removed)
         return summary + "\n\n" + "\n\n".join(sections)
 
+    @classmethod
+    def _prepare_inventory_diff_data(cls, df):  # noqa: ANN001
+        if df is None:
+            return {}, [], None
+        if "product_name" not in df.columns:
+            return {}, [], df.iloc[0:0].copy()
+        working = df.copy()
+        name_series = working["product_name"].fillna("").astype(str).str.strip()
+        keys = name_series.map(normalize_text)
+        working = working.assign(_key=keys)
+        working = working[working["_key"] != ""].copy()
+        if working.empty:
+            return {}, [], working.set_index("_key", drop=False)
+        ordered_keys = list(dict.fromkeys(working["_key"].tolist()))
+        deduped = working.drop_duplicates(subset="_key", keep="last").copy()
+        indexed = deduped.set_index("_key", drop=False)
+        row_map = indexed.drop(columns=["_key"]).to_dict(orient="index")
+        return row_map, ordered_keys, indexed.drop(columns=["_key"])
+
     def _inventory_column_label(self, column_name: str) -> str:
+        return self._inventory_column_label_static(column_name, self.tr)
+
+    @staticmethod
+    def _inventory_column_label_static(
+        column_name: str, translate: Callable[[str], str] | None = None
+    ) -> str:
+        tr = translate or (lambda text: text)
         return {
-            "product_name": self.tr("نام کالا"),
-            "quantity": self.tr("تعداد"),
-            "avg_buy_price": self.tr("میانگین قیمت خرید"),
-            "last_buy_price": self.tr("آخرین قیمت خرید"),
-            "sell_price": self.tr("قیمت فروش"),
-            "alarm": self.tr("آلارم"),
-            "source": self.tr("منبع"),
+            "product_name": tr("نام کالا"),
+            "quantity": tr("تعداد"),
+            "avg_buy_price": tr("میانگین قیمت خرید"),
+            "last_buy_price": tr("آخرین قیمت خرید"),
+            "sell_price": tr("قیمت فروش"),
+            "alarm": tr("آلارم"),
+            "source": tr("منبع"),
         }.get(column_name, column_name)
 
     @staticmethod
@@ -556,7 +751,13 @@ class InventoryController(QObject):
         return is_empty_marker(value)
 
     def _values_differ(self, a, b) -> bool:  # noqa: ANN001
-        if self._value_missing(a) and self._value_missing(b):
+        return self._values_differ_static(a, b)
+
+    @staticmethod
+    def _values_differ_static(a, b) -> bool:  # noqa: ANN001
+        if InventoryController._value_missing(
+            a
+        ) and InventoryController._value_missing(b):
             return False
         try:
             if isinstance(a, (int, float)) or isinstance(b, (int, float)):
@@ -566,7 +767,11 @@ class InventoryController(QObject):
         return str(a) != str(b)
 
     def _format_inventory_value(self, value) -> str:  # noqa: ANN001
-        if self._value_missing(value):
+        return self._format_inventory_value_static(value)
+
+    @staticmethod
+    def _format_inventory_value_static(value) -> str:  # noqa: ANN001
+        if InventoryController._value_missing(value):
             return "-"
         if isinstance(value, float):
             rounded = round(value)
@@ -576,11 +781,33 @@ class InventoryController(QObject):
         return str(value)
 
     def _format_inventory_row_block(self, row, columns: list[str]) -> str:  # noqa: ANN001
-        headers = [self._inventory_column_label(col) for col in columns]
-        values = [self._format_inventory_value(row.get(col)) for col in columns]
+        return self._format_inventory_row_block_static(
+            row, columns, translate=self.tr
+        )
+
+    @classmethod
+    def _format_inventory_row_block_static(
+        cls,
+        row,
+        columns: list[str],
+        translate: Callable[[str], str] | None = None,
+    ) -> str:  # noqa: ANN001
+        headers = [
+            cls._inventory_column_label_static(col, translate=translate)
+            for col in columns
+        ]
+        values = [
+            cls._format_inventory_value_static(row.get(col)) for col in columns
+        ]
         header_row = " | ".join(headers)
         value_row = " | ".join(values)
         return header_row + "\n" + value_row
+
+    @staticmethod
+    def _tr(text: str, translate: Callable[[str], str] | None = None) -> str:
+        if translate is None:
+            return text
+        return translate(text)
 
     def _is_duplicate_inventory_log(self, details: str) -> bool:
         if self._last_inventory_log_details != details:
