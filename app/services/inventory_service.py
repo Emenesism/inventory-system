@@ -134,7 +134,11 @@ class InventoryService:
             while True:
                 payload = self._client.get(
                     "/api/v1/products",
-                    params={"limit": page_size, "offset": offset},
+                    params={
+                        "limit": page_size,
+                        "offset": offset,
+                        "view": "inventory",
+                    },
                 )
                 batch = (
                     payload.get("items", [])
@@ -240,10 +244,9 @@ class InventoryService:
     ) -> list[dict[str, object]]:
         if df is None:
             return []
-        rows: list[dict[str, object]] = []
         df_to_save = df.copy()
         if "product_name" not in df_to_save.columns:
-            return rows
+            return []
         if "quantity" not in df_to_save.columns:
             df_to_save["quantity"] = 0
         if "avg_buy_price" not in df_to_save.columns:
@@ -256,54 +259,44 @@ class InventoryService:
             df_to_save["alarm"] = None
         if "source" not in df_to_save.columns:
             df_to_save["source"] = None
+        working = df_to_save[self._INVENTORY_COLUMNS].copy()
+        working["product_name"] = (
+            working["product_name"].fillna("").astype(str).str.strip()
+        )
+        working = working[working["product_name"] != ""].copy()
+        if working.empty:
+            return []
 
-        for _, row in df_to_save.iterrows():
-            name = str(row.get("product_name", "")).strip()
-            if not name:
-                continue
-            quantity_value = pd.to_numeric(
-                row.get("quantity", 0), errors="coerce"
-            )
-            avg_value = pd.to_numeric(
-                row.get("avg_buy_price", 0), errors="coerce"
-            )
-            last_value = pd.to_numeric(
-                row.get("last_buy_price", 0), errors="coerce"
-            )
-            sell_value = pd.to_numeric(
-                row.get("sell_price", 0), errors="coerce"
-            )
-            alarm_value = row.get("alarm")
-            source_value = row.get("source")
-            rows.append(
-                {
-                    "product_name": name,
-                    "quantity": (
-                        int(quantity_value) if pd.notna(quantity_value) else 0
-                    ),
-                    "avg_buy_price": (
-                        float(avg_value) if pd.notna(avg_value) else 0.0
-                    ),
-                    "last_buy_price": (
-                        float(last_value) if pd.notna(last_value) else 0.0
-                    ),
-                    "sell_price": (
-                        float(sell_value) if pd.notna(sell_value) else 0.0
-                    ),
-                    "alarm": (
-                        int(alarm_value)
-                        if pd.notna(alarm_value)
-                        and str(alarm_value).strip() != ""
-                        else None
-                    ),
-                    "source": (
-                        None
-                        if is_empty_marker(source_value)
-                        else str(source_value).strip()
-                    ),
-                }
-            )
-        return rows
+        working["quantity"] = (
+            pd.to_numeric(working["quantity"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        working["avg_buy_price"] = (
+            pd.to_numeric(working["avg_buy_price"], errors="coerce")
+            .fillna(0.0)
+            .astype(float)
+        )
+        working["last_buy_price"] = (
+            pd.to_numeric(working["last_buy_price"], errors="coerce")
+            .fillna(0.0)
+            .astype(float)
+        )
+        working["sell_price"] = (
+            pd.to_numeric(working["sell_price"], errors="coerce")
+            .fillna(0.0)
+            .astype(float)
+        )
+        alarm_numeric = pd.to_numeric(working["alarm"], errors="coerce")
+        working["alarm"] = [
+            int(value) if pd.notna(value) else None
+            for value in alarm_numeric.tolist()
+        ]
+        working["source"] = [
+            None if is_empty_marker(value) else str(value).strip()
+            for value in working["source"].tolist()
+        ]
+        return working.to_dict(orient="records")
 
     def _compute_inventory_delta(
         self,

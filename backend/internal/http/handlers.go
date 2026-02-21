@@ -21,6 +21,16 @@ type Handler struct {
 	svc *service.Service
 }
 
+type inventoryProductView struct {
+	ProductName  string  `json:"product_name"`
+	Quantity     int     `json:"quantity"`
+	AvgBuyPrice  float64 `json:"avg_buy_price"`
+	LastBuyPrice float64 `json:"last_buy_price"`
+	SellPrice    float64 `json:"sell_price"`
+	Alarm        *int    `json:"alarm,omitempty"`
+	Source       *string `json:"source,omitempty"`
+}
+
 func NewHandler(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
@@ -62,6 +72,26 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.ListProducts(r.Context(), query.Get("search"), limit, offset, threshold)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(query.Get("view")), "inventory") {
+		leanItems := make([]inventoryProductView, 0, len(items))
+		for _, item := range items {
+			leanItems = append(leanItems, inventoryProductView{
+				ProductName:  item.ProductName,
+				Quantity:     item.Quantity,
+				AvgBuyPrice:  item.AvgBuyPrice,
+				LastBuyPrice: item.LastBuyPrice,
+				SellPrice:    item.SellPrice,
+				Alarm:        item.Alarm,
+				Source:       item.Source,
+			})
+		}
+		writeJSON(
+			w,
+			http.StatusOK,
+			map[string]any{"items": leanItems, "count": len(leanItems)},
+		)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})

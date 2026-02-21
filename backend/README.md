@@ -31,6 +31,7 @@ Default admin is auto-created on first run:
 ## API overview
 - `GET /healthz`
 - `GET /api/v1/products`
+  - Optional query: `view=inventory` returns only inventory page fields
 - `GET /api/v1/products/{id}`
 - `POST /api/v1/products`
 - `PATCH /api/v1/products/{id}`
