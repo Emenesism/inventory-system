@@ -58,6 +58,95 @@ func (r *Repository) ReplaceInventory(ctx context.Context, rows []domain.Invento
 	return nil
 }
 
+func (r *Repository) SyncInventory(
+	ctx context.Context,
+	upserts []domain.InventoryImportRow,
+	deletes []string,
+) (domain.InventorySyncResult, error) {
+	result := domain.InventorySyncResult{}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return result, fmt.Errorf("begin sync inventory tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	deleteKeys := map[string]struct{}{}
+	for _, rawName := range deletes {
+		name := strings.TrimSpace(rawName)
+		if name == "" {
+			continue
+		}
+		key := normalizeInventoryNameKey(name)
+		if _, exists := deleteKeys[key]; exists {
+			continue
+		}
+		deleteKeys[key] = struct{}{}
+		cmd, execErr := tx.Exec(
+			ctx,
+			"DELETE FROM products WHERE LOWER(product_name) = LOWER($1)",
+			name,
+		)
+		if execErr != nil {
+			return result, fmt.Errorf("delete product %q during sync: %w", name, execErr)
+		}
+		result.Deleted += int(cmd.RowsAffected())
+	}
+
+	upsertByKey := map[string]domain.InventoryImportRow{}
+	for _, line := range upserts {
+		name := strings.TrimSpace(line.ProductName)
+		if name == "" {
+			continue
+		}
+		line.ProductName = name
+		upsertByKey[normalizeInventoryNameKey(name)] = line
+	}
+
+	for _, line := range upsertByKey {
+		if _, execErr := tx.Exec(ctx, `
+			INSERT INTO products (
+				product_name,
+				quantity,
+				avg_buy_price,
+				last_buy_price,
+				sell_price,
+				alarm,
+				source
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT ON CONSTRAINT uq_products_name_normalized
+			DO UPDATE SET
+				product_name = EXCLUDED.product_name,
+				quantity = EXCLUDED.quantity,
+				avg_buy_price = EXCLUDED.avg_buy_price,
+				last_buy_price = EXCLUDED.last_buy_price,
+				sell_price = EXCLUDED.sell_price,
+				alarm = EXCLUDED.alarm,
+				source = EXCLUDED.source,
+				updated_at = NOW()
+		`,
+			line.ProductName,
+			line.Quantity,
+			line.AvgBuyPrice,
+			line.LastBuyPrice,
+			line.SellPrice,
+			line.Alarm,
+			line.Source,
+		); execErr != nil {
+			return result, fmt.Errorf(
+				"upsert product %q during sync: %w",
+				line.ProductName,
+				execErr,
+			)
+		}
+		result.Upserted++
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return result, fmt.Errorf("commit sync inventory tx: %w", err)
+	}
+	return result, nil
+}
+
 func (r *Repository) ListAllProducts(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT
@@ -301,6 +390,10 @@ func normalizeSellPriceLookupName(value string) string {
 	normalized := replaced.Replace(value)
 	normalized = strings.Join(strings.Fields(normalized), " ")
 	return strings.ToLower(strings.TrimSpace(normalized))
+}
+
+func normalizeInventoryNameKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, error) {
