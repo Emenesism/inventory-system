@@ -262,11 +262,13 @@ class InvoicesPage(QWidget):
         self.invoices = []
         self._loaded_count = 0
         self._loading_more = False
-        self._total_count, self._total_amount = (
-            self.invoice_service.get_invoice_stats(
-                invoice_type=self._active_filter_type
-            )
+        first_page = self.invoice_service.list_invoices_page(
+            limit=self._page_size,
+            offset=0,
+            invoice_type=self._active_filter_type,
         )
+        self._total_count = int(first_page.total_count)
+        self._total_amount = float(first_page.total_amount)
         self.total_invoices_label.setText(
             self.tr("تعداد فاکتورها: {count}").format(count=self._total_count)
         )
@@ -279,7 +281,10 @@ class InvoicesPage(QWidget):
             self.tr("برای مشاهده جزئیات یک فاکتور را انتخاب کنید.")
         )
         self.lines_table.setRowCount(0)
-        self._load_more()
+        self._append_invoice_batch(first_page.items)
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
+        if not self.invoices:
+            self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
         self._update_action_buttons()
 
     def _set_filter(self, filter_key: str) -> None:
@@ -414,79 +419,96 @@ class InvoicesPage(QWidget):
             self.load_more_button.setEnabled(False)
             return
         self._loading_more = True
-        batch = self.invoice_service.list_invoices(
+        batch_page = self.invoice_service.list_invoices_page(
             limit=self._page_size,
             offset=self._loaded_count,
             invoice_type=self._active_filter_type,
         )
+        batch = batch_page.items
+        self._total_count = int(batch_page.total_count)
+        self._total_amount = float(batch_page.total_amount)
+        self._set_total_amount_label()
+        self._set_filter_hint()
         if not batch:
             self._loading_more = False
             self.load_more_button.setEnabled(False)
             if not self.invoices:
                 self.details_label.setText(self.tr("فاکتوری ثبت نشده است."))
             return
+        self._append_invoice_batch(batch)
+        self._loading_more = False
+        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
 
+    def _append_invoice_batch(self, batch: list[InvoiceSummary]) -> None:
+        if not batch:
+            return
         start_row = self.invoices_table.rowCount()
         self.invoices_table.setUpdatesEnabled(False)
         self.invoices_table.blockSignals(True)
         self.invoices_table.setRowCount(start_row + len(batch))
-        for row_offset, invoice in enumerate(batch):
-            row_idx = start_row + row_offset
-            date_item = QTableWidgetItem(
-                self._format_invoice_datetime(invoice.created_at)
-            )
-            date_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            date_item.setData(Qt.UserRole, invoice.invoice_id)
-            self.invoices_table.setItem(row_idx, 0, date_item)
-            invoice_item = QTableWidgetItem(format_number(invoice.invoice_id))
-            invoice_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.invoices_table.setItem(row_idx, 1, invoice_item)
-            self.invoices_table.setItem(
-                row_idx,
-                2,
-                QTableWidgetItem(invoice.invoice_name or ""),
-            )
-            self.invoices_table.setItem(
-                row_idx,
-                3,
-                QTableWidgetItem(self._format_type(invoice.invoice_type)),
-            )
-            lines_item = QTableWidgetItem(format_number(invoice.total_lines))
-            lines_item.setTextAlignment(Qt.AlignCenter)
-            self.invoices_table.setItem(row_idx, 4, lines_item)
-
-            qty_item = QTableWidgetItem(format_number(invoice.total_qty))
-            qty_item.setTextAlignment(Qt.AlignCenter)
-            self.invoices_table.setItem(row_idx, 5, qty_item)
-
-            admin_item = QTableWidgetItem(
-                self._format_admin(invoice.admin_id, invoice.admin_username)
-            )
-            self.invoices_table.setItem(row_idx, 6, admin_item)
-
-            show_price = self._should_show_prices(invoice.invoice_type)
-            total_value = (
-                self._format_amount(invoice.total_amount) if show_price else ""
-            )
-            total_item = QTableWidgetItem(total_value)
-            total_item.setTextAlignment(Qt.AlignCenter)
-            self.invoices_table.setItem(row_idx, 7, total_item)
-
-            export_button = QPushButton(self.tr("خروجی"))
-            export_button.setProperty("compact", True)
-            export_button.clicked.connect(
-                lambda _=False, inv_id=invoice.invoice_id, btn=export_button: (
-                    self._open_invoice_export_menu(btn, inv_id)
+        try:
+            for row_offset, invoice in enumerate(batch):
+                row_idx = start_row + row_offset
+                date_item = QTableWidgetItem(
+                    self._format_invoice_datetime(invoice.created_at)
                 )
-            )
-            self.invoices_table.setCellWidget(row_idx, 8, export_button)
+                date_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                date_item.setData(Qt.UserRole, invoice.invoice_id)
+                self.invoices_table.setItem(row_idx, 0, date_item)
+                invoice_item = QTableWidgetItem(
+                    format_number(invoice.invoice_id)
+                )
+                invoice_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.invoices_table.setItem(row_idx, 1, invoice_item)
+                self.invoices_table.setItem(
+                    row_idx,
+                    2,
+                    QTableWidgetItem(invoice.invoice_name or ""),
+                )
+                self.invoices_table.setItem(
+                    row_idx,
+                    3,
+                    QTableWidgetItem(self._format_type(invoice.invoice_type)),
+                )
+                lines_item = QTableWidgetItem(
+                    format_number(invoice.total_lines)
+                )
+                lines_item.setTextAlignment(Qt.AlignCenter)
+                self.invoices_table.setItem(row_idx, 4, lines_item)
+
+                qty_item = QTableWidgetItem(format_number(invoice.total_qty))
+                qty_item.setTextAlignment(Qt.AlignCenter)
+                self.invoices_table.setItem(row_idx, 5, qty_item)
+
+                admin_item = QTableWidgetItem(
+                    self._format_admin(invoice.admin_id, invoice.admin_username)
+                )
+                self.invoices_table.setItem(row_idx, 6, admin_item)
+
+                show_price = self._should_show_prices(invoice.invoice_type)
+                total_value = (
+                    self._format_amount(invoice.total_amount)
+                    if show_price
+                    else ""
+                )
+                total_item = QTableWidgetItem(total_value)
+                total_item.setTextAlignment(Qt.AlignCenter)
+                self.invoices_table.setItem(row_idx, 7, total_item)
+
+                export_button = QPushButton(self.tr("خروجی"))
+                export_button.setProperty("compact", True)
+                export_button.clicked.connect(
+                    lambda _=False, inv_id=invoice.invoice_id, btn=export_button: (
+                        self._open_invoice_export_menu(btn, inv_id)
+                    )
+                )
+                self.invoices_table.setCellWidget(row_idx, 8, export_button)
+        finally:
+            self.invoices_table.blockSignals(False)
+            self.invoices_table.setUpdatesEnabled(True)
 
         self.invoices.extend(batch)
         self._loaded_count += len(batch)
-        self.invoices_table.blockSignals(False)
-        self.invoices_table.setUpdatesEnabled(True)
-        self._loading_more = False
-        self.load_more_button.setEnabled(self._loaded_count < self._total_count)
         if start_row == 0 and self.invoices:
             self.invoices_table.selectRow(0)
 

@@ -426,13 +426,11 @@ class SalesImportPage(QWidget):
         self.errors_label.setText(
             self.tr("خطا: {count}").format(count=summary.errors)
         )
-        if self._is_editing():
-            self._update_status_cells(row_indices)
-            self._deferred_refresh = True
-            self._deferred_timer.start()
+        if self.table.rowCount() != len(self.preview_rows):
+            self._sort_preview_rows()
+            self._rebuild_table()
             return
-        self._sort_preview_rows()
-        self._rebuild_table()
+        self._update_status_cells(row_indices)
 
     def _emit_pending_updates(self) -> None:
         if not self._pending_rows:
@@ -458,15 +456,46 @@ class SalesImportPage(QWidget):
         if not row_indices or not self.preview_rows:
             return
         targets = set(row_indices)
-        self._suppress_item_updates = True
-        for row in range(self.table.rowCount()):
-            name_item = self.table.item(row, 0)
+        row_map: dict[int, int] = {}
+        for table_row in range(self.table.rowCount()):
+            name_item = self.table.item(table_row, 0)
             if name_item is None:
                 continue
             idx = name_item.data(Qt.UserRole)
-            if not isinstance(idx, int) or idx not in targets:
+            if isinstance(idx, int):
+                row_map[idx] = table_row
+        self._suppress_item_updates = True
+        for idx in targets:
+            row = row_map.get(idx)
+            if row is None or idx < 0 or idx >= len(self.preview_rows):
                 continue
             row_data = self.preview_rows[idx]
+
+            name_item = self.table.item(row, 0)
+            if name_item is None:
+                name_item = QTableWidgetItem()
+                self.table.setItem(row, 0, name_item)
+            name_item.setTextAlignment(
+                Qt.AlignRight | Qt.AlignAbsolute | Qt.AlignVCenter
+            )
+            name_item.setText(row_data.product_name)
+            name_item.setData(Qt.UserRole, idx)
+            if self._edit_enabled:
+                name_item.setFlags(name_item.flags() | Qt.ItemIsEditable)
+            else:
+                name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+
+            qty_item = self.table.item(row, 1)
+            if qty_item is None:
+                qty_item = QTableWidgetItem()
+                self.table.setItem(row, 1, qty_item)
+            qty_item.setTextAlignment(Qt.AlignCenter)
+            qty_item.setText(format_number(row_data.quantity_sold))
+            qty_item.setData(Qt.UserRole, idx)
+            if self._edit_enabled:
+                qty_item.setFlags(qty_item.flags() | Qt.ItemIsEditable)
+            else:
+                qty_item.setFlags(qty_item.flags() & ~Qt.ItemIsEditable)
 
             status_item = self.table.item(row, 2)
             if status_item is None:

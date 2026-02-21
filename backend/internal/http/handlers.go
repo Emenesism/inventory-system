@@ -447,7 +447,17 @@ func (h *Handler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": invoices, "count": len(invoices)})
+	totalCount, totalAmount, err := h.svc.InvoiceStats(r.Context(), query.Get("type"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":        invoices,
+		"count":        len(invoices),
+		"total_count":  totalCount,
+		"total_amount": totalAmount,
+	})
 }
 
 func (h *Handler) ListInvoicesBetween(w http.ResponseWriter, r *http.Request) {

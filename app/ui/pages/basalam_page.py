@@ -729,18 +729,23 @@ class BasalamPage(QWidget):
         totals: dict[str, int] = {}
         numeric_counts: dict[str, int] = {}
 
-        for _, row in df.iterrows():
-            product_value = row.get(product_col, "")
+        product_values = df[product_col].to_numpy(copy=False)
+        recipient_values = df[recipient_col].to_numpy(copy=False)
+        quantity_values = df[quantity_col].to_numpy(copy=False)
+
+        for product_value, recipient_value, quantity_value in zip(
+            product_values,
+            recipient_values,
+            quantity_values,
+        ):
             if product_value is None or pd.isna(product_value):
                 product_value = ""
             product = self._strip_property_details(str(product_value).strip())
 
-            recipient_value = row.get(recipient_col, "")
             if recipient_value is None or pd.isna(recipient_value):
                 recipient_value = ""
             recipient = str(recipient_value).strip()
 
-            quantity_value = row.get(quantity_col, "")
             quantity = self._coerce_quantity_value(quantity_value)
 
             if product not in grouped_rows:

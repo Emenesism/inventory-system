@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -22,6 +25,72 @@ from app.utils.dates import to_jalali_datetime
 from app.utils.text import display_text
 
 
+@dataclass(frozen=True)
+class _AnalyticsLoadRequest:
+    include_summary: bool
+    include_top: bool
+    include_unsold: bool
+    summary_limit: int
+    top_days: int
+    top_limit: int
+    unsold_days: int
+    unsold_limit: int
+
+
+class _AnalyticsLoadWorker(QObject):
+    succeeded = Signal(dict)
+    finished = Signal()
+
+    def __init__(
+        self,
+        invoice_service: InvoiceService,
+        request: _AnalyticsLoadRequest,
+    ) -> None:
+        super().__init__()
+        self._invoice_service = invoice_service
+        self._request = request
+
+    @Slot()
+    def run(self) -> None:
+        payload: dict[str, object] = {}
+        try:
+            jobs: dict[str, object] = {}
+            if self._request.include_summary:
+                jobs["summary"] = lambda: (
+                    self._invoice_service.get_monthly_quantity_summary(
+                        limit=self._request.summary_limit
+                    )
+                )
+            if self._request.include_top:
+                jobs["top"] = lambda: (
+                    self._invoice_service.get_top_sold_products(
+                        days=self._request.top_days,
+                        limit=self._request.top_limit,
+                    )
+                )
+            if self._request.include_unsold:
+                jobs["unsold"] = lambda: (
+                    self._invoice_service.get_unsold_products(
+                        days=self._request.unsold_days,
+                        limit=self._request.unsold_limit,
+                    )
+                )
+            if jobs:
+                max_workers = min(len(jobs), 3)
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {
+                        key: executor.submit(job) for key, job in jobs.items()
+                    }
+                    for key, future in futures.items():
+                        try:
+                            payload[key] = future.result()
+                        except Exception:  # noqa: BLE001
+                            payload[key] = []
+        finally:
+            self.succeeded.emit(payload)
+            self.finished.emit()
+
+
 class AnalyticsPage(QWidget):
     def __init__(
         self,
@@ -33,6 +102,12 @@ class AnalyticsPage(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setLayoutDirection(Qt.RightToLeft)
         self.invoice_service = invoice_service
+        self._summary_limit = 12
+        self._unsold_limit = 200
+        self._worker_thread: QThread | None = None
+        self._worker: _AnalyticsLoadWorker | None = None
+        self._active_request: _AnalyticsLoadRequest | None = None
+        self._pending_request: _AnalyticsLoadRequest | None = None
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -226,15 +301,96 @@ class AnalyticsPage(QWidget):
         self._overlay.raise_()
 
     def load_analytics(self) -> None:
-        self._load_summary_stats()
-        self._load_top_products()
-        self._load_unsold_products()
+        self._queue_analytics_load(
+            include_summary=True,
+            include_top=True,
+            include_unsold=True,
+        )
 
-    def _load_summary_stats(self) -> None:
-        try:
-            summary = self.invoice_service.get_monthly_quantity_summary()
-        except Exception:  # noqa: BLE001
-            summary = []
+    def _load_top_products(self) -> None:
+        self._queue_analytics_load(
+            include_summary=False,
+            include_top=True,
+            include_unsold=False,
+        )
+
+    def _load_unsold_products(self) -> None:
+        self._queue_analytics_load(
+            include_summary=False,
+            include_top=False,
+            include_unsold=True,
+        )
+
+    def _queue_analytics_load(
+        self,
+        include_summary: bool,
+        include_top: bool,
+        include_unsold: bool,
+    ) -> None:
+        request = _AnalyticsLoadRequest(
+            include_summary=include_summary,
+            include_top=include_top,
+            include_unsold=include_unsold,
+            summary_limit=self._summary_limit,
+            top_days=int(self.top_days_combo.currentData() or 0),
+            top_limit=int(self.top_limit_combo.currentData() or 10),
+            unsold_days=int(self.unsold_days_combo.currentData() or 30),
+            unsold_limit=self._unsold_limit,
+        )
+        if self._worker_thread is not None and self._worker_thread.isRunning():
+            self._pending_request = request
+            return
+        self._start_worker(request)
+
+    def _start_worker(self, request: _AnalyticsLoadRequest) -> None:
+        thread = QThread(self)
+        worker = _AnalyticsLoadWorker(self.invoice_service, request)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_worker_succeeded)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_worker_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._worker_thread = thread
+        self._worker = worker
+        self._active_request = request
+        thread.start()
+
+    @Slot(dict)
+    def _on_worker_succeeded(self, payload: dict) -> None:
+        request = self._active_request
+        if request is None:
+            return
+        if request.include_summary:
+            summary = payload.get("summary", [])
+            if isinstance(summary, list):
+                self._render_summary_stats(summary)
+            else:
+                self._render_summary_stats([])
+        if request.include_top:
+            top_items = payload.get("top", [])
+            if isinstance(top_items, list):
+                self._render_top_products(top_items)
+            else:
+                self._render_top_products([])
+        if request.include_unsold:
+            unsold_items = payload.get("unsold", [])
+            if isinstance(unsold_items, list):
+                self._render_unsold_products(unsold_items)
+            else:
+                self._render_unsold_products([])
+
+    def _on_worker_finished(self) -> None:
+        self._worker = None
+        self._worker_thread = None
+        self._active_request = None
+        pending = self._pending_request
+        self._pending_request = None
+        if pending is not None:
+            self._start_worker(pending)
+
+    def _render_summary_stats(self, summary: list[dict]) -> None:
         total_sales = sum(
             self._safe_int(item.get("sales_qty")) for item in summary
         )
@@ -261,16 +417,7 @@ class AnalyticsPage(QWidget):
             )
         )
 
-    def _load_top_products(self) -> None:
-        days = int(self.top_days_combo.currentData() or 0)
-        limit = int(self.top_limit_combo.currentData() or 10)
-        try:
-            items = self.invoice_service.get_top_sold_products(
-                days=days, limit=limit
-            )
-        except Exception:  # noqa: BLE001
-            items = []
-
+    def _render_top_products(self, items: list[dict]) -> None:
         self.top_products_table.setRowCount(len(items))
         for row_idx, item in enumerate(items):
             product_item = QTableWidgetItem(
@@ -301,15 +448,7 @@ class AnalyticsPage(QWidget):
             last_sold_item.setTextAlignment(Qt.AlignCenter)
             self.top_products_table.setItem(row_idx, 3, last_sold_item)
 
-    def _load_unsold_products(self) -> None:
-        days = int(self.unsold_days_combo.currentData() or 30)
-        try:
-            items = self.invoice_service.get_unsold_products(
-                days=days, limit=200
-            )
-        except Exception:  # noqa: BLE001
-            items = []
-
+    def _render_unsold_products(self, items: list[dict]) -> None:
         self.unsold_table.setRowCount(len(items))
         for row_idx, item in enumerate(items):
             product_item = QTableWidgetItem(

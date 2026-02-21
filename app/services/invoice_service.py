@@ -23,6 +23,13 @@ class InvoiceSummary:
 
 
 @dataclass
+class InvoiceListResult:
+    items: list["InvoiceSummary"] = field(default_factory=list)
+    total_count: int = 0
+    total_amount: float = 0.0
+
+
+@dataclass
 class InvoiceProductMatch:
     row_number: int
     product_name: str
@@ -128,6 +135,18 @@ class InvoiceService:
         offset: int = 0,
         invoice_type: str | None = None,
     ) -> list[InvoiceSummary]:
+        return self.list_invoices_page(
+            limit=limit,
+            offset=offset,
+            invoice_type=invoice_type,
+        ).items
+
+    def list_invoices_page(
+        self,
+        limit: int = 200,
+        offset: int = 0,
+        invoice_type: str | None = None,
+    ) -> InvoiceListResult:
         params: dict[str, object] = {"limit": limit, "offset": offset}
         selected_type = str(invoice_type or "").strip()
         if selected_type:
@@ -140,9 +159,24 @@ class InvoiceService:
         except BackendAPIError as exc:
             raise RuntimeError(str(exc)) from exc
         items = payload.get("items", []) if isinstance(payload, dict) else []
-        return [
+        parsed_items = [
             self._to_summary(item) for item in items if isinstance(item, dict)
         ]
+        total_count = int(
+            payload.get("total_count", payload.get("count", len(parsed_items)))
+            if isinstance(payload, dict)
+            else len(parsed_items)
+        )
+        total_amount = float(
+            payload.get("total_amount", 0.0)
+            if isinstance(payload, dict)
+            else 0.0
+        )
+        return InvoiceListResult(
+            items=parsed_items,
+            total_count=total_count,
+            total_amount=total_amount,
+        )
 
     def list_invoices_between(
         self,

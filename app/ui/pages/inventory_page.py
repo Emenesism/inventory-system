@@ -37,6 +37,9 @@ class InventoryPage(QWidget):
         self._column_widths: dict[str, int] = {}
         self._auto_column_widths: dict[str, int] = {}
         self._header_min_widths: dict[str, int] = {}
+        self._column_hint_cache: dict[
+            tuple[object, ...], tuple[dict[str, int], dict[str, int]]
+        ] = {}
         self._editable_columns: list[str] | None = None
         self._blocked_columns: set[str] | None = None
         self._name_changes: dict[str, str] = {}
@@ -711,6 +714,19 @@ class InventoryPage(QWidget):
     def _prepare_column_width_hints(
         self, dataframe: pd.DataFrame, header_labels: dict[str, str]
     ) -> None:
+        cache_key: tuple[object, ...] = (
+            id(dataframe),
+            int(len(dataframe)),
+            tuple(self._column_names),
+            tuple(header_labels.get(name, "") for name in self._column_names),
+            round(self._ui_scale_factor(), 2),
+        )
+        cached = self._column_hint_cache.get(cache_key)
+        if cached is not None:
+            self._auto_column_widths = dict(cached[0])
+            self._header_min_widths = dict(cached[1])
+            return
+
         self._auto_column_widths = {}
         self._header_min_widths = {}
         if not self._column_names:
@@ -732,6 +748,13 @@ class InventoryPage(QWidget):
             self._auto_column_widths[column_name] = int(
                 max(min_width, value_width)
             )
+        self._column_hint_cache[cache_key] = (
+            dict(self._auto_column_widths),
+            dict(self._header_min_widths),
+        )
+        if len(self._column_hint_cache) > 8:
+            oldest_key = next(iter(self._column_hint_cache))
+            self._column_hint_cache.pop(oldest_key, None)
 
     def _preferred_column_width(self, column_name: str) -> int:
         preferred = self._auto_column_widths.get(column_name)
@@ -866,16 +889,32 @@ class InventoryPage(QWidget):
     def _sort_dataframe_by_product_name(
         cls, dataframe: pd.DataFrame
     ) -> pd.DataFrame:
-        sorted_df = dataframe.copy()
-        product_column = cls._product_column_name(list(sorted_df.columns))
-        if not product_column or sorted_df.empty:
-            return sorted_df.reset_index(drop=True)
+        product_column = cls._product_column_name(list(dataframe.columns))
+        if not product_column or dataframe.empty:
+            if cls._is_default_range_index(dataframe):
+                return dataframe
+            return dataframe.reset_index(drop=True)
         sort_key = (
-            sorted_df[product_column].fillna("").astype(str).map(normalize_text)
+            dataframe[product_column].fillna("").astype(str).map(normalize_text)
         )
+        if sort_key.is_monotonic_increasing and cls._is_default_range_index(
+            dataframe
+        ):
+            return dataframe
         return (
-            sorted_df.assign(_name_sort=sort_key)
+            dataframe.assign(_name_sort=sort_key)
             .sort_values(by=["_name_sort"], kind="mergesort")
             .drop(columns=["_name_sort"])
             .reset_index(drop=True)
+        )
+
+    @staticmethod
+    def _is_default_range_index(dataframe: pd.DataFrame) -> bool:
+        index = dataframe.index
+        if not isinstance(index, pd.RangeIndex):
+            return False
+        return (
+            index.start == 0
+            and index.step == 1
+            and index.stop == len(dataframe)
         )
