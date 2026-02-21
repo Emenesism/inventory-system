@@ -13,6 +13,16 @@ from app.utils.text import is_empty_marker, normalize_text
 
 
 class InventoryService:
+    _INVENTORY_COLUMNS = [
+        "product_name",
+        "quantity",
+        "avg_buy_price",
+        "last_buy_price",
+        "sell_price",
+        "alarm",
+        "source",
+    ]
+
     def __init__(self, store: InventoryStore, config: AppConfig) -> None:
         self.store = store
         self.config = config
@@ -191,8 +201,53 @@ class InventoryService:
         self, df: pd.DataFrame, admin_username: str | None = None
     ) -> Path | None:
         _ = admin_username
+        new_rows = self._coerce_inventory_rows(df)
+        if not new_rows:
+            raise InventoryFileError(
+                "هیچ ردیف معتبری برای ذخیره موجودی وجود ندارد."
+            )
+        old_rows = self._coerce_inventory_rows(self.store.dataframe)
+        upserts, deletes = self._compute_inventory_delta(old_rows, new_rows)
+
+        try:
+            if upserts or deletes:
+                self._client.post(
+                    "/api/v1/inventory/sync",
+                    json_body={"upserts": upserts, "deletes": deletes},
+                )
+                refreshed = self.load()
+                self._logger.info(
+                    "Inventory synced via backend. Upserts=%s Deletes=%s Rows=%s",
+                    len(upserts),
+                    len(deletes),
+                    len(refreshed),
+                )
+            else:
+                self._logger.info(
+                    "Inventory sync skipped (no changes). Rows=%s",
+                    len(new_rows),
+                )
+                local_df = self._rows_to_dataframe(new_rows)
+                self.store.dataframe = local_df
+                self._rebuild_index(local_df)
+                self._loaded = True
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        return None
+
+    def _coerce_inventory_rows(
+        self, df: pd.DataFrame | None
+    ) -> list[dict[str, object]]:
+        if df is None:
+            return []
         rows: list[dict[str, object]] = []
         df_to_save = df.copy()
+        if "product_name" not in df_to_save.columns:
+            return rows
+        if "quantity" not in df_to_save.columns:
+            df_to_save["quantity"] = 0
+        if "avg_buy_price" not in df_to_save.columns:
+            df_to_save["avg_buy_price"] = 0.0
         if "last_buy_price" not in df_to_save.columns:
             df_to_save["last_buy_price"] = 0.0
         if "sell_price" not in df_to_save.columns:
@@ -248,23 +303,74 @@ class InventoryService:
                     ),
                 }
             )
+        return rows
 
+    def _compute_inventory_delta(
+        self,
+        old_rows: list[dict[str, object]],
+        new_rows: list[dict[str, object]],
+    ) -> tuple[list[dict[str, object]], list[str]]:
+        old_map = {
+            self._normalize_name(str(row.get("product_name", ""))): row
+            for row in old_rows
+            if str(row.get("product_name", "")).strip()
+        }
+        new_map = {
+            self._normalize_name(str(row.get("product_name", ""))): row
+            for row in new_rows
+            if str(row.get("product_name", "")).strip()
+        }
+        upserts: list[dict[str, object]] = []
+        for key, new_row in new_map.items():
+            old_row = old_map.get(key)
+            if old_row is None or self._inventory_row_changed(old_row, new_row):
+                upserts.append(new_row)
+        deletes = [
+            str(old_map[key].get("product_name", "")).strip()
+            for key in old_map
+            if key not in new_map
+        ]
+        return upserts, deletes
+
+    @staticmethod
+    def _inventory_row_changed(
+        old_row: dict[str, object], new_row: dict[str, object]
+    ) -> bool:
+        if (
+            str(old_row.get("product_name", "")).strip()
+            != str(new_row.get("product_name", "")).strip()
+        ):
+            return True
+        int_fields = ("quantity", "alarm")
+        float_fields = ("avg_buy_price", "last_buy_price", "sell_price")
+        text_fields = ("source",)
+        for field in int_fields:
+            old_value = old_row.get(field)
+            new_value = new_row.get(field)
+            if old_value is None and new_value is None:
+                continue
+            if int(old_value or 0) != int(new_value or 0):
+                return True
+        for field in float_fields:
+            old_value = float(old_row.get(field, 0) or 0)
+            new_value = float(new_row.get(field, 0) or 0)
+            if abs(old_value - new_value) > 1e-6:
+                return True
+        for field in text_fields:
+            old_value = old_row.get(field)
+            new_value = new_row.get(field)
+            if (
+                None if is_empty_marker(old_value) else str(old_value).strip()
+            ) != (
+                None if is_empty_marker(new_value) else str(new_value).strip()
+            ):
+                return True
+        return False
+
+    def _rows_to_dataframe(self, rows: list[dict[str, object]]) -> pd.DataFrame:
         if not rows:
-            raise InventoryFileError(
-                "هیچ ردیف معتبری برای ذخیره موجودی وجود ندارد."
-            )
-
-        try:
-            self._client.post(
-                "/api/v1/inventory/replace", json_body={"rows": rows}
-            )
-            refreshed = self.load()
-            self._logger.info(
-                "Inventory replaced via backend. Rows=%s", len(refreshed)
-            )
-        except BackendAPIError as exc:
-            raise InventoryFileError(str(exc)) from exc
-        return None
+            return pd.DataFrame(columns=self._INVENTORY_COLUMNS)
+        return pd.DataFrame(rows, columns=self._INVENTORY_COLUMNS)
 
     def get_dataframe(self) -> pd.DataFrame:
         if self.store.dataframe is None:
