@@ -52,7 +52,7 @@ from app.utils.dates import (
 from app.utils.excel import export_invoices_excel
 from app.utils.numeric import format_amount, format_number
 from app.utils.pdf import export_invoices_pdf
-from app.utils.text import normalize_text
+from app.utils.text import display_text, normalize_text
 
 
 class JalaliDatePicker(QWidget):
@@ -866,8 +866,7 @@ class InvoiceBatchExportDialog(QDialog):
 
     @staticmethod
     def _normalize_snapshot_value(value: object) -> str:
-        text = str(value).strip()
-        return text if text else "-"
+        return display_text(value, fallback="-")
 
     @staticmethod
     def _is_product_field(key: str) -> bool:
@@ -905,7 +904,7 @@ class InvoiceBatchExportDialog(QDialog):
         return any(ch.isascii() and ch.isalnum() for ch in text)
 
     def _format_inline_kv(self, label: str, value: str) -> str:
-        normalized_value = str(value).strip() or "-"
+        normalized_value = display_text(value, fallback="-")
         value_dir = "ltr" if self._needs_ltr(normalized_value) else "rtl"
         value_mark = "\u200e" if value_dir == "ltr" else "\u200f"
         return (
