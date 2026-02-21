@@ -23,6 +23,7 @@ from app.services.action_log_service import ActionLogService
 from app.services.inventory_service import InventoryService
 from app.utils.excel import autofit_columns, ensure_sheet_rtl
 from app.utils.numeric import format_amount
+from app.utils.text import display_text
 
 
 def _t(text: str) -> str:
@@ -158,10 +159,7 @@ class LowStockPage(QWidget):
         except InventoryFileError:
             low_stock_rows = []
         for row in low_stock_rows:
-            source_value = row.get("source", "")
-            source_text = "" if source_value is None else str(source_value)
-            if source_text.lower() == "nan":
-                source_text = ""
+            source_text = display_text(row.get("source", ""), fallback="")
             rows.append(
                 {
                     "product": str(row.get("product_name", "")).strip(),
@@ -169,7 +167,7 @@ class LowStockPage(QWidget):
                     "alarm": int(row.get("alarm", 0) or 0),
                     "needed": int(row.get("needed", 0) or 0),
                     "avg_buy": float(row.get("avg_buy_price", 0.0) or 0.0),
-                    "source": source_text.strip(),
+                    "source": source_text,
                 }
             )
 
