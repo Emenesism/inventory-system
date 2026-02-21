@@ -29,6 +29,7 @@ func NewRouter(handler *Handler) http.Handler {
 		r.Post("/inventory/import-excel", handler.ImportInventoryExcel)
 		r.Post("/inventory/import-sell-prices", handler.ImportSellPrices)
 		r.Post("/inventory/replace", handler.ReplaceInventory)
+		r.Post("/inventory/sync", handler.SyncInventory)
 		r.Get("/settings/sell-price-alarm", handler.GetSellPriceAlarmPercent)
 		r.Patch("/settings/sell-price-alarm", handler.UpdateSellPriceAlarmPercent)
 
