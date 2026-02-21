@@ -354,7 +354,7 @@ class InvoicesPage(QWidget):
             header_parts = [
                 self.tr("شماره فاکتور {id}").format(id=inv.invoice_id),
                 self._format_type(invoice_type),
-                to_jalali_datetime(inv.created_at),
+                self._format_invoice_datetime(inv.created_at),
             ]
             if inv.invoice_name:
                 header_parts.insert(
@@ -432,7 +432,10 @@ class InvoicesPage(QWidget):
         self.invoices_table.setRowCount(start_row + len(batch))
         for row_offset, invoice in enumerate(batch):
             row_idx = start_row + row_offset
-            date_item = QTableWidgetItem(to_jalali_datetime(invoice.created_at))
+            date_item = QTableWidgetItem(
+                self._format_invoice_datetime(invoice.created_at)
+            )
+            date_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             date_item.setData(Qt.UserRole, invoice.invoice_id)
             self.invoices_table.setItem(row_idx, 0, date_item)
             invoice_item = QTableWidgetItem(format_number(invoice.invoice_id))
@@ -449,11 +452,11 @@ class InvoicesPage(QWidget):
                 QTableWidgetItem(self._format_type(invoice.invoice_type)),
             )
             lines_item = QTableWidgetItem(format_number(invoice.total_lines))
-            lines_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lines_item.setTextAlignment(Qt.AlignCenter)
             self.invoices_table.setItem(row_idx, 4, lines_item)
 
             qty_item = QTableWidgetItem(format_number(invoice.total_qty))
-            qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            qty_item.setTextAlignment(Qt.AlignCenter)
             self.invoices_table.setItem(row_idx, 5, qty_item)
 
             admin_item = QTableWidgetItem(
@@ -466,7 +469,7 @@ class InvoicesPage(QWidget):
                 self._format_amount(invoice.total_amount) if show_price else ""
             )
             total_item = QTableWidgetItem(total_value)
-            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            total_item.setTextAlignment(Qt.AlignCenter)
             self.invoices_table.setItem(row_idx, 7, total_item)
 
             export_button = QPushButton(self.tr("خروجی"))
@@ -503,6 +506,13 @@ class InvoicesPage(QWidget):
     @staticmethod
     def _format_amount(value: float) -> str:
         return format_amount(value)
+
+    @staticmethod
+    def _format_invoice_datetime(value: str) -> str:
+        text = to_jalali_datetime(value)
+        if not text:
+            return ""
+        return f"\u200e{text}\u200e"
 
     def _format_admin(
         self, admin_id: int | None, admin_username: str | None
@@ -676,7 +686,7 @@ class InvoicesPage(QWidget):
                 type=self._format_type(invoice.invoice_type)
             )
             + self.tr("تاریخ: {date}\n").format(
-                date=to_jalali_datetime(invoice.created_at)
+                date=self._format_invoice_datetime(invoice.created_at)
             )
         )
         if name_changed:
@@ -768,7 +778,7 @@ class InvoicesPage(QWidget):
                     type=self._format_type(invoice.invoice_type)
                 )
                 + self.tr("تاریخ: {date}\n").format(
-                    date=to_jalali_datetime(invoice.created_at)
+                    date=self._format_invoice_datetime(invoice.created_at)
                 )
                 + self.tr("تعداد ردیف: {count}\n").format(count=line_count)
                 + self.tr("تطبیق موجودی توسط بک‌اند انجام می‌شود.")
