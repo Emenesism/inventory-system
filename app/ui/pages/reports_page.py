@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -90,26 +91,32 @@ class ReportsPage(QWidget):
     def load_logs_all(self) -> None:
         text = self._read_all_logs()
         if not text:
-            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
+            self._set_log_text(self._missing_log_message())
             return
         self._set_log_text(text)
         self._logger.info("Reports loaded full log history")
 
     def load_logs_tail(self, line_count: int = 1000) -> None:
-        lines = self._read_all_logs().splitlines()
+        lines = self._read_tail_lines(line_count)
         if not lines:
-            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
+            fallback_text = self._read_all_logs()
+            if fallback_text:
+                lines = fallback_text.splitlines()[-line_count:]
+        if not lines:
+            self._set_log_text(self._missing_log_message())
             return
-        tail = lines[-line_count:]
-        self._set_log_text("\n".join(tail))
+        self._set_log_text("\n".join(lines))
         self._logger.info("Reports loaded last %s lines", line_count)
 
     def export_tail(self, line_count: int = 1000) -> None:
-        lines = self._read_all_logs().splitlines()
+        lines = self._read_tail_lines(line_count)
         if not lines:
-            self._set_log_text(self.tr("فایل لاگ هنوز ایجاد نشده است."))
+            fallback_text = self._read_all_logs()
+            if fallback_text:
+                lines = fallback_text.splitlines()[-line_count:]
+        if not lines:
+            self._set_log_text(self._missing_log_message())
             return
-        tail = lines[-line_count:]
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             self.tr("خروجی لاگ"),
@@ -118,7 +125,7 @@ class ReportsPage(QWidget):
         )
         if not file_path:
             return
-        Path(file_path).write_text("\n".join(tail), encoding="utf-8")
+        Path(file_path).write_text("\n".join(lines), encoding="utf-8")
         self._logger.info(
             "Reports exported last %s lines to %s", line_count, file_path
         )
@@ -156,9 +163,66 @@ class ReportsPage(QWidget):
                 parts.append(content)
         return "\n".join(parts).strip()
 
-    def _ordered_log_paths(self) -> list[Path]:
-        if not self.log_path.exists():
+    def _read_tail_lines(self, line_count: int) -> list[str]:
+        if line_count <= 0:
             return []
+        log_paths = self._ordered_log_paths()
+        if not log_paths:
+            return []
+        needed = line_count
+        # Newest file first for tail collection, then restore chronological order.
+        newest_first_segments: list[list[str]] = []
+        for path in reversed(log_paths):
+            if needed <= 0:
+                break
+            lines = self._read_file_tail_lines(path, needed)
+            if not lines:
+                continue
+            newest_first_segments.append(lines)
+            needed -= len(lines)
+        if not newest_first_segments:
+            return []
+        ordered: list[str] = []
+        for segment in reversed(newest_first_segments):
+            ordered.extend(segment)
+        if len(ordered) > line_count:
+            return ordered[-line_count:]
+        return ordered
+
+    def _read_file_tail_lines(self, path: Path, line_count: int) -> list[str]:
+        if line_count <= 0:
+            return []
+        try:
+            with path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                position = handle.tell()
+                if position <= 0:
+                    return []
+                data = b""
+                newline_count = 0
+                chunk_size = 16 * 1024
+                while position > 0 and newline_count <= line_count:
+                    read_size = min(chunk_size, position)
+                    position -= read_size
+                    handle.seek(position)
+                    chunk = handle.read(read_size)
+                    if not chunk:
+                        break
+                    data = chunk + data
+                    newline_count += chunk.count(b"\n")
+        except OSError:
+            self._logger.exception("Failed reading log file %s", path)
+            return []
+
+        text = data.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        if not lines:
+            return []
+        if len(lines) > line_count:
+            return lines[-line_count:]
+        return lines
+
+    def _ordered_log_paths(self) -> list[Path]:
         base = self.log_path
         backups: list[tuple[int, Path]] = []
         for path in base.parent.glob(f"{base.name}.*"):
@@ -167,8 +231,32 @@ class ReportsPage(QWidget):
                 backups.append((int(suffix), path))
         backups.sort(reverse=True)
         ordered = [path for _, path in backups]
-        ordered.append(base)
+        if base.exists():
+            ordered.append(base)
         return ordered
+
+    def _missing_log_message(self) -> str:
+        base_message = self.tr(
+            "فایل لاگ هنوز ایجاد نشده است.\nمسیر مورد انتظار: {path}"
+        ).format(path=str(self.log_path))
+        available = self._available_log_files()
+        if not available:
+            return base_message
+        preview = "\n".join(str(path) for path in available[:6])
+        return self.tr("{base}\nفایل‌های پیدا شده:\n{files}").format(
+            base=base_message, files=preview
+        )
+
+    def _available_log_files(self) -> list[Path]:
+        directory = self.log_path.parent
+        if not directory.exists():
+            return []
+        base_name = self.log_path.name
+        files = [
+            path for path in directory.glob(f"{base_name}*") if path.is_file()
+        ]
+        files.sort()
+        return files
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
