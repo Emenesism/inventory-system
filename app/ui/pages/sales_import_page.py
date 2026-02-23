@@ -503,7 +503,9 @@ class SalesImportPage(QWidget):
                 status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, 2, status_item)
             status_item.setTextAlignment(Qt.AlignCenter)
-            status_item.setText(self._display_status(row_data.status))
+            status_item.setText(
+                self._display_status(row_data.status, row_data.match_percent)
+            )
 
             message_item = self.table.item(row, 3)
             if message_item is None:
@@ -613,7 +615,9 @@ class SalesImportPage(QWidget):
             status_item = QTableWidgetItem(row.status)
             status_item.setTextAlignment(Qt.AlignCenter)
             status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
-            status_item.setText(self._display_status(row.status))
+            status_item.setText(
+                self._display_status(row.status, row.match_percent)
+            )
             self.table.setItem(row_idx, 2, status_item)
 
             message_item = QTableWidgetItem(self._display_message(row.message))
@@ -670,6 +674,10 @@ class SalesImportPage(QWidget):
         )
         if not selected_rows:
             return
+        self._pending_rows.clear()
+        self._edit_timer.stop()
+        self._deferred_refresh = False
+        self._deferred_timer.stop()
 
         preview_indices: list[int] = []
         for row in selected_rows:
@@ -694,7 +702,16 @@ class SalesImportPage(QWidget):
             return
         self._sort_preview_rows()
         self._rebuild_table()
-        self._refresh_all_rows()
+        summary = self._compute_summary()
+        self.total_label.setText(
+            self.tr("کل: {count}").format(count=summary.total)
+        )
+        self.success_label.setText(
+            self.tr("موفق: {count}").format(count=summary.success)
+        )
+        self.errors_label.setText(
+            self.tr("خطا: {count}").format(count=summary.errors)
+        )
 
     def _reindex_after_removal(self, removed: list[int]) -> None:
         if not removed:
@@ -725,9 +742,15 @@ class SalesImportPage(QWidget):
         if self._pending_rows:
             self._edit_timer.start()
 
-    def _display_status(self, status: str) -> str:
+    def _display_status(
+        self, status: str, match_percent: int | None = None
+    ) -> str:
         normalized = str(status or "").strip().lower()
         if normalized == "ok":
+            if match_percent is not None:
+                return self.tr("موفق ({percent}%)").format(
+                    percent=format_number(match_percent)
+                )
             return self.tr("موفق")
         if normalized == "error":
             return self.tr("خطا")

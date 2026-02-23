@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pandas as pd
+from rapidfuzz import fuzz, process
 
 from app.core.config import AppConfig
 from app.models.errors import InventoryFileError
 from app.services.backend_client import BackendAPIError, BackendClient
+from app.utils.text import normalize_text
 
 
 @dataclass
@@ -18,6 +21,7 @@ class SalesPreviewRow:
     status: str
     message: str
     resolved_name: str = ""
+    match_percent: int | None = None
 
 
 @dataclass
@@ -90,7 +94,6 @@ class SalesImportService:
     def preview(
         self, sales_df: pd.DataFrame, inventory_df: pd.DataFrame | None = None
     ) -> tuple[list[SalesPreviewRow], SalesPreviewSummary]:
-        _ = inventory_df
         rows_payload = self._rows_from_dataframe(sales_df)
         try:
             payload = self._client.post(
@@ -100,7 +103,11 @@ class SalesImportService:
         except BackendAPIError as exc:
             raise InventoryFileError(str(exc)) from exc
 
-        return self._parse_preview_payload(payload)
+        preview_rows, summary = self._parse_preview_payload(payload)
+        self._apply_local_fuzzy_matches(preview_rows, inventory_df)
+        return preview_rows, self._build_summary(
+            preview_rows, total_hint=summary.total
+        )
 
     def apply(
         self,
@@ -117,18 +124,13 @@ class SalesImportService:
         inventory_df: pd.DataFrame,
         row_indices: list[int] | None = None,
     ) -> SalesPreviewSummary:
-        _ = inventory_df
         indices = (
             row_indices
             if row_indices is not None
             else list(range(len(preview_rows)))
         )
         if not indices:
-            total = len(preview_rows)
-            success = sum(1 for row in preview_rows if row.status == "OK")
-            return SalesPreviewSummary(
-                total=total, success=success, errors=total - success
-            )
+            return self._build_summary(preview_rows)
 
         rows_payload: list[dict[str, object]] = []
         valid_positions: list[int] = []
@@ -146,11 +148,7 @@ class SalesImportService:
             valid_positions.append(idx)
 
         if not rows_payload:
-            total = len(preview_rows)
-            success = sum(1 for row in preview_rows if row.status == "OK")
-            return SalesPreviewSummary(
-                total=total, success=success, errors=total - success
-            )
+            return self._build_summary(preview_rows)
 
         try:
             payload = self._client.post(
@@ -161,14 +159,11 @@ class SalesImportService:
             raise InventoryFileError(str(exc)) from exc
 
         updated_rows, _summary = self._parse_preview_payload(payload)
+        self._apply_local_fuzzy_matches(updated_rows, inventory_df)
         for position, updated in zip(valid_positions, updated_rows):
             preview_rows[position] = updated
 
-        total = len(preview_rows)
-        success = sum(1 for row in preview_rows if row.status == "OK")
-        return SalesPreviewSummary(
-            total=total, success=success, errors=total - success
-        )
+        return self._build_summary(preview_rows)
 
     @staticmethod
     def _rows_from_dataframe(sales_df: pd.DataFrame) -> list[dict[str, object]]:
@@ -214,6 +209,13 @@ class SalesImportService:
             if "insufficient stock" in message.lower():
                 status = "OK"
                 message = "Will update stock"
+            match_percent = SalesImportService._coerce_match_percent(
+                row.get("match_percent")
+            )
+            if match_percent is None:
+                match_percent = SalesImportService._extract_match_percent(
+                    message
+                )
             preview_rows.append(
                 SalesPreviewRow(
                     product_name=str(row.get("product_name", "")),
@@ -223,6 +225,7 @@ class SalesImportService:
                     status=status,
                     message=message,
                     resolved_name=str(row.get("resolved_name", "")),
+                    match_percent=match_percent,
                 )
             )
 
@@ -234,3 +237,139 @@ class SalesImportService:
             errors=total_rows - success_rows,
         )
         return preview_rows, summary
+
+    @staticmethod
+    def _build_summary(
+        preview_rows: list[SalesPreviewRow], total_hint: int | None = None
+    ) -> SalesPreviewSummary:
+        total = len(preview_rows)
+        if total_hint is not None:
+            try:
+                hinted = int(total_hint)
+            except (TypeError, ValueError):
+                hinted = total
+            total = max(total, hinted)
+        success = sum(1 for row in preview_rows if row.status == "OK")
+        errors = max(0, total - success)
+        return SalesPreviewSummary(total=total, success=success, errors=errors)
+
+    @classmethod
+    def _apply_local_fuzzy_matches(
+        cls,
+        preview_rows: list[SalesPreviewRow],
+        inventory_df: pd.DataFrame | None,
+    ) -> None:
+        if not preview_rows or inventory_df is None:
+            return
+        if inventory_df.empty or "product_name" not in inventory_df.columns:
+            return
+
+        candidates: list[dict[str, object]] = []
+        normalized_choices: list[str] = []
+        seen_keys: set[str] = set()
+        for _, inv_row in inventory_df.iterrows():
+            raw_name = inv_row.get("product_name", "")
+            product_name = str(raw_name).strip()
+            normalized_name = normalize_text(product_name)
+            if not normalized_name or normalized_name in seen_keys:
+                continue
+            seen_keys.add(normalized_name)
+            avg_buy_price = cls._to_non_negative_float(
+                inv_row.get("avg_buy_price", 0.0)
+            )
+            sell_price = cls._to_non_negative_float(
+                inv_row.get("sell_price", 0.0)
+            )
+            candidates.append(
+                {
+                    "product_name": product_name,
+                    "avg_buy_price": avg_buy_price,
+                    "sell_price": sell_price,
+                }
+            )
+            normalized_choices.append(normalized_name)
+
+        if not normalized_choices:
+            return
+
+        for row in preview_rows:
+            if str(row.status).strip().lower() != "error":
+                continue
+            if str(row.message).strip() != "Product not found":
+                continue
+            query = normalize_text(row.product_name)
+            if not query:
+                continue
+            match = process.extractOne(
+                query,
+                normalized_choices,
+                scorer=fuzz.WRatio,
+                score_cutoff=85.0,
+            )
+            if not match:
+                continue
+            _matched, score, index = match
+            if (
+                not isinstance(index, int)
+                or index < 0
+                or index >= len(candidates)
+            ):
+                continue
+            candidate = candidates[index]
+            matched_name = str(candidate.get("product_name", "")).strip()
+            if not matched_name:
+                continue
+            percent = int(round(float(score)))
+            percent = max(85, min(100, percent))
+            matched_cost = cls._to_non_negative_float(
+                candidate.get("avg_buy_price", 0.0)
+            )
+            matched_sell = cls._to_non_negative_float(
+                candidate.get("sell_price", 0.0)
+            )
+
+            row.status = "OK"
+            row.resolved_name = matched_name
+            row.match_percent = percent
+            row.message = f"Matched to {matched_name} ({percent}%)"
+            row.cost_price = matched_cost
+            if row.sell_price <= 0:
+                row.sell_price = (
+                    matched_sell if matched_sell > 0 else matched_cost
+                )
+
+    @staticmethod
+    def _to_non_negative_float(value: object) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(parsed) or parsed < 0:
+            return 0.0
+        return parsed
+
+    @staticmethod
+    def _coerce_match_percent(value: object) -> int | None:
+        try:
+            parsed = int(round(float(value)))
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(100, parsed))
+
+    @staticmethod
+    def _extract_match_percent(message: str) -> int | None:
+        text = str(message or "").strip()
+        if not text.startswith("Matched to "):
+            return None
+        left = text.rfind("(")
+        right = text.rfind("%)")
+        if left < 0 or right < 0 or right <= left:
+            return None
+        raw = text[left + 1 : right].strip()
+        if not raw:
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            return None
+        return max(0, min(100, value))
