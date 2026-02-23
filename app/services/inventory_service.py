@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -92,32 +93,27 @@ class InventoryService:
         percent_raw = (
             payload.get("percent", 20.0) if isinstance(payload, dict) else 20.0
         )
-        try:
-            percent = float(percent_raw)
-        except (TypeError, ValueError) as exc:
-            raise InventoryFileError("مقدار درصد هشدار نامعتبر است.") from exc
+        percent = self._to_finite_float(percent_raw, default=20.0)
         if percent < 0:
             percent = 0.0
         self._sell_price_alarm_percent = percent
         return self._sell_price_alarm_percent
 
     def update_sell_price_alarm_percent(self, percent: float) -> float:
+        safe_percent = self._to_finite_float(percent, default=0.0)
         try:
             payload = self._client.patch(
                 "/api/v1/settings/sell-price-alarm",
-                json_body={"percent": float(percent)},
+                json_body={"percent": safe_percent},
             )
         except BackendAPIError as exc:
             raise InventoryFileError(str(exc)) from exc
         percent_raw = (
-            payload.get("percent", percent)
+            payload.get("percent", safe_percent)
             if isinstance(payload, dict)
-            else percent
+            else safe_percent
         )
-        try:
-            value = float(percent_raw)
-        except (TypeError, ValueError) as exc:
-            raise InventoryFileError("پاسخ درصد هشدار نامعتبر است.") from exc
+        value = self._to_finite_float(percent_raw, default=safe_percent)
         if value < 0:
             value = 0.0
         self._sell_price_alarm_percent = value
@@ -159,14 +155,18 @@ class InventoryService:
                         "product_name": str(
                             item.get("product_name", "")
                         ).strip(),
-                        "quantity": int(item.get("quantity", 0) or 0),
-                        "avg_buy_price": float(
-                            item.get("avg_buy_price", 0.0) or 0.0
+                        "quantity": self._to_finite_int(
+                            item.get("quantity", 0), default=0
                         ),
-                        "last_buy_price": float(
-                            item.get("last_buy_price", 0.0) or 0.0
+                        "avg_buy_price": self._to_finite_float(
+                            item.get("avg_buy_price", 0.0), default=0.0
                         ),
-                        "sell_price": float(item.get("sell_price", 0.0) or 0.0),
+                        "last_buy_price": self._to_finite_float(
+                            item.get("last_buy_price", 0.0), default=0.0
+                        ),
+                        "sell_price": self._to_finite_float(
+                            item.get("sell_price", 0.0), default=0.0
+                        ),
                         "alarm": item.get("alarm"),
                         "source": (
                             None
@@ -267,27 +267,21 @@ class InventoryService:
         if working.empty:
             return []
 
-        working["quantity"] = (
-            pd.to_numeric(working["quantity"], errors="coerce")
-            .fillna(0)
-            .astype(int)
+        working["quantity"] = self._sanitize_numeric_series(
+            working["quantity"], default=0
+        ).astype(int)
+        working["avg_buy_price"] = self._sanitize_numeric_series(
+            working["avg_buy_price"], default=0.0
+        ).astype(float)
+        working["last_buy_price"] = self._sanitize_numeric_series(
+            working["last_buy_price"], default=0.0
+        ).astype(float)
+        working["sell_price"] = self._sanitize_numeric_series(
+            working["sell_price"], default=0.0
+        ).astype(float)
+        alarm_numeric = self._sanitize_numeric_series(
+            working["alarm"], default=pd.NA
         )
-        working["avg_buy_price"] = (
-            pd.to_numeric(working["avg_buy_price"], errors="coerce")
-            .fillna(0.0)
-            .astype(float)
-        )
-        working["last_buy_price"] = (
-            pd.to_numeric(working["last_buy_price"], errors="coerce")
-            .fillna(0.0)
-            .astype(float)
-        )
-        working["sell_price"] = (
-            pd.to_numeric(working["sell_price"], errors="coerce")
-            .fillna(0.0)
-            .astype(float)
-        )
-        alarm_numeric = pd.to_numeric(working["alarm"], errors="coerce")
         working["alarm"] = [
             int(value) if pd.notna(value) else None
             for value in alarm_numeric.tolist()
@@ -424,3 +418,25 @@ class InventoryService:
     @staticmethod
     def _normalize_name(name: str) -> str:
         return normalize_text(name)
+
+    @staticmethod
+    def _sanitize_numeric_series(
+        series: pd.Series, default: object = 0.0
+    ) -> pd.Series:
+        numeric = pd.to_numeric(series, errors="coerce")
+        numeric = numeric.replace([float("inf"), float("-inf")], pd.NA)
+        return numeric.fillna(default)
+
+    @staticmethod
+    def _to_finite_float(value: object, default: float = 0.0) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return float(default)
+        if not math.isfinite(parsed):
+            return float(default)
+        return parsed
+
+    @classmethod
+    def _to_finite_int(cls, value: object, default: int = 0) -> int:
+        return int(cls._to_finite_float(value, default=float(default)))

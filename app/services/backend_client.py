@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import numbers
 import os
 import threading
 from typing import Any
@@ -54,13 +56,18 @@ class BackendClient:
         files: dict[str, Any] | None = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
+        sanitized_json_body = (
+            self._sanitize_json_value(json_body)
+            if json_body is not None
+            else None
+        )
         try:
             with self._session_lock:
                 response = self._session.request(
                     method=method,
                     url=url,
                     params=params,
-                    json=json_body,
+                    json=sanitized_json_body,
                     files=files,
                     timeout=self._timeout,
                 )
@@ -108,3 +115,25 @@ class BackendClient:
                 cls._session_pool[base_url] = session
                 cls._session_locks[base_url] = session_lock
             return session, session_lock
+
+    @classmethod
+    def _sanitize_json_value(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls._sanitize_json_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [cls._sanitize_json_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [cls._sanitize_json_value(item) for item in value]
+        if value is None or isinstance(value, (bool, str)):
+            return value
+        if isinstance(value, numbers.Integral):
+            return int(value)
+        if isinstance(value, numbers.Real):
+            numeric = float(value)
+            if not math.isfinite(numeric):
+                return None
+            return numeric
+        return value
