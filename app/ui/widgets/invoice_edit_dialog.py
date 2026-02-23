@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QLocale, Qt
+from PySide6.QtCore import QEvent, QLocale, QStringListModel, Qt
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
+    QCompleter,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.services.fuzzy_search import get_fuzzy_matches
 from app.services.invoice_service import InvoiceLine, InvoiceSummary
 from app.utils import dialogs
 from app.utils.numeric import (
@@ -94,6 +96,9 @@ class InvoiceEditDialog(QDialog):
         hint_text = self.tr(
             "برای ویرایش دوبار کلیک کنید. برای حذف ردیف اشتباه از «حذف ردیف» "
             "استفاده کنید و سپس ذخیره را بزنید."
+        )
+        hint_text += " " + self.tr(
+            "با تایپ نام کالا، پیشنهادهای مشابه نمایش داده می‌شود."
         )
         if invoice.invoice_type.startswith("sales"):
             hint_text += " " + self.tr(
@@ -193,7 +198,11 @@ class InvoiceEditDialog(QDialog):
             self._apply_sales_ui()
 
         self._populate(lines)
-        self._delegate = _EnterMoveDelegate(self._handle_enter, self.table)
+        self._delegate = _EnterMoveDelegate(
+            self._handle_enter,
+            product_names,
+            self.table,
+        )
         self.table.setItemDelegate(self._delegate)
         self.table.installEventFilter(self)
         self.table.itemChanged.connect(self._on_item_changed)
@@ -577,9 +586,13 @@ class InvoiceEditDialog(QDialog):
 
 
 class _EnterMoveDelegate(QStyledItemDelegate):
-    def __init__(self, on_enter, parent=None) -> None:  # noqa: ANN001
+    def __init__(  # noqa: ANN001
+        self, on_enter, product_names: list[str], parent=None
+    ) -> None:
         super().__init__(parent)
         self._on_enter = on_enter
+        cleaned_names = (str(name).strip() for name in product_names)
+        self._product_names = [value for value in cleaned_names if value]
 
     def createEditor(  # noqa: ANN001, N802
         self, parent, option, index
@@ -596,6 +609,12 @@ class _EnterMoveDelegate(QStyledItemDelegate):
                 editor.textEdited.connect(
                     lambda text, widget=editor: self._normalize_numeric_editor(
                         widget, text
+                    )
+                )
+            if index.column() == 0:
+                editor.textChanged.connect(
+                    lambda text, widget=editor: self._update_completer(
+                        text, widget
                     )
                 )
             editor.setLayoutDirection(Qt.RightToLeft)
@@ -615,12 +634,40 @@ class _EnterMoveDelegate(QStyledItemDelegate):
             Qt.Key_Return,
             Qt.Key_Enter,
         ):
+            if isinstance(editor, QLineEdit):
+                completer = editor.completer()
+                if completer and completer.popup().isVisible():
+                    return False
             self.commitData.emit(editor)
             self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
             if self._on_enter:
                 self._on_enter()
             return True
         return super().eventFilter(editor, event)
+
+    def _update_completer(self, text: str, widget: QLineEdit) -> None:
+        matches = get_fuzzy_matches(text, self._product_names)
+        completer = widget.completer()
+
+        if not matches:
+            if completer:
+                completer.popup().hide()
+            return
+
+        if completer is None:
+            model = QStringListModel(matches)
+            completer = QCompleter(model, widget)
+            completer.setCompletionMode(QCompleter.PopupCompletion)
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchContains)
+            widget.setCompleter(completer)
+        else:
+            model = completer.model()
+            if isinstance(model, QStringListModel):
+                model.setStringList(matches)
+            else:
+                completer.setModel(QStringListModel(matches))
+        completer.complete()
 
     @staticmethod
     def _normalize_numeric_editor(editor: QLineEdit, text: str) -> None:
