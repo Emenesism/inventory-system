@@ -219,6 +219,82 @@ class SettingsPage(QWidget):
         account_layout.addWidget(self.sell_price_alarm_card)
         self.sell_price_alarm_card.hide()
 
+        self.sales_import_fuzzy_match_card = QFrame()
+        self.sales_import_fuzzy_match_card.setObjectName("Card")
+        sales_import_fuzzy_match_layout = QVBoxLayout(
+            self.sales_import_fuzzy_match_card
+        )
+        sales_import_fuzzy_match_layout.setContentsMargins(12, 12, 12, 12)
+        sales_import_fuzzy_match_layout.setSpacing(8)
+
+        sales_import_fuzzy_match_title = QLabel(
+            self.tr("تطبیق تقریبی ورود فروش")
+        )
+        sales_import_fuzzy_match_title.setStyleSheet(
+            "font-size: 14px; font-weight: 700;"
+        )
+        sales_import_fuzzy_match_title.setAlignment(self._RIGHT_ALIGN)
+        sales_import_fuzzy_match_layout.addWidget(
+            sales_import_fuzzy_match_title
+        )
+
+        sales_import_fuzzy_match_hint = QLabel(
+            self.tr(
+                "حداقل درصد شباهت برای پیدا کردن نام کالا هنگام پیش‌نمایش ورود فروش."
+            )
+        )
+        sales_import_fuzzy_match_hint.setProperty("textRole", "muted")
+        sales_import_fuzzy_match_hint.setWordWrap(True)
+        sales_import_fuzzy_match_hint.setAlignment(self._RIGHT_ALIGN)
+        sales_import_fuzzy_match_layout.addWidget(
+            sales_import_fuzzy_match_hint
+        )
+
+        sales_import_fuzzy_match_form = QGridLayout()
+        sales_import_fuzzy_match_form.setHorizontalSpacing(10)
+        sales_import_fuzzy_match_form.setVerticalSpacing(8)
+
+        sales_import_fuzzy_match_label = QLabel(
+            self.tr("حداقل درصد تطبیق")
+        )
+        sales_import_fuzzy_match_label.setProperty("fieldLabel", True)
+        sales_import_fuzzy_match_label.setAlignment(self._RIGHT_ALIGN)
+        self.sales_import_fuzzy_match_input = QLineEdit()
+        self.sales_import_fuzzy_match_input.setPlaceholderText(
+            self.tr("مثال: 85")
+        )
+        self._configure_line_edit_rtl(self.sales_import_fuzzy_match_input)
+        sales_import_fuzzy_match_form.addWidget(
+            sales_import_fuzzy_match_label, 0, 0
+        )
+        sales_import_fuzzy_match_form.addWidget(
+            self.sales_import_fuzzy_match_input, 0, 1
+        )
+        sales_import_fuzzy_match_form.setColumnStretch(0, 0)
+        sales_import_fuzzy_match_form.setColumnStretch(1, 1)
+        sales_import_fuzzy_match_layout.addLayout(
+            sales_import_fuzzy_match_form
+        )
+
+        sales_import_fuzzy_match_button_row = QHBoxLayout()
+        self.save_sales_import_fuzzy_match_button = QPushButton(
+            self.tr("ذخیره درصد تطبیق")
+        )
+        self.save_sales_import_fuzzy_match_button.clicked.connect(
+            self._save_sales_import_fuzzy_match_percent
+        )
+        sales_import_fuzzy_match_button_row.addWidget(
+            self.save_sales_import_fuzzy_match_button,
+            0,
+            self._RIGHT_ALIGN,
+        )
+        sales_import_fuzzy_match_layout.addLayout(
+            sales_import_fuzzy_match_button_row
+        )
+
+        account_layout.addWidget(self.sales_import_fuzzy_match_card)
+        self.sales_import_fuzzy_match_card.hide()
+
         self.sell_price_import_card = QFrame()
         self.sell_price_import_card.setObjectName("Card")
         sell_price_import_layout = QVBoxLayout(self.sell_price_import_card)
@@ -368,6 +444,7 @@ class SettingsPage(QWidget):
             self.user_value.setText("-")
             self.admin_card.hide()
             self.sell_price_alarm_card.hide()
+            self.sales_import_fuzzy_match_card.hide()
             self.sell_price_import_card.hide()
             self._apply_responsive_layout(force=True)
             return
@@ -375,12 +452,15 @@ class SettingsPage(QWidget):
         if admin.role == "manager":
             self.admin_card.show()
             self.sell_price_alarm_card.show()
+            self.sales_import_fuzzy_match_card.show()
             self.sell_price_import_card.show()
             self._refresh_admins()
             self._load_sell_price_alarm_percent()
+            self._load_sales_import_fuzzy_match_percent()
         else:
             self.admin_card.hide()
             self.sell_price_alarm_card.hide()
+            self.sales_import_fuzzy_match_card.hide()
             self.sell_price_import_card.hide()
         self._apply_responsive_layout(force=True)
 
@@ -627,6 +707,89 @@ class SettingsPage(QWidget):
             self,
             self.tr("درصد هشدار قیمت فروش"),
             self.tr("درصد هشدار قیمت فروش ذخیره شد."),
+        )
+
+    def _load_sales_import_fuzzy_match_percent(self) -> None:
+        if self.inventory_service is None:
+            return
+        try:
+            percent = (
+                self.inventory_service.fetch_sales_import_fuzzy_match_percent()
+            )
+        except InventoryFileError:
+            percent = (
+                self.inventory_service.get_cached_sales_import_fuzzy_match_percent()
+            )
+        text = f"{percent:.2f}".rstrip("0").rstrip(".")
+        self.sales_import_fuzzy_match_input.setText(text)
+
+    def _save_sales_import_fuzzy_match_percent(self) -> None:
+        if self.current_admin is None or self.current_admin.role != "manager":
+            return
+        if self.inventory_service is None:
+            dialogs.show_error(
+                self,
+                self.tr("درصد تطبیق ورود فروش"),
+                self.tr("سرویس موجودی در دسترس نیست."),
+            )
+            return
+        raw = self.sales_import_fuzzy_match_input.text().strip()
+        normalized = normalize_numeric_text(raw)
+        if not normalized:
+            dialogs.show_error(
+                self,
+                self.tr("درصد تطبیق ورود فروش"),
+                self.tr("درصد تطبیق را وارد کنید."),
+            )
+            return
+        try:
+            percent = float(normalized)
+        except ValueError:
+            dialogs.show_error(
+                self,
+                self.tr("درصد تطبیق ورود فروش"),
+                self.tr("فرمت درصد تطبیق معتبر نیست."),
+            )
+            return
+        if percent < 0 or percent > 100:
+            dialogs.show_error(
+                self,
+                self.tr("درصد تطبیق ورود فروش"),
+                self.tr("درصد تطبیق باید بین ۰ تا ۱۰۰ باشد."),
+            )
+            return
+        try:
+            saved_percent = (
+                self.inventory_service.update_sales_import_fuzzy_match_percent(
+                    percent
+                )
+            )
+        except InventoryFileError as exc:
+            dialogs.show_error(
+                self,
+                self.tr("درصد تطبیق ورود فروش"),
+                str(exc),
+            )
+            return
+        self.sales_import_fuzzy_match_input.setText(
+            f"{saved_percent:.2f}".rstrip("0").rstrip(".")
+        )
+        admin = (
+            self._current_admin_provider()
+            if self._current_admin_provider
+            else self.current_admin
+        )
+        if self.action_log_service:
+            self.action_log_service.log_action(
+                "sales_import_fuzzy_match_update",
+                self.tr("به‌روزرسانی درصد تطبیق ورود فروش"),
+                self.tr("درصد جدید: {percent}").format(percent=saved_percent),
+                admin=admin,
+            )
+        dialogs.show_info(
+            self,
+            self.tr("درصد تطبیق ورود فروش"),
+            self.tr("درصد تطبیق ورود فروش ذخیره شد."),
         )
 
     def _import_sell_prices(self) -> None:

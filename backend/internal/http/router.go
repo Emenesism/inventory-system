@@ -32,6 +32,8 @@ func NewRouter(handler *Handler) http.Handler {
 		r.Post("/inventory/sync", handler.SyncInventory)
 		r.Get("/settings/sell-price-alarm", handler.GetSellPriceAlarmPercent)
 		r.Patch("/settings/sell-price-alarm", handler.UpdateSellPriceAlarmPercent)
+		r.Get("/settings/sales-import-fuzzy-match", handler.GetSalesImportFuzzyMatchPercent)
+		r.Patch("/settings/sales-import-fuzzy-match", handler.UpdateSalesImportFuzzyMatchPercent)
 
 		r.Get("/invoices", handler.ListInvoices)
 		r.Get("/invoices/range", handler.ListInvoicesBetween)

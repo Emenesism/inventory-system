@@ -103,6 +103,17 @@ func (s *Service) SetSellPriceAlarmPercent(
 	return s.repo.SetSellPriceAlarmPercent(ctx, percent)
 }
 
+func (s *Service) GetSalesImportFuzzyMatchPercent(ctx context.Context) (float64, error) {
+	return s.repo.GetSalesImportFuzzyMatchPercent(ctx)
+}
+
+func (s *Service) SetSalesImportFuzzyMatchPercent(
+	ctx context.Context,
+	percent float64,
+) (float64, error) {
+	return s.repo.SetSalesImportFuzzyMatchPercent(ctx, percent)
+}
+
 func (s *Service) CreatePurchaseInvoice(
 	ctx context.Context,
 	invoiceName *string,

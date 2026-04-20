@@ -331,6 +331,37 @@ func (h *Handler) UpdateSellPriceAlarmPercent(w http.ResponseWriter, r *http.Req
 	})
 }
 
+func (h *Handler) GetSalesImportFuzzyMatchPercent(w http.ResponseWriter, r *http.Request) {
+	percent, err := h.svc.GetSalesImportFuzzyMatchPercent(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"percent": percent,
+	})
+}
+
+type updateSalesImportFuzzyMatchPercentRequest struct {
+	Percent float64 `json:"percent"`
+}
+
+func (h *Handler) UpdateSalesImportFuzzyMatchPercent(w http.ResponseWriter, r *http.Request) {
+	var req updateSalesImportFuzzyMatchPercentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	percent, err := h.svc.SetSalesImportFuzzyMatchPercent(r.Context(), req.Percent)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"percent": percent,
+	})
+}
+
 type replaceInventoryRequest struct {
 	Rows []domain.InventoryImportRow `json:"rows"`
 }

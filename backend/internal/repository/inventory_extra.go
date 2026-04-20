@@ -396,11 +396,13 @@ func normalizeInventoryNameKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, error) {
-	const (
-		settingKey   = "sell_price_alarm_percent"
-		defaultValue = 20.0
-	)
+func (r *Repository) getNumericSetting(
+	ctx context.Context,
+	settingKey string,
+	defaultValue float64,
+	initLabel string,
+	getLabel string,
+) (float64, error) {
 	var value float64
 	err := r.pool.QueryRow(ctx, `
 		SELECT value_numeric::double precision
@@ -413,12 +415,12 @@ func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, err
 			VALUES ($1, $2)
 			ON CONFLICT (key) DO NOTHING
 		`, settingKey, defaultValue); execErr != nil {
-			return 0, fmt.Errorf("init sell price alarm setting: %w", execErr)
+			return 0, fmt.Errorf("init %s: %w", initLabel, execErr)
 		}
 		return defaultValue, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("get sell price alarm setting: %w", err)
+		return 0, fmt.Errorf("get %s: %w", getLabel, err)
 	}
 	if value < 0 {
 		value = 0
@@ -426,14 +428,15 @@ func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, err
 	return value, nil
 }
 
-func (r *Repository) SetSellPriceAlarmPercent(
+func (r *Repository) setPercentSetting(
 	ctx context.Context,
+	settingKey string,
 	percent float64,
+	setLabel string,
 ) (float64, error) {
 	if percent < 0 || percent > 100 {
 		return 0, fmt.Errorf("percent must be between 0 and 100")
 	}
-	const settingKey = "sell_price_alarm_percent"
 	if _, err := r.pool.Exec(ctx, `
 		INSERT INTO app_settings (key, value_numeric, updated_at)
 		VALUES ($1, $2, NOW())
@@ -442,7 +445,51 @@ func (r *Repository) SetSellPriceAlarmPercent(
 			value_numeric = EXCLUDED.value_numeric,
 			updated_at = NOW()
 	`, settingKey, percent); err != nil {
-		return 0, fmt.Errorf("set sell price alarm setting: %w", err)
+		return 0, fmt.Errorf("set %s: %w", setLabel, err)
 	}
 	return percent, nil
+}
+
+func (r *Repository) GetSellPriceAlarmPercent(ctx context.Context) (float64, error) {
+	return r.getNumericSetting(
+		ctx,
+		"sell_price_alarm_percent",
+		20.0,
+		"sell price alarm setting",
+		"sell price alarm setting",
+	)
+}
+
+func (r *Repository) SetSellPriceAlarmPercent(
+	ctx context.Context,
+	percent float64,
+) (float64, error) {
+	return r.setPercentSetting(
+		ctx,
+		"sell_price_alarm_percent",
+		percent,
+		"sell price alarm setting",
+	)
+}
+
+func (r *Repository) GetSalesImportFuzzyMatchPercent(ctx context.Context) (float64, error) {
+	return r.getNumericSetting(
+		ctx,
+		"sales_import_fuzzy_match_percent",
+		85.0,
+		"sales import fuzzy match setting",
+		"sales import fuzzy match setting",
+	)
+}
+
+func (r *Repository) SetSalesImportFuzzyMatchPercent(
+	ctx context.Context,
+	percent float64,
+) (float64, error) {
+	return r.setPercentSetting(
+		ctx,
+		"sales_import_fuzzy_match_percent",
+		percent,
+		"sales import fuzzy match setting",
+	)
 }

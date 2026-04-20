@@ -32,6 +32,7 @@ class InventoryService:
         self._client = BackendClient(config.backend_url)
         self._loaded = False
         self._sell_price_alarm_percent = 20.0
+        self._sales_import_fuzzy_match_percent = 85.0
 
     def set_inventory_path(self, path: str | Path | None) -> None:
         self.store.set_path(path)
@@ -121,6 +122,47 @@ class InventoryService:
 
     def get_cached_sell_price_alarm_percent(self) -> float:
         return float(self._sell_price_alarm_percent)
+
+    def fetch_sales_import_fuzzy_match_percent(self) -> float:
+        try:
+            payload = self._client.get(
+                "/api/v1/settings/sales-import-fuzzy-match"
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        percent_raw = (
+            payload.get("percent", 85.0) if isinstance(payload, dict) else 85.0
+        )
+        percent = self._to_finite_float(percent_raw, default=85.0)
+        if percent < 0:
+            percent = 0.0
+        elif percent > 100:
+            percent = 100.0
+        self._sales_import_fuzzy_match_percent = percent
+        return self._sales_import_fuzzy_match_percent
+
+    def update_sales_import_fuzzy_match_percent(self, percent: float) -> float:
+        safe_percent = self._to_finite_float(percent, default=85.0)
+        safe_percent = max(0.0, min(100.0, safe_percent))
+        try:
+            payload = self._client.patch(
+                "/api/v1/settings/sales-import-fuzzy-match",
+                json_body={"percent": safe_percent},
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        percent_raw = (
+            payload.get("percent", safe_percent)
+            if isinstance(payload, dict)
+            else safe_percent
+        )
+        value = self._to_finite_float(percent_raw, default=safe_percent)
+        value = max(0.0, min(100.0, value))
+        self._sales_import_fuzzy_match_percent = value
+        return self._sales_import_fuzzy_match_percent
+
+    def get_cached_sales_import_fuzzy_match_percent(self) -> float:
+        return float(self._sales_import_fuzzy_match_percent)
 
     def load(self) -> pd.DataFrame:
         try:

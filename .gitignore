@@ -43,6 +43,7 @@ backend/tmp/
 .DS_Store
 Thumbs.db
 *.sql
+!backend/internal/db/migrations/006_sales_import_fuzzy_match_setting.sql
 
 
 *.pdf

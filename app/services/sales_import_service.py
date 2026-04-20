@@ -32,6 +32,7 @@ class SalesPreviewSummary:
 
 
 class SalesImportService:
+    DEFAULT_FUZZY_MATCH_PERCENT = 85.0
     REQUIRED_COLUMNS = ["product_name", "quantity_sold"]
     COLUMN_ALIASES = {
         "product name": "product_name",
@@ -57,6 +58,9 @@ class SalesImportService:
     def __init__(self) -> None:
         config = AppConfig.load()
         self._client = BackendClient(config.backend_url)
+        self._sales_import_fuzzy_match_percent = (
+            self.DEFAULT_FUZZY_MATCH_PERCENT
+        )
 
     def load_sales_file(self, path: str) -> pd.DataFrame:
         suffix = str(path).lower()
@@ -104,7 +108,11 @@ class SalesImportService:
             raise InventoryFileError(str(exc)) from exc
 
         preview_rows, summary = self._parse_preview_payload(payload)
-        self._apply_local_fuzzy_matches(preview_rows, inventory_df)
+        self._apply_local_fuzzy_matches(
+            preview_rows,
+            inventory_df,
+            self._get_fuzzy_match_percent(),
+        )
         return preview_rows, self._build_summary(
             preview_rows, total_hint=summary.total
         )
@@ -159,11 +167,37 @@ class SalesImportService:
             raise InventoryFileError(str(exc)) from exc
 
         updated_rows, _summary = self._parse_preview_payload(payload)
-        self._apply_local_fuzzy_matches(updated_rows, inventory_df)
+        self._apply_local_fuzzy_matches(
+            updated_rows,
+            inventory_df,
+            self._get_fuzzy_match_percent(),
+        )
         for position, updated in zip(valid_positions, updated_rows):
             preview_rows[position] = updated
 
         return self._build_summary(preview_rows)
+
+    def _get_fuzzy_match_percent(self) -> float:
+        try:
+            payload = self._client.get(
+                "/api/v1/settings/sales-import-fuzzy-match"
+            )
+        except BackendAPIError:
+            return float(self._sales_import_fuzzy_match_percent)
+        percent_raw = (
+            payload.get("percent", self.DEFAULT_FUZZY_MATCH_PERCENT)
+            if isinstance(payload, dict)
+            else self.DEFAULT_FUZZY_MATCH_PERCENT
+        )
+        try:
+            percent = float(percent_raw)
+        except (TypeError, ValueError):
+            percent = self.DEFAULT_FUZZY_MATCH_PERCENT
+        if not math.isfinite(percent):
+            percent = self.DEFAULT_FUZZY_MATCH_PERCENT
+        percent = max(0.0, min(100.0, percent))
+        self._sales_import_fuzzy_match_percent = percent
+        return percent
 
     @staticmethod
     def _rows_from_dataframe(sales_df: pd.DataFrame) -> list[dict[str, object]]:
@@ -258,11 +292,13 @@ class SalesImportService:
         cls,
         preview_rows: list[SalesPreviewRow],
         inventory_df: pd.DataFrame | None,
+        threshold_percent: float,
     ) -> None:
         if not preview_rows or inventory_df is None:
             return
         if inventory_df.empty or "product_name" not in inventory_df.columns:
             return
+        threshold = max(0.0, min(100.0, float(threshold_percent)))
 
         candidates: list[dict[str, object]] = []
         normalized_choices: list[str] = []
@@ -304,7 +340,7 @@ class SalesImportService:
                 query,
                 normalized_choices,
                 scorer=fuzz.WRatio,
-                score_cutoff=85.0,
+                score_cutoff=threshold,
             )
             if not match:
                 continue
@@ -320,7 +356,7 @@ class SalesImportService:
             if not matched_name:
                 continue
             percent = int(round(float(score)))
-            percent = max(85, min(100, percent))
+            percent = max(int(round(threshold)), min(100, percent))
             matched_cost = cls._to_non_negative_float(
                 candidate.get("avg_buy_price", 0.0)
             )
