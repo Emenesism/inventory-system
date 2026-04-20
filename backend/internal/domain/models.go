@@ -159,3 +159,14 @@ type SalesPreviewRow struct {
 	Message      string  `json:"message"`
 	ResolvedName string  `json:"resolved_name"`
 }
+
+type ProductGroupMember struct {
+	ProductID   int64  `json:"product_id"`
+	ProductName string `json:"product_name"`
+}
+
+type ProductGroup struct {
+	GroupID int64                `json:"group_id"`
+	Name    string               `json:"name"`
+	Members []ProductGroupMember `json:"members,omitempty"`
+}

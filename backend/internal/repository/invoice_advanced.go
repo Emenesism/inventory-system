@@ -15,54 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type aggregateLine struct {
-	Name      string
-	Qty       int
-	Cost      float64
-	LastPrice float64
-}
-
 func normalizeName(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func aggregateInvoiceLines(lines []domain.InvoiceLine, useCost bool) map[string]*aggregateLine {
-	result := make(map[string]*aggregateLine)
-	for _, line := range lines {
-		name := strings.TrimSpace(line.ProductName)
-		if name == "" {
-			continue
-		}
-		key := normalizeName(name)
-		entry, ok := result[key]
-		if !ok {
-			entry = &aggregateLine{Name: name}
-			result[key] = entry
-		}
-		entry.Name = name
-		entry.Qty += line.Quantity
-		if useCost {
-			entry.Cost += line.Price * float64(line.Quantity)
-			entry.LastPrice = line.Price
-		}
-	}
-	return result
-}
-
-func collectKeys(a, b map[string]*aggregateLine) []string {
-	set := make(map[string]struct{}, len(a)+len(b))
-	for key := range a {
-		set[key] = struct{}{}
-	}
-	for key := range b {
-		set[key] = struct{}{}
-	}
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func loadInvoiceLinesTx(ctx context.Context, tx pgx.Tx, invoiceID int64) ([]domain.InvoiceLine, error) {
@@ -148,118 +102,6 @@ func validateNewInvoiceLines(lines []domain.InvoiceLine) ([]domain.InvoiceLine, 
 	return cleaned, nil
 }
 
-func applySalesChangeTx(ctx context.Context, tx pgx.Tx, oldLines, newLines []domain.InvoiceLine) error {
-	oldMap := aggregateInvoiceLines(oldLines, false)
-	newMap := aggregateInvoiceLines(newLines, false)
-	keys := collectKeys(oldMap, newMap)
-
-	for _, key := range keys {
-		oldQty := 0
-		newQty := 0
-		name := ""
-		if oldEntry := oldMap[key]; oldEntry != nil {
-			oldQty = oldEntry.Qty
-			name = oldEntry.Name
-		}
-		if newEntry := newMap[key]; newEntry != nil {
-			newQty = newEntry.Qty
-			name = newEntry.Name
-		}
-
-		delta := oldQty - newQty
-		if delta == 0 {
-			continue
-		}
-
-		productID, currentQty, _, _, err := loadProductForUpdate(ctx, tx, name)
-		if errors.Is(err, ErrNotFound) {
-			return fmt.Errorf("product not found in inventory: %s", name)
-		}
-		if err != nil {
-			return err
-		}
-
-		updatedQty := currentQty + delta
-		if _, err := tx.Exec(ctx, `
-			UPDATE products
-			SET quantity = $2, updated_at = NOW()
-			WHERE id = $1
-		`, productID, updatedQty); err != nil {
-			return fmt.Errorf("update sales product %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
-func applyPurchaseChangeTx(ctx context.Context, tx pgx.Tx, oldLines, newLines []domain.InvoiceLine) error {
-	oldMap := aggregateInvoiceLines(oldLines, true)
-	newMap := aggregateInvoiceLines(newLines, true)
-	keys := collectKeys(oldMap, newMap)
-
-	for _, key := range keys {
-		oldQty := 0
-		oldCost := 0.0
-		newQty := 0
-		newCost := 0.0
-		newLastPrice := 0.0
-		name := ""
-
-		if oldEntry := oldMap[key]; oldEntry != nil {
-			oldQty = oldEntry.Qty
-			oldCost = oldEntry.Cost
-			name = oldEntry.Name
-		}
-		if newEntry := newMap[key]; newEntry != nil {
-			newQty = newEntry.Qty
-			newCost = newEntry.Cost
-			newLastPrice = newEntry.LastPrice
-			name = newEntry.Name
-		}
-
-		productID, currentQty, currentAvg, currentLast, err := loadProductForUpdate(ctx, tx, name)
-		if errors.Is(err, ErrNotFound) {
-			return fmt.Errorf("product not found in inventory: %s", name)
-		}
-		if err != nil {
-			return err
-		}
-
-		remainingQty := currentQty - oldQty
-		remainingCost := (currentAvg * float64(currentQty)) - oldCost
-		avgBaseQty := remainingQty
-		if avgBaseQty < 0 {
-			avgBaseQty = 0
-		}
-		avgBaseCost := remainingCost
-		if remainingQty <= 0 {
-			avgBaseCost = 0
-		}
-		avgDenominator := avgBaseQty + newQty
-		newAvg := 0.0
-		if avgDenominator > 0 {
-			newAvg = (avgBaseCost + newCost) / float64(avgDenominator)
-		}
-		updatedQty := remainingQty + newQty
-		updatedLast := currentLast
-		if newQty > 0 && newLastPrice > 0 {
-			updatedLast = newLastPrice
-		}
-
-		if _, err := tx.Exec(ctx, `
-			UPDATE products
-			SET
-				quantity = $2,
-				avg_buy_price = $3,
-				last_buy_price = $4,
-				updated_at = NOW()
-			WHERE id = $1
-		`, productID, updatedQty, newAvg, updatedLast); err != nil {
-			return fmt.Errorf("update purchase product %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
 func upsertInvoiceLinesTx(ctx context.Context, tx pgx.Tx, invoiceID int64, invoiceType string, lines []domain.InvoiceLine) error {
 	if _, err := tx.Exec(ctx, "DELETE FROM invoice_lines WHERE invoice_id = $1", invoiceID); err != nil {
 		return fmt.Errorf("clear invoice lines: %w", err)
@@ -341,13 +183,42 @@ func (r *Repository) UpdateInvoiceLinesReconciled(
 	if err != nil {
 		return err
 	}
+	oldEffects, err := loadInvoiceStockEffectsTx(ctx, tx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if len(oldEffects) == 0 {
+		if strings.HasPrefix(invoiceType, "sales") {
+			oldEffects = legacySalesEffectsFromInvoiceLines(oldLines)
+		} else {
+			oldEffects = legacyPurchaseEffectsFromInvoiceLines(oldLines)
+		}
+	}
+
+	var newEffects []inventoryEffect
 
 	if strings.HasPrefix(invoiceType, "sales") {
-		if err := applySalesChangeTx(ctx, tx, oldLines, cleanedLines); err != nil {
+		newEffects, err = buildSalesEffectsFromInvoiceLinesTx(
+			ctx,
+			tx,
+			cleanedLines,
+		)
+		if err != nil {
+			return err
+		}
+		if err := applySalesChangeTx(ctx, tx, oldEffects, newEffects); err != nil {
 			return err
 		}
 	} else if invoiceType == "purchase" {
-		if err := applyPurchaseChangeTx(ctx, tx, oldLines, cleanedLines); err != nil {
+		newEffects, err = buildPurchaseEffectsFromInvoiceLinesTx(
+			ctx,
+			tx,
+			cleanedLines,
+		)
+		if err != nil {
+			return err
+		}
+		if err := applyPurchaseChangeTx(ctx, tx, oldEffects, newEffects); err != nil {
 			return err
 		}
 	} else {
@@ -355,6 +226,9 @@ func (r *Repository) UpdateInvoiceLinesReconciled(
 	}
 
 	if err := upsertInvoiceLinesTx(ctx, tx, invoiceID, invoiceType, cleanedLines); err != nil {
+		return err
+	}
+	if err := replaceInvoiceStockEffectsTx(ctx, tx, invoiceID, newEffects); err != nil {
 		return err
 	}
 	if err := updateInvoiceTotalsTx(ctx, tx, invoiceID, invoiceName, cleanedLines); err != nil {
@@ -392,13 +266,24 @@ func (r *Repository) DeleteInvoiceReconciled(ctx context.Context, invoiceID int6
 	if err != nil {
 		return err
 	}
+	oldEffects, err := loadInvoiceStockEffectsTx(ctx, tx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if len(oldEffects) == 0 {
+		if strings.HasPrefix(invoiceType, "sales") {
+			oldEffects = legacySalesEffectsFromInvoiceLines(oldLines)
+		} else {
+			oldEffects = legacyPurchaseEffectsFromInvoiceLines(oldLines)
+		}
+	}
 
 	if strings.HasPrefix(invoiceType, "sales") {
-		if err := applySalesChangeTx(ctx, tx, oldLines, nil); err != nil {
+		if err := applySalesChangeTx(ctx, tx, oldEffects, nil); err != nil {
 			return err
 		}
 	} else if invoiceType == "purchase" {
-		if err := applyPurchaseChangeTx(ctx, tx, oldLines, nil); err != nil {
+		if err := applyPurchaseChangeTx(ctx, tx, oldEffects, nil); err != nil {
 			return err
 		}
 	} else {
@@ -412,6 +297,38 @@ func (r *Repository) DeleteInvoiceReconciled(ctx context.Context, invoiceID int6
 		return fmt.Errorf("commit delete invoice tx: %w", err)
 	}
 	return nil
+}
+
+func legacySalesEffectsFromInvoiceLines(lines []domain.InvoiceLine) []inventoryEffect {
+	result := make([]inventoryEffect, 0, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line.ProductName)
+		if name == "" || line.Quantity == 0 {
+			continue
+		}
+		result = append(result, inventoryEffect{
+			ProductName: name,
+			Quantity:    line.Quantity,
+		})
+	}
+	return result
+}
+
+func legacyPurchaseEffectsFromInvoiceLines(lines []domain.InvoiceLine) []inventoryEffect {
+	result := make([]inventoryEffect, 0, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line.ProductName)
+		if name == "" || line.Quantity == 0 {
+			continue
+		}
+		result = append(result, inventoryEffect{
+			ProductName: name,
+			Quantity:    line.Quantity,
+			TotalCost:   line.Price * float64(line.Quantity),
+			LastPrice:   line.Price,
+		})
+	}
+	return result
 }
 
 func (r *Repository) GetInvoiceStats(

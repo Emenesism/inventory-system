@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -438,88 +439,16 @@ func (r *Repository) CreatePurchaseInvoice(
 	}
 	defer tx.Rollback(ctx)
 
-	invoiceLines := make([]domain.InvoiceLine, 0, len(lines))
-	totalQty := 0
-	totalAmount := 0.0
-
-	for _, line := range lines {
-		name := strings.TrimSpace(line.ProductName)
-		if name == "" {
-			return 0, fmt.Errorf("product_name is required")
-		}
-		if line.Quantity <= 0 {
-			return 0, fmt.Errorf("invalid quantity for %q", name)
-		}
-		if line.Price <= 0 {
-			return 0, fmt.Errorf("invalid price for %q", name)
-		}
-
-		var (
-			productID  int64
-			currentQty int
-			currentAvg float64
-		)
-		err := tx.QueryRow(ctx, `
-			SELECT id, quantity, avg_buy_price::double precision
-			FROM products
-			WHERE LOWER(product_name) = LOWER($1)
-			FOR UPDATE
-		`, name).Scan(&productID, &currentQty, &currentAvg)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return 0, fmt.Errorf("load product %q for purchase: %w", name, err)
-		}
-
-		if errors.Is(err, pgx.ErrNoRows) {
-			if err := tx.QueryRow(ctx, `
-				INSERT INTO products (
-					product_name,
-					quantity,
-					avg_buy_price,
-					last_buy_price,
-					sell_price
-				) VALUES ($1, $2, $3, $4, $5)
-				RETURNING id
-			`, name, line.Quantity, line.Price, line.Price, 0).Scan(&productID); err != nil {
-				return 0, fmt.Errorf("insert product %q during purchase: %w", name, err)
-			}
-		} else {
-			avgBaseQty := currentQty
-			if avgBaseQty < 0 {
-				avgBaseQty = 0
-			}
-			avgBasePrice := currentAvg
-			if avgBasePrice <= 0 {
-				avgBasePrice = line.Price
-			}
-			denominator := avgBaseQty + line.Quantity
-			newAvg := 0.0
-			if denominator > 0 {
-				newAvg = ((avgBasePrice * float64(avgBaseQty)) + (line.Price * float64(line.Quantity))) / float64(denominator)
-			}
-			newQty := currentQty + line.Quantity
-			if _, err := tx.Exec(ctx, `
-				UPDATE products
-				SET
-					quantity = $2,
-					avg_buy_price = $3,
-					last_buy_price = $4,
-					updated_at = NOW()
-				WHERE id = $1
-			`, productID, newQty, newAvg, line.Price); err != nil {
-				return 0, fmt.Errorf("update product %q during purchase: %w", name, err)
-			}
-		}
-
-		lineTotal := line.Price * float64(line.Quantity)
-		invoiceLines = append(invoiceLines, domain.InvoiceLine{
-			ProductName: name,
-			Price:       line.Price,
-			Quantity:    line.Quantity,
-			LineTotal:   lineTotal,
-			CostPrice:   line.Price,
-		})
-		totalQty += line.Quantity
-		totalAmount += lineTotal
+	invoiceLines, effects, err := buildPurchaseInvoiceLinesAndEffectsTx(
+		ctx,
+		tx,
+		lines,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if err := applyPurchaseChangeTx(ctx, tx, nil, effects); err != nil {
+		return 0, err
 	}
 
 	invoiceID, err := insertInvoiceTx(ctx, tx, CreateInvoiceInput{
@@ -531,13 +460,13 @@ func (r *Repository) CreatePurchaseInvoice(
 	if err != nil {
 		return 0, err
 	}
+	if err := replaceInvoiceStockEffectsTx(ctx, tx, invoiceID, effects); err != nil {
+		return 0, err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit purchase tx: %w", err)
 	}
-
-	_ = totalQty
-	_ = totalAmount
 	return invoiceID, nil
 }
 
@@ -562,60 +491,16 @@ func (r *Repository) CreateSalesInvoice(
 	}
 	defer tx.Rollback(ctx)
 
-	invoiceLines := make([]domain.InvoiceLine, 0, len(lines))
-	for _, line := range lines {
-		name := strings.TrimSpace(line.ProductName)
-		if name == "" {
-			return 0, fmt.Errorf("product_name is required")
-		}
-		if line.Quantity <= 0 {
-			return 0, fmt.Errorf("invalid quantity for %q", name)
-		}
-
-		var (
-			productID    int64
-			currentQty   int
-			avgCost      float64
-			productPrice float64
-		)
-		err := tx.QueryRow(ctx, `
-			SELECT id, quantity, avg_buy_price::double precision, sell_price::double precision
-			FROM products
-			WHERE LOWER(product_name) = LOWER($1)
-			FOR UPDATE
-		`, name).Scan(&productID, &currentQty, &avgCost, &productPrice)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, fmt.Errorf("product not found: %s", name)
-		}
-		if err != nil {
-			return 0, fmt.Errorf("load product %q for sales: %w", name, err)
-		}
-
-		newQty := currentQty - line.Quantity
-		if _, err := tx.Exec(ctx, `
-			UPDATE products
-			SET quantity = $2, updated_at = NOW()
-			WHERE id = $1
-		`, productID, newQty); err != nil {
-			return 0, fmt.Errorf("update product %q during sales: %w", name, err)
-		}
-
-		sellPrice := line.Price
-		if sellPrice <= 0 {
-			if productPrice > 0 {
-				sellPrice = productPrice
-			} else {
-				sellPrice = avgCost
-			}
-		}
-		lineTotal := sellPrice * float64(line.Quantity)
-		invoiceLines = append(invoiceLines, domain.InvoiceLine{
-			ProductName: name,
-			Price:       sellPrice,
-			Quantity:    line.Quantity,
-			LineTotal:   lineTotal,
-			CostPrice:   avgCost,
-		})
+	invoiceLines, effects, err := buildSalesInvoiceLinesAndEffectsTx(
+		ctx,
+		tx,
+		lines,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if err := applySalesChangeTx(ctx, tx, nil, effects); err != nil {
+		return 0, err
 	}
 
 	invoiceID, err := insertInvoiceTx(ctx, tx, CreateInvoiceInput{
@@ -627,11 +512,288 @@ func (r *Repository) CreateSalesInvoice(
 	if err != nil {
 		return 0, err
 	}
+	if err := replaceInvoiceStockEffectsTx(ctx, tx, invoiceID, effects); err != nil {
+		return 0, err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit sales tx: %w", err)
 	}
 	return invoiceID, nil
+}
+
+func buildPurchaseInvoiceLinesAndEffectsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	lines []domain.PurchaseLineInput,
+) ([]domain.InvoiceLine, []inventoryEffect, error) {
+	invoiceLines := make([]domain.InvoiceLine, 0, len(lines))
+	effectMap := map[string]*inventoryEffect{}
+	for _, line := range lines {
+		name := strings.TrimSpace(line.ProductName)
+		if name == "" {
+			return nil, nil, fmt.Errorf("product_name is required")
+		}
+		if line.Quantity <= 0 {
+			return nil, nil, fmt.Errorf("invalid quantity for %q", name)
+		}
+		if line.Price <= 0 {
+			return nil, nil, fmt.Errorf("invalid price for %q", name)
+		}
+		lineTotal := line.Price * float64(line.Quantity)
+		invoiceLines = append(invoiceLines, domain.InvoiceLine{
+			ProductName: name,
+			Price:       line.Price,
+			Quantity:    line.Quantity,
+			LineTotal:   lineTotal,
+			CostPrice:   line.Price,
+		})
+		if err := appendPurchaseEffectsTx(
+			ctx,
+			tx,
+			effectMap,
+			name,
+			line.Quantity,
+			line.Price,
+		); err != nil {
+			return nil, nil, err
+		}
+	}
+	return invoiceLines, inventoryEffectValues(effectMap), nil
+}
+
+func buildSalesInvoiceLinesAndEffectsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	lines []domain.SalesLineInput,
+) ([]domain.InvoiceLine, []inventoryEffect, error) {
+	invoiceLines := make([]domain.InvoiceLine, 0, len(lines))
+	effectMap := map[string]*inventoryEffect{}
+	for _, line := range lines {
+		name := strings.TrimSpace(line.ProductName)
+		if name == "" {
+			return nil, nil, fmt.Errorf("product_name is required")
+		}
+		if line.Quantity <= 0 {
+			return nil, nil, fmt.Errorf("invalid quantity for %q", name)
+		}
+		productID, _, avgCost, productPrice, err := loadSalesProductSnapshotTx(
+			ctx,
+			tx,
+			name,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		sellPrice := line.Price
+		if sellPrice <= 0 {
+			if productPrice > 0 {
+				sellPrice = productPrice
+			} else {
+				sellPrice = avgCost
+			}
+		}
+		invoiceLines = append(invoiceLines, domain.InvoiceLine{
+			ProductName: name,
+			Price:       sellPrice,
+			Quantity:    line.Quantity,
+			LineTotal:   sellPrice * float64(line.Quantity),
+			CostPrice:   avgCost,
+		})
+		if err := appendSalesEffectsByIDTx(
+			ctx,
+			tx,
+			effectMap,
+			productID,
+			line.Quantity,
+		); err != nil {
+			return nil, nil, err
+		}
+	}
+	return invoiceLines, inventoryEffectValues(effectMap), nil
+}
+
+func buildPurchaseEffectsFromInvoiceLinesTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	lines []domain.InvoiceLine,
+) ([]inventoryEffect, error) {
+	effectMap := map[string]*inventoryEffect{}
+	for _, line := range lines {
+		if err := appendPurchaseEffectsTx(
+			ctx,
+			tx,
+			effectMap,
+			line.ProductName,
+			line.Quantity,
+			line.Price,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return inventoryEffectValues(effectMap), nil
+}
+
+func buildSalesEffectsFromInvoiceLinesTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	lines []domain.InvoiceLine,
+) ([]inventoryEffect, error) {
+	effectMap := map[string]*inventoryEffect{}
+	for _, line := range lines {
+		productID, _, _, _, err := loadSalesProductSnapshotTx(
+			ctx,
+			tx,
+			line.ProductName,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := appendSalesEffectsByIDTx(
+			ctx,
+			tx,
+			effectMap,
+			productID,
+			line.Quantity,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return inventoryEffectValues(effectMap), nil
+}
+
+func appendPurchaseEffectsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	effectMap map[string]*inventoryEffect,
+	productName string,
+	quantity int,
+	unitPrice float64,
+) error {
+	productID, err := ensurePurchaseBaseProductTx(ctx, tx, productName)
+	if err != nil {
+		return err
+	}
+	groupedProducts, err := resolveGroupedProductsTx(ctx, tx, productID)
+	if err != nil {
+		return err
+	}
+	for _, member := range groupedProducts {
+		key := effectKey(member.ProductID, member.ProductName)
+		entry, exists := effectMap[key]
+		if !exists {
+			entry = &inventoryEffect{
+				ProductID:   member.ProductID,
+				ProductName: member.ProductName,
+			}
+			effectMap[key] = entry
+		}
+		entry.Quantity += quantity
+		entry.TotalCost += unitPrice * float64(quantity)
+		entry.LastPrice = unitPrice
+	}
+	return nil
+}
+
+func appendSalesEffectsByIDTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	effectMap map[string]*inventoryEffect,
+	productID int64,
+	quantity int,
+) error {
+	groupedProducts, err := resolveGroupedProductsTx(ctx, tx, productID)
+	if err != nil {
+		return err
+	}
+	for _, member := range groupedProducts {
+		key := effectKey(member.ProductID, member.ProductName)
+		entry, exists := effectMap[key]
+		if !exists {
+			entry = &inventoryEffect{
+				ProductID:   member.ProductID,
+				ProductName: member.ProductName,
+			}
+			effectMap[key] = entry
+		}
+		entry.Quantity += quantity
+	}
+	return nil
+}
+
+func ensurePurchaseBaseProductTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	productName string,
+) (int64, error) {
+	productID, _, _, _, err := loadProductForUpdate(ctx, tx, productName)
+	if err == nil {
+		return productID, nil
+	}
+	if err != ErrNotFound {
+		return 0, fmt.Errorf("load product %q for purchase: %w", productName, err)
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO products (
+			product_name,
+			quantity,
+			avg_buy_price,
+			last_buy_price,
+			sell_price
+		) VALUES ($1, 0, 0, 0, 0)
+		RETURNING id
+	`, productName).Scan(&productID); err != nil {
+		return 0, fmt.Errorf("insert product %q during purchase: %w", productName, err)
+	}
+	return productID, nil
+}
+
+func loadSalesProductSnapshotTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	productName string,
+) (int64, int, float64, float64, error) {
+	var (
+		productID    int64
+		currentQty   int
+		avgCost      float64
+		productPrice float64
+	)
+	err := tx.QueryRow(ctx, `
+		SELECT
+			id,
+			quantity,
+			avg_buy_price::double precision,
+			sell_price::double precision
+		FROM products
+		WHERE LOWER(product_name) = LOWER($1)
+		FOR UPDATE
+	`, productName).Scan(&productID, &currentQty, &avgCost, &productPrice)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, 0, 0, fmt.Errorf("product not found: %s", productName)
+	}
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("load product %q for sales: %w", productName, err)
+	}
+	return productID, currentQty, avgCost, productPrice, nil
+}
+
+func inventoryEffectValues(
+	effectMap map[string]*inventoryEffect,
+) []inventoryEffect {
+	if len(effectMap) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(effectMap))
+	for key := range effectMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]inventoryEffect, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, *effectMap[key])
+	}
+	return result
 }
 
 func insertInvoiceTx(ctx context.Context, tx pgx.Tx, input CreateInvoiceInput) (int64, error) {

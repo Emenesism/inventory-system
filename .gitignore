@@ -44,6 +44,7 @@ backend/tmp/
 Thumbs.db
 *.sql
 !backend/internal/db/migrations/006_sales_import_fuzzy_match_setting.sql
+!backend/internal/db/migrations/007_product_groups.sql
 
 
 *.pdf

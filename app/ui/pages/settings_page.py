@@ -26,6 +26,7 @@ from app.services.action_log_service import ActionLogService
 from app.services.admin_service import AdminService, AdminUser
 from app.services.inventory_service import InventoryService
 from app.services.invoice_service import InvoiceService
+from app.ui.widgets.group_settings_dialog import GroupSettingsDialog
 from app.utils import dialogs
 from app.utils.numeric import normalize_numeric_text
 
@@ -295,6 +296,46 @@ class SettingsPage(QWidget):
         account_layout.addWidget(self.sales_import_fuzzy_match_card)
         self.sales_import_fuzzy_match_card.hide()
 
+        self.group_settings_card = QFrame()
+        self.group_settings_card.setObjectName("Card")
+        group_settings_layout = QVBoxLayout(self.group_settings_card)
+        group_settings_layout.setContentsMargins(12, 12, 12, 12)
+        group_settings_layout.setSpacing(8)
+
+        group_settings_title = QLabel(self.tr("گروه بندی کالاها"))
+        group_settings_title.setStyleSheet(
+            "font-size: 14px; font-weight: 700;"
+        )
+        group_settings_title.setAlignment(self._RIGHT_ALIGN)
+        group_settings_layout.addWidget(group_settings_title)
+
+        group_settings_hint = QLabel(
+            self.tr(
+                "برای تعریف گروه‌های همبسته کالا و اعمال همزمان تغییرات خرید و فروش روی اعضای آن‌ها از این بخش استفاده کنید."
+            )
+        )
+        group_settings_hint.setProperty("textRole", "muted")
+        group_settings_hint.setWordWrap(True)
+        group_settings_hint.setAlignment(self._RIGHT_ALIGN)
+        group_settings_layout.addWidget(group_settings_hint)
+
+        group_settings_button_row = QHBoxLayout()
+        self.open_group_settings_button = QPushButton(
+            self.tr("تنظیمات گروه بندی")
+        )
+        self.open_group_settings_button.clicked.connect(
+            self._open_group_settings_dialog
+        )
+        group_settings_button_row.addWidget(
+            self.open_group_settings_button,
+            0,
+            self._RIGHT_ALIGN,
+        )
+        group_settings_layout.addLayout(group_settings_button_row)
+
+        account_layout.addWidget(self.group_settings_card)
+        self.group_settings_card.hide()
+
         self.sell_price_import_card = QFrame()
         self.sell_price_import_card.setObjectName("Card")
         sell_price_import_layout = QVBoxLayout(self.sell_price_import_card)
@@ -445,6 +486,7 @@ class SettingsPage(QWidget):
             self.admin_card.hide()
             self.sell_price_alarm_card.hide()
             self.sales_import_fuzzy_match_card.hide()
+            self.group_settings_card.hide()
             self.sell_price_import_card.hide()
             self._apply_responsive_layout(force=True)
             return
@@ -453,6 +495,7 @@ class SettingsPage(QWidget):
             self.admin_card.show()
             self.sell_price_alarm_card.show()
             self.sales_import_fuzzy_match_card.show()
+            self.group_settings_card.show()
             self.sell_price_import_card.show()
             self._refresh_admins()
             self._load_sell_price_alarm_percent()
@@ -461,6 +504,7 @@ class SettingsPage(QWidget):
             self.admin_card.hide()
             self.sell_price_alarm_card.hide()
             self.sales_import_fuzzy_match_card.hide()
+            self.group_settings_card.hide()
             self.sell_price_import_card.hide()
         self._apply_responsive_layout(force=True)
 
@@ -791,6 +835,19 @@ class SettingsPage(QWidget):
             self.tr("درصد تطبیق ورود فروش"),
             self.tr("درصد تطبیق ورود فروش ذخیره شد."),
         )
+
+    def _open_group_settings_dialog(self) -> None:
+        if self.current_admin is None or self.current_admin.role != "manager":
+            return
+        if self.inventory_service is None:
+            dialogs.show_error(
+                self,
+                self.tr("گروه بندی"),
+                self.tr("سرویس موجودی در دسترس نیست."),
+            )
+            return
+        dialog = GroupSettingsDialog(self.inventory_service, self)
+        dialog.exec()
 
     def _import_sell_prices(self) -> None:
         if self.current_admin is None or self.current_admin.role != "manager":

@@ -409,6 +409,91 @@ func (h *Handler) SyncInventory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.ListProductGroups(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+	})
+}
+
+type createProductGroupRequest struct {
+	Name string `json:"name"`
+}
+
+func (h *Handler) CreateProductGroup(w http.ResponseWriter, r *http.Request) {
+	var req createProductGroupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	group, err := h.svc.CreateProductGroup(r.Context(), req.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"group": group,
+	})
+}
+
+type updateProductGroupRequest struct {
+	Name    *string   `json:"name"`
+	Members *[]string `json:"members"`
+}
+
+func (h *Handler) UpdateProductGroup(w http.ResponseWriter, r *http.Request) {
+	groupID, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var req updateProductGroupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	group, err := h.svc.UpdateProductGroup(
+		r.Context(),
+		groupID,
+		req.Name,
+		req.Members,
+	)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, repository.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"group": group,
+	})
+}
+
+func (h *Handler) DeleteProductGroup(w http.ResponseWriter, r *http.Request) {
+	groupID, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.DeleteProductGroup(r.Context(), groupID); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, repository.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted": true,
+	})
+}
+
 type createPurchaseInvoiceRequest struct {
 	InvoiceName   *string                    `json:"invoice_name"`
 	AdminUsername *string                    `json:"admin_username"`

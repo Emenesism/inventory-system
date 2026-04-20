@@ -114,6 +114,30 @@ func (s *Service) SetSalesImportFuzzyMatchPercent(
 	return s.repo.SetSalesImportFuzzyMatchPercent(ctx, percent)
 }
 
+func (s *Service) ListProductGroups(ctx context.Context) ([]domain.ProductGroup, error) {
+	return s.repo.ListProductGroups(ctx)
+}
+
+func (s *Service) CreateProductGroup(
+	ctx context.Context,
+	name string,
+) (domain.ProductGroup, error) {
+	return s.repo.CreateProductGroup(ctx, name)
+}
+
+func (s *Service) UpdateProductGroup(
+	ctx context.Context,
+	groupID int64,
+	name *string,
+	members *[]string,
+) (domain.ProductGroup, error) {
+	return s.repo.UpdateProductGroup(ctx, groupID, name, members)
+}
+
+func (s *Service) DeleteProductGroup(ctx context.Context, groupID int64) error {
+	return s.repo.DeleteProductGroup(ctx, groupID)
+}
+
 func (s *Service) CreatePurchaseInvoice(
 	ctx context.Context,
 	invoiceName *string,

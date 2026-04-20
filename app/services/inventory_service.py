@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import logging
 import math
 from pathlib import Path
@@ -11,6 +12,19 @@ from app.data.inventory_store import InventoryStore
 from app.models.errors import InventoryFileError
 from app.services.backend_client import BackendAPIError, BackendClient
 from app.utils.text import is_empty_marker, normalize_text
+
+
+@dataclass
+class ProductGroupMember:
+    product_id: int
+    product_name: str
+
+
+@dataclass
+class ProductGroup:
+    group_id: int
+    name: str
+    members: list[ProductGroupMember] = field(default_factory=list)
 
 
 class InventoryService:
@@ -163,6 +177,60 @@ class InventoryService:
 
     def get_cached_sales_import_fuzzy_match_percent(self) -> float:
         return float(self._sales_import_fuzzy_match_percent)
+
+    def list_product_groups(self) -> list[ProductGroup]:
+        try:
+            payload = self._client.get("/api/v1/product-groups")
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        groups: list[ProductGroup] = []
+        for item in items:
+            if isinstance(item, dict):
+                groups.append(self._parse_product_group(item))
+        return groups
+
+    def create_product_group(self, name: str) -> ProductGroup:
+        try:
+            payload = self._client.post(
+                "/api/v1/product-groups",
+                json_body={"name": str(name).strip()},
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        group_data = payload.get("group", {}) if isinstance(payload, dict) else {}
+        if not isinstance(group_data, dict):
+            raise InventoryFileError("پاسخ گروه‌بندی معتبر نیست.")
+        return self._parse_product_group(group_data)
+
+    def update_product_group(
+        self,
+        group_id: int,
+        name: str | None = None,
+        members: list[str] | None = None,
+    ) -> ProductGroup:
+        body: dict[str, object] = {}
+        if name is not None:
+            body["name"] = str(name).strip()
+        if members is not None:
+            body["members"] = [str(item).strip() for item in members]
+        try:
+            payload = self._client.patch(
+                f"/api/v1/product-groups/{int(group_id)}",
+                json_body=body,
+            )
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
+        group_data = payload.get("group", {}) if isinstance(payload, dict) else {}
+        if not isinstance(group_data, dict):
+            raise InventoryFileError("پاسخ گروه‌بندی معتبر نیست.")
+        return self._parse_product_group(group_data)
+
+    def delete_product_group(self, group_id: int) -> None:
+        try:
+            self._client.delete(f"/api/v1/product-groups/{int(group_id)}")
+        except BackendAPIError as exc:
+            raise InventoryFileError(str(exc)) from exc
 
     def load(self) -> pd.DataFrame:
         try:
@@ -460,6 +528,26 @@ class InventoryService:
     @staticmethod
     def _normalize_name(name: str) -> str:
         return normalize_text(name)
+
+    @staticmethod
+    def _parse_product_group(item: dict[str, object]) -> ProductGroup:
+        members_data = item.get("members", [])
+        members: list[ProductGroupMember] = []
+        if isinstance(members_data, list):
+            for member in members_data:
+                if not isinstance(member, dict):
+                    continue
+                members.append(
+                    ProductGroupMember(
+                        product_id=int(member.get("product_id", 0) or 0),
+                        product_name=str(member.get("product_name", "")).strip(),
+                    )
+                )
+        return ProductGroup(
+            group_id=int(item.get("group_id", 0) or 0),
+            name=str(item.get("name", "")).strip(),
+            members=members,
+        )
 
     @staticmethod
     def _sanitize_numeric_series(
